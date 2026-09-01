@@ -492,10 +492,12 @@ export default function Home() {
         </div>
       )}
 
-      {/* Floating WhatsApp Contact Button — oculto temporalmente mientras
-          se re-registra el numero en la app de WhatsApp Business, para que
-          la gente no le escriba a un canal que nadie esta monitoreando */}
-      <WebChatWidget />
+      {/* Chat en vivo de la web — desactivado temporalmente (29/8: sin
+          SUPABASE_SERVICE_ROLE_KEY configurada en Vercel, el endpoint
+          /api/webchat/message tira error 500 en cada mensaje). Reactivar
+          descomentando <WebChatWidget /> una vez cargada la Service Role
+          Key real en las variables de entorno de Vercel. */}
+      {/* <WebChatWidget /> */}
 
       {/* Shopping Cart Drawer */}
       <CartDrawer
