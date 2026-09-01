@@ -1,0 +1,33 @@
+# dependencies
+/node_modules
+/.pnpm
+/.yarn
+
+# next.js
+/.next/
+/out/
+
+# production
+/build
+
+# local env files
+.env*.local
+.env
+
+# vercel
+.vercel
+
+# OS / IDE
+.DS_Store
+Thumbs.db
+*.pem
+.vscode/
+.idea/
+
+# Sensitive local documentation & credentials
+CREDENCIALES_Y_ACCESOS_PROYECTO.md
+DOCUMENTACION_GERENCIAL_Y_TECNICA.md
+
+# Credenciales reales del proyecto (nunca al repo)
+Credenciales.md
+node_modules_broken_*
