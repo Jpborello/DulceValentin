@@ -24,8 +24,10 @@
   --border-color: #F3DCE7;
   --border-color-strong: #E4BFD4;
 
-  --blob-pink: #B22368;
-  --blob-blue: #1C7690;
+  /* Manchas de acuarela decorativas: rosa pastel + celeste pastel.
+     Tonos suaves pero con cuerpo suficiente para leerse sobre --bg-page. */
+  --blob-pink: #F0A3C6;
+  --blob-blue: #96D0EC;
 
   --shadow-sm: 0 2px 8px rgba(36, 30, 40, 0.05);
   --shadow-md: 0 8px 24px rgba(36, 30, 40, 0.09);
@@ -1069,6 +1071,19 @@ button {
 .product-card-blob-5::before { background-image: url('/blobs/watercolor-pink-2.png'); }
 .product-card-blob-6::before { background-image: url('/blobs/watercolor-blue-3.png'); }
 
+/* Las manchas son pastel (pensadas para el fondo claro). En modo oscuro se
+   oscurecen con un filtro para que el texto claro de la card siga teniendo
+   contraste, en vez de quedar blanco sobre rosa/celeste claro. */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) .product-card::before {
+    filter: brightness(0.42) saturate(1.35);
+  }
+}
+
+:root[data-theme='dark'] .product-card::before {
+  filter: brightness(0.42) saturate(1.35);
+}
+
 .product-card:hover {
   transform: translateY(-6px);
 }
@@ -1792,6 +1807,18 @@ button {
 
 .trust-bar-item:nth-child(4)::before {
   background-image: url('/blobs/watercolor-blue-1.png');
+}
+
+/* Mismo criterio que en las cards: en modo oscuro la mancha pastel se
+   oscurece para no comerse el texto claro. */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) .trust-bar-item::before {
+    filter: brightness(0.42) saturate(1.35);
+  }
+}
+
+:root[data-theme='dark'] .trust-bar-item::before {
+  filter: brightness(0.42) saturate(1.35);
 }
 
 .trust-bar-icon {
