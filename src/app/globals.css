@@ -367,182 +367,186 @@ button {
 /* ==========================================================================
    Hero Section (Local.jpg Background Improved)
    ========================================================================== */
-.hero-wrapper {
+/* ==========================================================================
+   Hero editorial
+   --------------------------------------------------------------------------
+   Foto a todo el ancho con la tipografia serif encima. El fondo de la foto es
+   estudio claro, asi que el texto va oscuro: nada de cortina negra.
+   ========================================================================== */
+.hero-editorial {
   position: relative;
   width: 100%;
-  min-height: 560px;
-  display: flex;
-  align-items: center;
-  padding: 70px 24px;
   overflow: hidden;
+  isolation: isolate;
   background: var(--bg-page);
-}
-
-
-.hero-container {
-  position: relative;
-  z-index: 2;
-  max-width: 1280px;
-  margin: 0 auto;
-  width: 100%;
-  display: grid;
-  grid-template-columns: 1.1fr 1fr;
-  align-items: center;
-  gap: 48px;
-}
-
-.hero-text-col {
-  text-align: left;
-}
-
-.hero-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  background: var(--accent-gold-light);
-  border: 1px solid var(--accent-gold);
-  color: var(--accent-gold-hover);
-  padding: 6px 18px;
-  border-radius: var(--radius-full);
-  font-size: 0.85rem;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  margin-bottom: 20px;
-}
-
-.hero-title {
-  font-family: var(--font-display);
-  font-size: clamp(2.6rem, 5.5vw, 4rem);
-  font-weight: 600;
-  font-style: italic;
-  line-height: 1.1;
-  letter-spacing: -0.01em;
-  color: var(--text-main);
-  margin-bottom: 20px;
-}
-
-.hero-title span {
-  background: var(--gradient-brand);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-}
-
-.hero-subtitle {
-  font-size: clamp(1rem, 1.6vw, 1.15rem);
-  color: var(--text-muted);
-  max-width: 520px;
-  margin: 0 0 32px 0;
-  line-height: 1.6;
-}
-
-.hero-actions-row {
-  display: flex;
-  align-items: center;
-  justify-content: flex-start;
-  gap: 16px;
-  flex-wrap: wrap;
-}
-
-/* Collage de fotos de producto: 3 imagenes superpuestas con leve rotacion,
-   estilo moodboard editorial, en vez de un banner/video unico. */
-.hero-gallery {
-  position: relative;
-  z-index: 2;
+  aspect-ratio: 1796 / 768;
+  max-height: 82vh;
   min-height: 380px;
 }
 
-.hero-gallery-item {
+.hero-editorial-media {
   position: absolute;
-  border-radius: var(--radius-lg);
-  overflow: hidden;
-  box-shadow: var(--shadow-lg);
-  border: 4px solid var(--bg-card);
-  background-color: var(--bg-surface-elevated);
-  transition: var(--transition-normal);
+  inset: 0;
+  z-index: -2;
+  will-change: transform;
+  transform: scale(1.06);
 }
 
-.hero-gallery-item:hover {
-  transform: translateY(-6px) rotate(0deg) !important;
-  z-index: 5;
-}
-
-.hero-gallery-item img {
+.hero-editorial-media picture,
+.hero-editorial-media img {
+  display: block;
   width: 100%;
   height: 100%;
+}
+
+.hero-editorial-media img {
   object-fit: cover;
-  display: block;
+  /* 70% horizontal deja las figuras a la vista cuando la pantalla es mas
+     panoramica que la foto; el recorte se come el fondo vacio de la izquierda. */
+  object-position: 70% center;
 }
 
-.hero-gallery-item-1 {
-  width: 58%;
-  aspect-ratio: 3 / 4;
-  top: 0;
-  left: 0;
-  transform: rotate(-4deg);
-  z-index: 2;
-}
-
-.hero-gallery-item-2 {
-  width: 46%;
-  aspect-ratio: 4 / 5;
-  top: 8%;
-  right: 0;
-  transform: rotate(5deg);
-  z-index: 3;
-}
-
-.hero-gallery-item-3 {
-  width: 42%;
-  aspect-ratio: 1 / 1;
-  bottom: 0;
-  left: 18%;
-  transform: rotate(-3deg);
-  z-index: 4;
-}
-
-.hero-gallery-tag {
+/* Vela clarita atras del texto: garantiza contraste si en alguna medida la
+   columna de texto llega a pisar a la modelo. */
+.hero-editorial-scrim {
   position: absolute;
-  top: 10px;
-  left: 10px;
-  background: var(--accent-gold);
-  color: #FFFFFF;
-  font-size: 0.68rem;
-  font-weight: 800;
-  padding: 4px 10px;
-  border-radius: var(--radius-full);
+  inset: 0;
+  z-index: -1;
+  background: linear-gradient(
+    100deg,
+    color-mix(in srgb, var(--bg-page) 88%, transparent) 0%,
+    color-mix(in srgb, var(--bg-page) 62%, transparent) 34%,
+    transparent 58%
+  );
+}
+
+.hero-editorial-content {
+  position: relative;
+  height: 100%;
+  max-width: 1320px;
+  margin: 0 auto;
+  padding: 0 24px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: flex-start;
+  gap: 14px;
+}
+
+.hero-kicker {
+  font-family: var(--font-body);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.28em;
   text-transform: uppercase;
-  letter-spacing: 0.04em;
-  box-shadow: var(--shadow-sm);
+  color: var(--accent-gold-hover);
 }
 
-.hero-gallery-tag-blue {
-  background: var(--accent-secondary);
+.hero-editorial-title {
+  font-family: var(--font-display);
+  font-weight: 600;
+  line-height: 0.92;
+  letter-spacing: -0.01em;
+  font-size: clamp(3rem, 7.5vw, 6.5rem);
+  color: var(--text-main);
+  display: flex;
+  flex-direction: column;
 }
 
-@media (max-width: 900px) {
-  .hero-container {
-    grid-template-columns: 1fr;
-    text-align: center;
+.hero-editorial-title span {
+  font-style: italic;
+  padding-left: 0.08em;
+}
+
+.hero-editorial-sub {
+  max-width: 30ch;
+  font-size: clamp(0.9rem, 1.1vw, 1.02rem);
+  line-height: 1.55;
+  color: var(--text-muted);
+}
+
+.hero-editorial-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 10px;
+}
+
+.btn-hero-outline {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 13px 26px;
+  border-radius: var(--radius-full);
+  border: 1px solid var(--text-main);
+  font-size: 0.92rem;
+  font-weight: 600;
+  color: var(--text-main);
+  background: transparent;
+  transition: var(--transition-fast);
+}
+
+.btn-hero-outline:hover {
+  background: var(--text-main);
+  color: var(--bg-page);
+}
+
+/* Mobile: entra el recorte vertical y el texto baja al pie, sobre un degrade
+   que sube desde abajo — ahi la foto tiene jean y botas oscuras y el texto
+   oscuro solo no se leeria. */
+@media (max-width: 760px) {
+  .hero-editorial {
+    aspect-ratio: 576 / 768;
+    max-height: 80vh;
   }
 
-  .hero-text-col {
-    text-align: center;
+  /* El degrade arranca abajo de todo: si sube mas, le borra las piernas y
+     las botas a la foto, que es justo lo que se quiere mostrar. */
+  .hero-editorial-scrim {
+    background: linear-gradient(
+      to top,
+      var(--bg-page) 0%,
+      color-mix(in srgb, var(--bg-page) 94%, transparent) 22%,
+      color-mix(in srgb, var(--bg-page) 55%, transparent) 34%,
+      transparent 46%
+    );
   }
 
-  .hero-subtitle {
-    margin-left: auto;
-    margin-right: auto;
+  .hero-editorial-content {
+    justify-content: flex-end;
+    padding-bottom: 20px;
+    gap: 7px;
   }
 
-  .hero-actions-row {
-    justify-content: center;
+  .hero-kicker {
+    font-size: 0.64rem;
+    letter-spacing: 0.22em;
   }
 
-  .hero-gallery {
-    min-height: 320px;
-    max-width: 420px;
-    margin: 0 auto;
+  .hero-editorial-title {
+    font-size: clamp(2.1rem, 11.5vw, 3.1rem);
+  }
+
+  .hero-editorial-sub {
+    max-width: 38ch;
+    font-size: 0.82rem;
+    line-height: 1.45;
+  }
+
+  .hero-editorial-actions {
+    margin-top: 4px;
+  }
+
+  .hero-editorial-actions .btn-hero-primary,
+  .hero-editorial-actions .btn-hero-outline {
+    padding: 11px 20px;
+    font-size: 0.86rem;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hero-editorial-media {
+    transform: none !important;
   }
 }
 
@@ -560,25 +564,6 @@ button {
 .btn-hero-primary:hover {
   transform: translateY(-3px) scale(1.03);
   box-shadow: 0 14px 38px rgba(236, 111, 166, 0.45);
-}
-
-.btn-hero-glass {
-  background: var(--bg-card);
-  border: 1.5px solid var(--border-color-strong);
-  color: var(--text-main);
-  padding: 14px 32px;
-  border-radius: var(--radius-full);
-  font-size: 1.05rem;
-  font-weight: 700;
-  transition: var(--transition-fast);
-  box-shadow: var(--shadow-sm);
-}
-
-.btn-hero-glass:hover {
-  border-color: var(--accent-gold);
-  color: var(--accent-gold-hover);
-  transform: translateY(-3px);
-  box-shadow: var(--shadow-md);
 }
 
 /* ==========================================================================
@@ -1551,11 +1536,6 @@ button {
     max-width: 100%;
   }
 
-  .hero-wrapper {
-    min-height: 420px;
-    padding: 40px 16px;
-  }
-
   .carousel-slide-content {
     flex-direction: column;
     text-align: center;
@@ -1933,8 +1913,10 @@ button {
 }
 
 .cat-showcase-title {
-  font-size: 1.6rem;
-  font-weight: 800;
+  font-family: var(--font-display);
+  font-size: 2.1rem;
+  font-weight: 600;
+  letter-spacing: -0.005em;
 }
 
 .cat-showcase-search {
@@ -2027,10 +2009,10 @@ button {
 }
 
 .cat-card-name {
-  font-family: var(--font-heading);
-  font-size: 1.25rem;
-  font-weight: 700;
-  letter-spacing: -0.02em;
+  font-family: var(--font-display);
+  font-size: 1.55rem;
+  font-weight: 600;
+  letter-spacing: -0.005em;
 }
 
 .cat-card-tagline {
@@ -2071,8 +2053,8 @@ button {
 .cat-panel-head {
   width: 100%;
   text-align: left;
-  font-family: var(--font-heading);
-  font-size: 0.95rem;
+  font-family: var(--font-display);
+  font-size: 1.12rem;
   font-weight: 700;
   color: var(--text-main);
   padding-bottom: 8px;
@@ -2192,4 +2174,16 @@ button {
 .active-filter-clear:hover {
   color: var(--text-main);
   background: var(--bg-surface-elevated);
+}
+
+/* La serif es mas ancha que la sans: a dos columnas en telefono, los nombres
+   largos ("Indumentaria") se cortaban contra el borde de la card. */
+@media (max-width: 520px) {
+  .cat-card { padding: 14px; }
+  .cat-card-name { font-size: 1.05rem; }
+  .cat-card-tagline { font-size: 0.72rem; }
+  .cat-card-icon { width: 38px; height: 38px; }
+  .cat-card-body { margin-top: 10px; }
+  .cat-card-foot { font-size: 0.68rem; }
+  .cat-showcase-title { font-size: 1.7rem; }
 }
