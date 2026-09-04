@@ -3,15 +3,16 @@
 
 export const CATALOG_CATEGORIES = [
   { id: 'all', name: 'Todos los Productos' },
-  { 
-    id: 'Hombres', 
-    name: 'Hombres', 
-    subcategories: ['Buzos', 'Camperas', 'Pantalon', 'Remeras y Chombas', 'Ropa Interior'] 
+  {
+    id: 'Hombres',
+    name: 'Hombres',
+    subcategories: ['Buzos', 'Camperas', 'Camisas', 'Pantalon', 'Remeras y Chombas', 'Ropa Interior']
   },
-  { 
-    id: 'Mujeres', 
-    name: 'Mujeres', 
-    subcategories: ['Camperas', 'Buzos y abrigos', 'Pantalones y Calzas', 'Remeras', 'Medias', 'Ropa Intima', 'Otros Productos'] 
+  {
+    id: 'Mujeres',
+    name: 'Mujeres',
+    // 'Ropa Intima' se mudo a la categoria Lenceria (ver RETIRED_SUBCATEGORIES).
+    subcategories: ['Camperas', 'Buzos y abrigos', 'Pantalones y Calzas', 'Remeras', 'Medias', 'Otros Productos']
   },
   { 
     id: 'Infantil', 
@@ -31,7 +32,13 @@ export const CATALOG_CATEGORIES = [
   {
     id: 'Calzado',
     name: 'Calzado',
-    subcategories: ['Hombre', 'Mujer', 'Niño', 'Niña']
+    // 'Niño' y 'Niña' se unificaron en 'Infantil' (ver SUBCATEGORY_ALIASES).
+    subcategories: ['Hombre', 'Mujer', 'Infantil']
+  },
+  {
+    id: 'Lencería',
+    name: 'Lencería',
+    subcategories: ['Conjuntos', 'Corpiños', 'Bombachas', 'Bodies', 'Camisones y Batas', 'Portaligas']
   },
   {
     id: 'Bebés',
@@ -45,6 +52,110 @@ export const CATALOG_CATEGORIES = [
   }
 ];
 
+/* ==========================================================================
+   Agrupacion de categorias para el home
+   --------------------------------------------------------------------------
+   El modelo de datos (tabla `categories` de Supabase + campo `category` /
+   `subcategory` de cada producto) es de DOS niveles. Estas constantes agregan
+   un tercer nivel SOLO de navegacion: las 4 cards principales del home
+   agrupan categorias que ya existen, sin tocar la base ni los productos.
+
+       card Indumentaria  ->  categoria Hombres  ->  subcategoria Remeras
+       (grupo, solo UI)        (dato real)            (dato real)
+   ========================================================================== */
+
+// Subcategorias que se retiraron de una categoria porque se mudaron a otra.
+// getCategories() las filtra aunque sigan viniendo de Supabase (el merge de
+// categorias nunca borra, solo suma, asi que hace falta la exclusion explicita).
+export const RETIRED_SUBCATEGORIES = {
+  'Mujeres': ['Ropa Intima', 'Ropa Íntima']
+};
+
+// Subcategorias renombradas. Se muestran con el nombre nuevo y los productos
+// viejos siguen entrando en el filtro (ver normalizeSubcategory).
+export const SUBCATEGORY_ALIASES = {
+  'Calzado': {
+    'Niño': 'Infantil',
+    'Niña': 'Infantil',
+    'Nino': 'Infantil',
+    'Nina': 'Infantil',
+    'Niños': 'Infantil',
+    'Niñas': 'Infantil'
+  }
+};
+
+const normKey = (str) =>
+  (str || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
+
+/** Devuelve el nombre vigente de una subcategoria dentro de una categoria. */
+export const normalizeSubcategory = (categoryName, subcategoryName) => {
+  const aliases = SUBCATEGORY_ALIASES[categoryName];
+  if (!aliases || !subcategoryName) return subcategoryName;
+  const hit = Object.keys(aliases).find((k) => normKey(k) === normKey(subcategoryName));
+  return hit ? aliases[hit] : subcategoryName;
+};
+
+/** true si esa subcategoria ya no corresponde mostrarla en esa categoria. */
+export const isRetiredSubcategory = (categoryName, subcategoryName) => {
+  const retired = RETIRED_SUBCATEGORIES[categoryName];
+  if (!retired || !subcategoryName) return false;
+  return retired.some((r) => normKey(r) === normKey(subcategoryName));
+};
+
+/**
+ * Las 4 cards principales del home.
+ *
+ * Cada `item` es de uno de dos tipos:
+ *   - hoja      { label, category, subcategory }  -> filtra directo
+ *   - columna   { label, category, expand: true } -> lista las subcategorias
+ *                                                    vivas de esa categoria
+ */
+export const HOME_CATEGORY_GROUPS = [
+  {
+    id: 'calzado',
+    name: 'Calzado',
+    tagline: 'Zapatillas y calzado para toda la familia',
+    items: [
+      { label: 'Hombre', category: 'Calzado', subcategory: 'Hombre' },
+      { label: 'Mujer', category: 'Calzado', subcategory: 'Mujer' },
+      { label: 'Infantil', category: 'Calzado', subcategory: 'Infantil' }
+    ]
+  },
+  {
+    id: 'indumentaria',
+    name: 'Indumentaria',
+    tagline: 'Ropa de hombre, mujer e infantil',
+    items: [
+      { label: 'Hombre', category: 'Hombres', expand: true },
+      { label: 'Mujer', category: 'Mujeres', expand: true },
+      { label: 'Infantil', category: 'Infantil', expand: true }
+    ]
+  },
+  {
+    id: 'lenceria',
+    name: 'Lencería',
+    tagline: 'Lencería femenina',
+    items: [
+      { label: 'Lencería', category: 'Lencería', expand: true },
+      // Rescata los productos historicos que quedaron cargados como
+      // Mujeres > Ropa Intima, hasta que se reasignen a Lenceria.
+      { label: 'Ropa íntima', category: 'Mujeres', subcategory: 'Ropa Intima' }
+    ]
+  },
+  {
+    id: 'bebes',
+    name: 'Bebés',
+    tagline: 'Todo para los más chiquitos',
+    items: [
+      { label: 'Bebés', category: 'Bebés', expand: true }
+    ]
+  }
+];
+
+// Categorias que no entran en las 4 cards y se muestran como accesos chicos
+// debajo de la grilla principal.
+export const SECONDARY_CATEGORY_IDS = ['Blanquería', 'Perfumería', 'Complementos'];
+
 // Helper para devolver el precio mayorista (sin recargo minorista)
 export const calcRetail = (wholesale) => wholesale;
 
@@ -52,6 +163,7 @@ export const DEFAULT_CATEGORY_COLORS = {
   'Hombres': {
     'Buzos': ['Negro', 'Gris Topo', 'Blanco', 'Bordó', 'Azul Marino', 'Rosa', 'Surtido'],
     'Camperas': ['Negro', 'Azul Marino', 'Verde Militar', 'Gris', 'Surtido'],
+    'Camisas': ['Blanco', 'Celeste', 'Negro', 'Beige', 'Surtido'],
     'Pantalon': ['Negro', 'Gris', 'Azul', 'Beige', 'Surtido'],
     'Remeras y Chombas': ['Negro', 'Blanco', 'Gris', 'Azul', 'Rojo', 'Surtido'],
     'Ropa Interior': ['Surtido', 'Negro', 'Blanco', 'Gris']
@@ -62,8 +174,15 @@ export const DEFAULT_CATEGORY_COLORS = {
     'Pantalones y Calzas': ['Negro', 'Gris', 'Azul', 'Fucsia', 'Surtido'],
     'Remeras': ['Blanco', 'Negro', 'Rosa', 'Lila', 'Rojo', 'Surtido'],
     'Medias': ['Surtido', 'Blanco', 'Negro'],
-    'Ropa Intima': ['Surtido', 'Negro', 'Blanco', 'Nude'],
     'Otros Productos': ['Surtido', 'Único']
+  },
+  'Lencería': {
+    'Conjuntos': ['Negro', 'Blanco', 'Nude', 'Rojo', 'Surtido'],
+    'Corpiños': ['Negro', 'Blanco', 'Nude', 'Surtido'],
+    'Bombachas': ['Negro', 'Blanco', 'Nude', 'Surtido'],
+    'Bodies': ['Negro', 'Blanco', 'Rojo', 'Surtido'],
+    'Camisones y Batas': ['Negro', 'Rosa', 'Blanco', 'Surtido'],
+    'Portaligas': ['Negro', 'Rojo', 'Surtido']
   },
   'Infantil': {
     'Indumentaria Infantil': ['Rosa', 'Celeste', 'Amarillo', 'Blanco', 'Azul', 'Rojo', 'Lila', 'Surtido']
@@ -77,8 +196,7 @@ export const DEFAULT_CATEGORY_COLORS = {
   'Calzado': {
     'Hombre': ['Negro', 'Blanco', 'Gris', 'Marrón', 'Surtido'],
     'Mujer': ['Negro', 'Blanco', 'Beige', 'Rosa', 'Surtido'],
-    'Niño': ['Negro', 'Azul', 'Gris', 'Surtido'],
-    'Niña': ['Rosa', 'Blanco', 'Lila', 'Surtido']
+    'Infantil': ['Negro', 'Azul', 'Rosa', 'Blanco', 'Lila', 'Surtido']
   },
   'Bebés': {
     'Niños': ['Celeste', 'Blanco', 'Gris', 'Surtido'],
@@ -437,7 +555,7 @@ export const CATALOG_PRODUCTS = [
     code: 'dv018',
     name: 'Zapatillas Rosa',
     category: 'Calzado',
-    subcategory: 'Niña',
+    subcategory: 'Infantil',
     wholesale_price: 21000,
     price: calcRetail(21000),
     stock: 15,

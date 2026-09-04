@@ -1,66 +1,69 @@
 'use client';
 
-import { Search } from 'lucide-react';
+import { X } from 'lucide-react';
 import ShareCategoryButton from './ShareCategoryButton';
 
+/**
+ * Barra del catalogo: titulo, buscador y el filtro activo.
+ *
+ * La eleccion de categoria vive ahora en <CategoryShowcase /> (las 4 cards
+ * del home), asi que aca ya no va la fila de chips con TODAS las categorias
+ * — quedaba duplicada y era justo lo que recargaba visualmente la pagina.
+ * Se conserva la barra de subcategorias, que es la navegacion fina una vez
+ * que el visitante ya eligio una categoria.
+ */
 export default function CategoryNav({
   categories,
   selectedCategory,
   onSelectCategory,
   selectedSubcategory,
   onSelectSubcategory,
-  searchQuery,
-  setSearchQuery
+  hasSearch = false
 }) {
-  const activeCategoryObj = categories.find(c => c.id === selectedCategory);
-  const isFiltered = selectedCategory && selectedCategory !== 'all';
+  const activeCategoryObj = categories.find((c) => c.id === selectedCategory);
+  const isFiltered = Boolean(selectedCategory) && selectedCategory !== 'all';
+  const activeName = activeCategoryObj?.name || selectedCategory;
+
+  const heading = isFiltered
+    ? activeName
+    : hasSearch
+      ? 'Resultados de búsqueda'
+      : 'Buscá en el catálogo';
+
+  const clearFilter = () => {
+    onSelectCategory('all');
+    onSelectSubcategory(null);
+  };
 
   return (
     <div id="catalogo" style={{ marginBottom: '24px' }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '12px', marginBottom: '16px' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
-          <h2 style={{ fontSize: '1.6rem', fontWeight: 800 }}>Nuestras Categorías Mayoristas</h2>
+          <h2 style={{ fontSize: '1.6rem', fontWeight: 800 }}>{heading}</h2>
           {isFiltered && (
             <ShareCategoryButton
-              label={selectedSubcategory ? `${selectedSubcategory} de ${activeCategoryObj?.name || selectedCategory}` : (activeCategoryObj?.name || selectedCategory)}
+              label={selectedSubcategory ? `${selectedSubcategory} de ${activeName}` : activeName}
             />
           )}
         </div>
-        <div style={{ position: 'relative', width: '100%', maxWidth: '360px' }}>
-          <Search size={18} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
-          <input
-            type="text"
-            placeholder="Buscar por prenda, modelo o categoría..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="form-input"
-            style={{ paddingLeft: '38px', borderRadius: 'var(--radius-full)', width: '100%' }}
-          />
-        </div>
       </div>
 
-      {/* Main Categories Bar */}
-      <div className="category-bar-wrapper">
-        {categories.map((cat) => (
-          <button
-            key={cat.id}
-            onClick={() => {
-              onSelectCategory(cat.id);
-              onSelectSubcategory(null);
-            }}
-            className={`category-chip ${selectedCategory === cat.id ? 'active' : ''}`}
-          >
-            {cat.name}
-          </button>
-        ))}
-      </div>
-
-      {/* Subcategories Bar */}
-      {activeCategoryObj && activeCategoryObj.subcategories && (
-        <div className="subcategory-bar">
-          <span style={{ fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-muted)', marginRight: '6px' }}>
-            Subcategorías:
+      {/* Filtro activo + salida rapida */}
+      {isFiltered && (
+        <div className="active-filter-row">
+          <span className="active-filter-tag">
+            {activeName}
+            {selectedSubcategory ? ` · ${selectedSubcategory}` : ''}
           </span>
+          <button type="button" onClick={clearFilter} className="active-filter-clear">
+            <X size={14} /> Ver todas las categorías
+          </button>
+        </div>
+      )}
+
+      {/* Subcategorias de la categoria elegida */}
+      {activeCategoryObj && activeCategoryObj.subcategories?.length > 0 && (
+        <div className="subcategory-bar">
           <button
             onClick={() => onSelectSubcategory(null)}
             className={`subcat-chip ${selectedSubcategory === null ? 'active' : ''}`}

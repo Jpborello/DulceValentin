@@ -1,5 +1,10 @@
 import { supabase } from './supabaseClient';
-import { CATALOG_PRODUCTS, CATALOG_CATEGORIES } from './catalogData';
+import {
+  CATALOG_PRODUCTS,
+  CATALOG_CATEGORIES,
+  normalizeSubcategory,
+  isRetiredSubcategory
+} from './catalogData';
 
 export const INITIAL_PRODUCTS = CATALOG_PRODUCTS;
 export const CATEGORIES = CATALOG_CATEGORIES;
@@ -416,9 +421,22 @@ class DataStore {
       }
     });
 
+    // Ultimo paso: aplicar los renombres y las bajas de subcategorias. Va aca
+    // (y no en el fetch) porque este es el unico embudo por el que la UI ve las
+    // categorias, vengan del catalogo de codigo o de Supabase — y el merge de
+    // Supabase suma subcategorias pero nunca borra, asi que sin esto una
+    // subcategoria dada de baja reaparece en cuanto la base la sigue teniendo.
+    const cleaned = Array.from(catMap.values()).map((c) => {
+      const catName = c.name || c.id;
+      const subs = (c.subcategories || [])
+        .filter((sub) => !isRetiredSubcategory(catName, sub))
+        .map((sub) => normalizeSubcategory(catName, sub));
+      return { ...c, subcategories: Array.from(new Set(subs)) };
+    });
+
     return [
       { id: 'all', name: 'Todos los Productos', count: this.products.length },
-      ...Array.from(catMap.values())
+      ...cleaned
     ];
   }
 

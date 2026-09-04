@@ -43,9 +43,9 @@ export default function ProductGrid({ products, onAddToCart, isWholesaleQualifie
 
   return (
     <div className="products-grid">
-      {products.map((product, idx) => {
+      {products.map((product) => {
         return (
-          <div key={product.id} className={`product-card product-card-blob-${(idx % 6) + 1}`}>
+          <div key={product.id} className="product-card">
             <div
               className="product-card-clickzone"
               onClick={() => onOpenDetail && onOpenDetail(product)}

@@ -5,6 +5,7 @@ import Header from '@/components/Header';
 import HeroSection from '@/components/HeroSection';
 import CarouselSection from '@/components/CarouselSection';
 import CategoryNav from '@/components/CategoryNav';
+import CategoryShowcase from '@/components/CategoryShowcase';
 import ProductGrid from '@/components/ProductGrid';
 import CartDrawer from '@/components/CartDrawer';
 import AuthModal from '@/components/AuthModal';
@@ -325,6 +326,13 @@ export default function Home() {
       .map((p) => p.id)
   );
 
+  // El home ya no lista todo el catalogo de entrada: los productos viven
+  // dentro de las categorias. La grilla aparece solo cuando el visitante
+  // eligio una categoria o esta buscando algo.
+  const hasSearch = searchQuery.trim() !== '';
+  const isCategoryFiltered = Boolean(selectedCategory) && selectedCategory !== 'all';
+  const showProductGrid = hasSearch || isCategoryFiltered;
+
   const totalCartItemsCount = cartItems.reduce((sum, item) => sum + item.quantity, 0);
   const cartSubtotal = cartItems.reduce((sum, item) => {
     const p = item.product.wholesale_price || item.product.price || 0;
@@ -385,7 +393,9 @@ export default function Home() {
       {/* Hero Section */}
       <HeroSection
         onExploreCatalog={() => {
-          const el = document.getElementById('catalogo');
+          // Sin filtro activo no existe #catalogo (la grilla no esta montada),
+          // asi que el boton del hero lleva a las cards de categorias.
+          const el = document.getElementById('catalogo') || document.getElementById('categorias');
           if (el) el.scrollIntoView({ behavior: 'smooth' });
         }}
       />
@@ -402,42 +412,58 @@ export default function Home() {
       {/* Trust Bar */}
       <TrustBar />
 
-      {/* Main Catalog Area */}
-      <main className="main-catalog-layout">
-        <CategoryNav
-          categories={categories}
-          selectedCategory={selectedCategory}
-          onSelectCategory={setSelectedCategory}
-          selectedSubcategory={selectedSubcategory}
-          onSelectSubcategory={setSelectedSubcategory}
-          searchQuery={searchQuery}
-          setSearchQuery={setSearchQuery}
-        />
+      {/* Categorías principales: 4 cards + accesos secundarios */}
+      <CategoryShowcase
+        categories={categories}
+        products={products}
+        selectedCategory={selectedCategory}
+        selectedSubcategory={selectedSubcategory}
+        onSelect={(category, subcategory) => {
+          setSelectedCategory(category);
+          setSelectedSubcategory(subcategory);
+        }}
+        searchQuery={searchQuery}
+        setSearchQuery={setSearchQuery}
+      />
 
-        <ProductGrid
-          products={filteredProducts.slice(0, visibleCount)}
-          onAddToCart={handleAddToCart}
-          isWholesaleQualified={isWholesaleQualified}
-          onOpenDetail={setDetailProduct}
-          topSellingIds={topSellingIds}
-        />
+      {/* Catálogo: aparece recién cuando se eligió una categoría o hay una
+          búsqueda. Sin filtro, el home termina en las cards de categorías. */}
+      {showProductGrid && (
+        <main className="main-catalog-layout">
+          <CategoryNav
+            categories={categories}
+            selectedCategory={selectedCategory}
+            onSelectCategory={setSelectedCategory}
+            selectedSubcategory={selectedSubcategory}
+            onSelectSubcategory={setSelectedSubcategory}
+            hasSearch={hasSearch}
+          />
 
-        {filteredProducts.length > 0 && (
-          <div className="catalog-footer-controls">
-            <span className="catalog-count-label">
-              Mostrando {Math.min(visibleCount, filteredProducts.length)} de {filteredProducts.length} productos
-            </span>
-            {visibleCount < filteredProducts.length && (
-              <button
-                onClick={() => setVisibleCount((prev) => prev + PRODUCTS_PER_PAGE)}
-                className="btn-load-more"
-              >
-                Ver más productos
-              </button>
-            )}
-          </div>
-        )}
-      </main>
+          <ProductGrid
+            products={filteredProducts.slice(0, visibleCount)}
+            onAddToCart={handleAddToCart}
+            isWholesaleQualified={isWholesaleQualified}
+            onOpenDetail={setDetailProduct}
+            topSellingIds={topSellingIds}
+          />
+
+          {filteredProducts.length > 0 && (
+            <div className="catalog-footer-controls">
+              <span className="catalog-count-label">
+                Mostrando {Math.min(visibleCount, filteredProducts.length)} de {filteredProducts.length} productos
+              </span>
+              {visibleCount < filteredProducts.length && (
+                <button
+                  onClick={() => setVisibleCount((prev) => prev + PRODUCTS_PER_PAGE)}
+                  className="btn-load-more"
+                >
+                  Ver más productos
+                </button>
+              )}
+            </div>
+          )}
+        </main>
+      )}
 
       {/* Product Detail Modal */}
       <ProductDetailModal

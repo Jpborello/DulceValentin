@@ -24,11 +24,6 @@
   --border-color: #F3DCE7;
   --border-color-strong: #E4BFD4;
 
-  /* Manchas de acuarela decorativas: rosa pastel + celeste pastel.
-     Tonos suaves pero con cuerpo suficiente para leerse sobre --bg-page. */
-  --blob-pink: #F0A3C6;
-  --blob-blue: #96D0EC;
-
   --shadow-sm: 0 2px 8px rgba(36, 30, 40, 0.05);
   --shadow-md: 0 8px 24px rgba(36, 30, 40, 0.09);
   --shadow-lg: 0 18px 44px rgba(36, 30, 40, 0.16);
@@ -76,8 +71,6 @@
     --border-color: #423262;
     --border-color-strong: #55407A;
 
-    --blob-pink: #B22368;
-    --blob-blue: #1C7690;
     --shadow-gold: 0 10px 28px rgba(245, 85, 157, 0.45);
   }
 }
@@ -104,8 +97,6 @@
   --border-color: #423262;
   --border-color-strong: #55407A;
 
-  --blob-pink: #B22368;
-  --blob-blue: #1C7690;
   --shadow-gold: 0 10px 28px rgba(245, 85, 157, 0.45);
 }
 
@@ -387,30 +378,6 @@ button {
   background: var(--bg-page);
 }
 
-.hero-blob {
-  position: absolute;
-  border-radius: 50%;
-  filter: blur(70px);
-  opacity: 0.6;
-  z-index: 0;
-  pointer-events: none;
-}
-
-.hero-blob-pink {
-  width: 420px;
-  height: 420px;
-  top: -140px;
-  left: -110px;
-  background: var(--blob-pink);
-}
-
-.hero-blob-blue {
-  width: 380px;
-  height: 380px;
-  bottom: -150px;
-  right: -90px;
-  background: var(--blob-blue);
-}
 
 .hero-container {
   position: relative;
@@ -639,7 +606,7 @@ button {
   display: flex;
   align-items: center;
   gap: 28px;
-  background: linear-gradient(120deg, var(--blob-pink) 0%, var(--bg-card) 55%, var(--blob-blue) 100%);
+  background: var(--bg-surface-elevated);
   border-radius: var(--radius-lg);
   padding: 28px;
   margin-bottom: 24px;
@@ -837,7 +804,7 @@ button {
 
 /* Top Seller Card */
 .top-seller-box {
-  background: linear-gradient(155deg, var(--blob-blue) 0%, var(--bg-card) 55%, var(--blob-pink) 130%);
+  background: var(--bg-surface-elevated);
   color: var(--text-main);
   border-radius: var(--radius-lg);
   padding: 24px;
@@ -1035,57 +1002,25 @@ button {
   box-shadow: 0 14px 32px rgba(255, 90, 31, 0.4);
 }
 
-/* Card "flotante": sin panel blanco de fondo, la foto y el texto quedan
-   sobre una mancha de acuarela (mascara SVG organica en /public/blobs).
-   isolation:isolate contiene esa mancha dentro de la propia card para que
-   no se filtre visualmente detras de las cards vecinas de la grilla. */
+/* Card limpia: superficie plana, borde fino y una sombra apenas marcada.
+   El color queda para los acentos (precio, badges, boton), no para el fondo. */
 .product-card {
   min-width: 0;
-  background: transparent;
-  border: none;
-  border-radius: var(--radius-lg);
-  padding: 10px;
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  padding: 12px;
   display: flex;
   flex-direction: column;
   justify-content: space-between;
   transition: var(--transition-normal);
   position: relative;
-  isolation: isolate;
-}
-
-.product-card::before {
-  content: '';
-  position: absolute;
-  inset: -4% -6%;
-  z-index: -1;
-  background-image: url('/blobs/watercolor-pink-1.png');
-  background-size: 100% 100%;
-  background-repeat: no-repeat;
-  background-position: center;
-  transition: var(--transition-normal);
-}
-
-.product-card-blob-2::before { background-image: url('/blobs/watercolor-blue-2.png'); }
-.product-card-blob-3::before { background-image: url('/blobs/watercolor-pink-3.png'); }
-.product-card-blob-4::before { background-image: url('/blobs/watercolor-blue-1.png'); }
-.product-card-blob-5::before { background-image: url('/blobs/watercolor-pink-2.png'); }
-.product-card-blob-6::before { background-image: url('/blobs/watercolor-blue-3.png'); }
-
-/* Las manchas son pastel (pensadas para el fondo claro). En modo oscuro se
-   oscurecen con un filtro para que el texto claro de la card siga teniendo
-   contraste, en vez de quedar blanco sobre rosa/celeste claro. */
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme='light']) .product-card::before {
-    filter: brightness(0.42) saturate(1.35);
-  }
-}
-
-:root[data-theme='dark'] .product-card::before {
-  filter: brightness(0.42) saturate(1.35);
 }
 
 .product-card:hover {
-  transform: translateY(-6px);
+  transform: translateY(-4px);
+  border-color: var(--border-color-strong);
+  box-shadow: var(--shadow-md);
 }
 
 .product-card:hover::before {
@@ -1786,40 +1721,6 @@ button {
   isolation: isolate;
 }
 
-.trust-bar-item::before {
-  content: '';
-  position: absolute;
-  inset: -30% -8%;
-  z-index: -1;
-  background-image: url('/blobs/watercolor-pink-1.png');
-  background-size: 100% 100%;
-  background-repeat: no-repeat;
-  background-position: center;
-}
-
-.trust-bar-item:nth-child(2)::before {
-  background-image: url('/blobs/watercolor-blue-2.png');
-}
-
-.trust-bar-item:nth-child(3)::before {
-  background-image: url('/blobs/watercolor-pink-3.png');
-}
-
-.trust-bar-item:nth-child(4)::before {
-  background-image: url('/blobs/watercolor-blue-1.png');
-}
-
-/* Mismo criterio que en las cards: en modo oscuro la mancha pastel se
-   oscurece para no comerse el texto claro. */
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme='light']) .trust-bar-item::before {
-    filter: brightness(0.42) saturate(1.35);
-  }
-}
-
-:root[data-theme='dark'] .trust-bar-item::before {
-  filter: brightness(0.42) saturate(1.35);
-}
 
 .trust-bar-icon {
   flex-shrink: 0;
@@ -2007,3 +1908,288 @@ button {
   }
 }
 
+
+/* ==========================================================================
+   Categorias principales del home (CategoryShowcase)
+   --------------------------------------------------------------------------
+   4 cards cuadradas. Estilo deliberadamente sobrio: superficie plana, borde
+   fino, y el color de marca reservado para el estado activo — el peso visual
+   lo tienen que llevar las fotos de producto, no el fondo.
+   ========================================================================== */
+.cat-showcase {
+  width: 100%;
+  max-width: 1320px;
+  margin: 0 auto 40px auto;
+  padding: 0 24px;
+}
+
+.cat-showcase-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-bottom: 18px;
+}
+
+.cat-showcase-title {
+  font-size: 1.6rem;
+  font-weight: 800;
+}
+
+.cat-showcase-search {
+  position: relative;
+  width: 100%;
+  max-width: 360px;
+}
+
+.cat-showcase-search > svg {
+  position: absolute;
+  left: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--text-muted);
+  pointer-events: none;
+}
+
+.cat-showcase-search input {
+  width: 100%;
+  padding-left: 38px;
+  border-radius: var(--radius-full);
+}
+
+.cat-showcase-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 16px;
+}
+
+@media (max-width: 900px) {
+  .cat-showcase-grid { grid-template-columns: repeat(2, 1fr); }
+}
+
+.cat-card {
+  aspect-ratio: 1 / 1;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  align-items: flex-start;
+  text-align: left;
+  padding: 20px;
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  color: var(--text-main);
+  transition: var(--transition-fast);
+}
+
+.cat-card:hover {
+  transform: translateY(-2px);
+  border-color: var(--border-color-strong);
+  box-shadow: var(--shadow-sm);
+}
+
+.cat-card.open,
+.cat-card.active {
+  border-color: var(--accent-gold);
+  box-shadow: inset 0 0 0 1px var(--accent-gold);
+}
+
+.cat-card-icon {
+  flex-shrink: 0;
+  width: 44px;
+  height: 44px;
+  border-radius: var(--radius-full);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg-surface-elevated);
+  color: var(--accent-gold-hover);
+  transition: var(--transition-fast);
+}
+
+.cat-card.open .cat-card-icon,
+.cat-card.active .cat-card-icon {
+  background: var(--accent-gold);
+  color: #FFFFFF;
+}
+
+/* margin-bottom:auto absorbe el espacio libre del space-between, asi el
+   icono y el texto quedan juntos arriba y solo el pie baja al fondo. */
+.cat-card-body {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  margin-top: 14px;
+  margin-bottom: auto;
+}
+
+.cat-card-name {
+  font-family: var(--font-heading);
+  font-size: 1.25rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+.cat-card-tagline {
+  font-size: 0.8rem;
+  line-height: 1.35;
+  color: var(--text-muted);
+}
+
+.cat-card-foot {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--text-light);
+}
+
+.cat-card-chevron { transition: transform var(--transition-fast); }
+.cat-card.open .cat-card-chevron { transform: rotate(180deg); }
+
+/* Panel desplegable con las categorias y subcategorias del grupo abierto */
+.cat-panel {
+  margin-top: 16px;
+  padding: 22px;
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+}
+
+.cat-panel-cols {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 24px;
+}
+
+.cat-panel-head {
+  width: 100%;
+  text-align: left;
+  font-family: var(--font-heading);
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: var(--text-main);
+  padding-bottom: 8px;
+  margin-bottom: 10px;
+  border-bottom: 1px solid var(--border-color);
+  transition: var(--transition-fast);
+}
+
+.cat-panel-head:hover { color: var(--accent-gold-hover); }
+
+.cat-panel-head.active {
+  color: var(--accent-gold-hover);
+  border-bottom-color: var(--accent-gold);
+}
+
+.cat-panel-list {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.cat-panel-link {
+  width: 100%;
+  text-align: left;
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  padding: 5px 8px;
+  border-radius: var(--radius-sm);
+  transition: var(--transition-fast);
+}
+
+.cat-panel-link:hover {
+  background: var(--bg-surface-elevated);
+  color: var(--text-main);
+}
+
+.cat-panel-link.active {
+  background: var(--accent-gold);
+  color: #FFFFFF;
+  font-weight: 700;
+}
+
+.cat-panel-empty {
+  font-size: 0.8rem;
+  font-style: italic;
+  color: var(--text-light);
+}
+
+/* Accesos a las categorias que no entran en las 4 cards */
+.cat-secondary {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+.cat-secondary-label {
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--text-muted);
+}
+
+.cat-secondary-chip {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  padding: 6px 14px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-full);
+  transition: var(--transition-fast);
+}
+
+.cat-secondary-chip:hover {
+  border-color: var(--border-color-strong);
+  color: var(--text-main);
+}
+
+.cat-secondary-chip.active {
+  background: var(--accent-gold);
+  border-color: var(--accent-gold);
+  color: #FFFFFF;
+}
+
+/* Fila del filtro activo del catalogo */
+.active-filter-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.active-filter-tag {
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: var(--text-main);
+  background: var(--bg-surface-elevated);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-full);
+  padding: 6px 14px;
+}
+
+.active-filter-clear {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  padding: 6px 10px;
+  border-radius: var(--radius-full);
+  transition: var(--transition-fast);
+}
+
+.active-filter-clear:hover {
+  color: var(--text-main);
+  background: var(--bg-surface-elevated);
+}

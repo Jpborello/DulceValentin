@@ -5,9 +5,6 @@ import { Sparkles, ArrowRight, Store } from 'lucide-react';
 export default function HeroSection({ onExploreCatalog }) {
   return (
     <section className="hero-wrapper">
-      <div className="hero-blob hero-blob-pink" aria-hidden="true"></div>
-      <div className="hero-blob hero-blob-blue" aria-hidden="true"></div>
-
       <div className="hero-container">
         <div className="hero-text-col">
           <div className="hero-badge">
