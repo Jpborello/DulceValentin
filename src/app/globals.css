@@ -578,6 +578,17 @@ button {
   z-index: 10;
 }
 
+/* El -40px de arriba esta pensado para que la card "flote" un poco sobre el
+   hero en desktop, donde sobra alto. En mobile el hero termina con los
+   botones pegados abajo (.hero-editorial-content { justify-content: flex-end })
+   y ese mismo -40px con z-index:10 les tapaba media fila de botones, dejando
+   "Ver catálogo" y "Categorías" parcialmente tapados y no clickeables. */
+@media (max-width: 760px) {
+  .carousel-section-container {
+    margin-top: 16px;
+  }
+}
+
 .carousel-card-grid {
   display: grid;
   grid-template-columns: 2fr 1fr;

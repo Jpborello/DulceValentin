@@ -218,8 +218,8 @@ export default function Home() {
     setCartItems((prev) => prev.filter(item => item.variantKey !== variantKey));
   };
 
-  const handleCheckout = (cart, clientDetails) => {
-    const order = dataStore.createOrder(cart, {
+  const handleCheckout = async (cart, clientDetails) => {
+    const order = await dataStore.createOrder(cart, {
       name: clientDetails?.name || currentUser?.name || 'Cliente Mayorista',
       phone: clientDetails?.phone || currentUser?.phone || 'Sin especificar',
       dni: clientDetails?.dni || currentUser?.dni || 'Sin especificar',

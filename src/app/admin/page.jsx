@@ -12,11 +12,20 @@ import StockTab from '@/components/admin/StockTab';
 import PricesTab from '@/components/admin/PricesTab';
 import CategoriesTab from '@/components/admin/CategoriesTab';
 import BulkImportTab from '@/components/admin/BulkImportTab';
+import AddProductTab from '@/components/admin/AddProductTab';
 import ImagesTab from '@/components/admin/ImagesTab';
 import OrdersTab from '@/components/admin/OrdersTab';
 import ClientsTab from '@/components/admin/ClientsTab';
 import RaffleTab from '@/components/admin/RaffleTab';
 import WhatsAppTab from '@/components/admin/WhatsAppTab';
+
+// Desactivado a pedido: /api/admin/whatsapp usa SUPABASE_SERVICE_ROLE_KEY,
+// que en .env.local todavia esta sin completar ("COMPLETAR_falta_la_secret_key..."),
+// asi que cada llamada explota con 500. Hasta que se cargue la service role
+// key real, se apaga toda la pestana y el polling/notificaciones de WhatsApp
+// para que no siga generando errores en el server. Para reactivar: volver
+// esto a "true" (y completar la key en .env.local).
+const WHATSAPP_ENABLED = false;
 
 export default function AdminPage() {
   // Admin Authentication State with Supabase Auth
@@ -78,6 +87,7 @@ export default function AdminPage() {
   // enfocada, el sonido propio de esa pestana ya avisa, asi que no duplica.
   useEffect(() => {
     if (!isAuthenticated) return;
+    if (!WHATSAPP_ENABLED) return;
     if (typeof window === 'undefined' || !('Notification' in window)) return;
 
     const notifyNewMessage = (chatPhone, content) => {
@@ -262,16 +272,31 @@ export default function AdminPage() {
         .subscribe();
     }
 
+    // Mismo mecanismo para los boletos del sorteo: la pestaña "Sorteo en
+    // Vivo" se usa para transmitir por Instagram, asi que un boleto nuevo
+    // tiene que aparecer solo mientras se esta al aire, sin refrescar.
+    let raffleTicketsChannel = null;
+    if (supabase) {
+      raffleTicketsChannel = supabase
+        .channel('admin-raffle-tickets-realtime')
+        .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'raffle_tickets' }, (payload) => {
+          dataStore.handleRealtimeTicketInsert(payload.new);
+        })
+        .subscribe();
+    }
+
     // Red de seguridad: si el realtime no llega a disparar (sesion vieja,
     // reconexion del socket, etc.), este polling se asegura de que los
-    // pedidos nuevos aparezcan solos sin depender de un refresh manual.
+    // pedidos y boletos nuevos aparezcan solos sin depender de un refresh manual.
     const ordersPollInterval = setInterval(() => {
       dataStore.fetchOrdersFromSupabase();
+      dataStore.fetchRaffleTicketsFromSupabase();
     }, 15000);
 
     return () => {
       unsubscribe();
       if (ordersChannel) supabase.removeChannel(ordersChannel);
+      if (raffleTicketsChannel) supabase.removeChannel(raffleTicketsChannel);
       clearInterval(ordersPollInterval);
     };
   }, [isAuthenticated]);
@@ -357,9 +382,19 @@ export default function AdminPage() {
     showSuccessNotice('Subcategoría eliminada.');
   };
 
+  const handleCreateProduct = async (data) => {
+    const created = await dataStore.createProduct(data);
+    showSuccessNotice(`Producto creado con código ${created.code}.`);
+    return created;
+  };
+
   const handleBulkImport = (newProducts) => {
-    dataStore.addBulkProducts(newProducts);
-    showSuccessNotice(`${newProducts.length} productos importados masivamente.`);
+    // dataStore.bulkInsertProducts es el que arma el codigo unico automatico
+    // (correlativo, 0001, 0002...) para cada producto que no traiga uno
+    // propio. Antes esto llamaba a un metodo "addBulkProducts" que no existe
+    // en dataStore, asi que la carga masiva quedaba rota en silencio.
+    dataStore.bulkInsertProducts(newProducts);
+    showSuccessNotice(`${newProducts.length} productos importados masivamente, cada uno con su código único.`);
   };
 
   const handleImageUpdate = (id, newImageUrl) => {
@@ -554,7 +589,7 @@ export default function AdminPage() {
         />
       )}
 
-      {activeTab === 'whatsapp' && (
+      {WHATSAPP_ENABLED && activeTab === 'whatsapp' && (
         <WhatsAppTab />
       )}
 
@@ -782,8 +817,15 @@ export default function AdminPage() {
         />
       )}
 
+      {activeTab === 'newProduct' && (
+        <AddProductTab
+          categories={categories}
+          onCreateProduct={handleCreateProduct}
+        />
+      )}
+
       {activeTab === 'bulk' && (
-        <BulkImportTab 
+        <BulkImportTab
           onBulkImport={handleBulkImport}
         />
       )}

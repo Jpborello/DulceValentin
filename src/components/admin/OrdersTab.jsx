@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import { RefreshCw, Image as ImageIcon, ExternalLink, X, Eye, Download, Trash2, Printer, Bell, BellOff, CheckCircle2, Sparkles, Pencil, Minus, Plus, UserPlus, Wifi, Gift } from 'lucide-react';
 import { dataStore } from '@/lib/dataStore';
 import { getProductColors } from '@/lib/catalogData';
@@ -16,6 +16,10 @@ export default function OrdersTab({ orders, mpTransfers, mpConfigured, mpLoading
   const [selectedPrintOrder, setSelectedPrintOrder] = useState(null);
   const [cleanNotice, setCleanNotice] = useState('');
   const [remotePrintState, setRemotePrintState] = useState(null); // { status: 'sending'|'queued'|'printing'|'printed'|'error', message }
+
+  // Aviso proactivo: cuantos comprobantes ya pasaron los 60 dias y se
+  // pueden liberar. No borra nada solo; el admin sigue apretando el boton.
+  const oldReceiptsCount = useMemo(() => dataStore.getOldReceiptsCount(60), [orders]);
 
   useEffect(() => {
     setRemotePrintState(null);
@@ -536,12 +540,12 @@ export default function OrdersTab({ orders, mpTransfers, mpConfigured, mpLoading
   };
 
   const handleCleanOldReceipts = async () => {
-    if (confirm('¿Desea eliminar las fotos de comprobantes con más de 30 días de antigüedad en Supabase Storage? (Los datos del pedido y montos se mantendrán guardados).')) {
-      const count = await dataStore.cleanOldReceipts(30);
+    if (confirm('¿Desea eliminar las fotos de comprobantes con más de 60 días de antigüedad en Supabase Storage? (Los datos del pedido y montos se mantendrán guardados).')) {
+      const count = await dataStore.cleanOldReceipts(60);
       if (count > 0) {
-        setCleanNotice(`✓ Se eliminaron ${count} comprobante(s) antiguo(s) de más de 30 días.`);
+        setCleanNotice(`✓ Se eliminaron ${count} comprobante(s) antiguo(s) de más de 60 días.`);
       } else {
-        setCleanNotice('ℹ️ No se encontraron comprobantes con más de 30 días de antigüedad para eliminar.');
+        setCleanNotice('ℹ️ No se encontraron comprobantes con más de 60 días de antigüedad para eliminar.');
       }
       setTimeout(() => setCleanNotice(''), 5000);
     }
@@ -759,6 +763,19 @@ export default function OrdersTab({ orders, mpTransfers, mpConfigured, mpLoading
         </div>
       )}
 
+      {!cleanNotice && oldReceiptsCount > 0 && (
+        <div className="no-print" style={{ backgroundColor: '#FFFBEB', color: '#92400E', border: '1px solid #FDE68A', padding: '10px 14px', borderRadius: '6px', fontSize: '0.85rem', fontWeight: 700, marginBottom: '16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '8px' }}>
+          <span>⚠️ Hay {oldReceiptsCount} comprobante(s) con más de 60 días. Podés liberar espacio con "Limpiar Fotos".</span>
+          <button
+            onClick={handleCleanOldReceipts}
+            className="btn-secondary"
+            style={{ fontSize: '0.78rem', padding: '4px 10px', color: '#92400E', borderColor: '#FDE68A' }}
+          >
+            Limpiar ahora
+          </button>
+        </div>
+      )}
+
       <div className="no-print" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', flexWrap: 'wrap', gap: '12px' }}>
         <div>
           <h2 style={{ fontSize: '1.4rem', fontWeight: 800, color: 'var(--text-main)' }}>
@@ -791,7 +808,7 @@ export default function OrdersTab({ orders, mpTransfers, mpConfigured, mpLoading
             className="btn-secondary"
             style={{ fontSize: '0.82rem', padding: '6px 12px', display: 'inline-flex', alignItems: 'center', gap: '6px', color: '#DC2626', borderColor: '#FCA5A5' }}
           >
-            <Trash2 size={14} /> Limpiar Fotos (+30 días)
+            <Trash2 size={14} /> Limpiar Fotos (+60 días){oldReceiptsCount > 0 ? ` (${oldReceiptsCount})` : ''}
           </button>
         </div>
       </div>

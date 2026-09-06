@@ -5,6 +5,7 @@ import { X, Trash2, Plus, Minus, ShoppingBag, Truck, Store, Upload, CheckCircle2
 import { supabase } from '@/lib/supabaseClient';
 import { dataStore } from '@/lib/dataStore';
 import useCloseOnBack from '@/lib/useCloseOnBack';
+import { compressImage } from '@/lib/compressImage';
 
 export default function CartDrawer({
   isOpen,
@@ -30,6 +31,11 @@ export default function CartDrawer({
   
   // Checkout & Receipt state
   const [createdOrder, setCreatedOrder] = useState(null);
+  // El pedido ahora se guarda en Supabase y (si corresponde) pide los
+  // boletos del sorteo antes de mostrar la pantalla de confirmacion, asi
+  // que deja de ser instantaneo — este estado evita que un doble click
+  // dispare dos pedidos mientras se espera esa confirmacion real.
+  const [isSubmittingOrder, setIsSubmittingOrder] = useState(false);
   const [receiptImage, setReceiptImage] = useState(null);
   const [receiptUploaded, setReceiptUploaded] = useState(false);
   const [copiedAlias, setCopiedAlias] = useState(false);
@@ -99,9 +105,9 @@ export default function CartDrawer({
   const amountNeeded = Math.max(0, MIN_PURCHASE_THRESHOLD - cartSubtotal);
   const progressPercent = Math.min(100, Math.round((cartSubtotal / MIN_PURCHASE_THRESHOLD) * 100));
 
-  const handleCreateOrder = (e) => {
+  const handleCreateOrder = async (e) => {
     e.preventDefault();
-    if (cartItems.length === 0) return;
+    if (cartItems.length === 0 || isSubmittingOrder) return;
 
     if (!isMinPurchaseReached) {
       alert(`El mínimo de compra mayorista es de $50.000. Te faltan $${amountNeeded.toLocaleString('es-AR')} para poder finalizar el pedido.`);
@@ -139,19 +145,25 @@ export default function CartDrawer({
       if (!seguir) return;
     }
 
-    const orderData = onCheckout(cartItems, {
-      name,
-      phone,
-      dni,
-      locality,
-      address,
-      postalCode,
-      floorApt,
-      isRegistered: Boolean(currentUser),
-      deliveryMethod: deliveryMethod === 'envio' ? 'Envío a Domicilio / Transporte' : 'Retiro por Sucursal (Pte. Perón 5349/5305/5265)',
-      voucherId: voucher?.id || null,
-      voucherAmount: voucherDiscount
-    });
+    setIsSubmittingOrder(true);
+    let orderData;
+    try {
+      orderData = await onCheckout(cartItems, {
+        name,
+        phone,
+        dni,
+        locality,
+        address,
+        postalCode,
+        floorApt,
+        isRegistered: Boolean(currentUser),
+        deliveryMethod: deliveryMethod === 'envio' ? 'Envío a Domicilio / Transporte' : 'Retiro por Sucursal (Pte. Perón 5349/5305/5265)',
+        voucherId: voucher?.id || null,
+        voucherAmount: voucherDiscount
+      });
+    } finally {
+      setIsSubmittingOrder(false);
+    }
 
     // Si se uso un baucher, lo marcamos como canjeado para que no se pueda
     // volver a aplicar. Si falla (ej: dos pedidos casi al mismo tiempo con
@@ -188,24 +200,42 @@ export default function CartDrawer({
     const reader = new FileReader();
     reader.onloadend = () => {
       setReceiptImage(reader.result);
-      setReceiptUploaded(true);
     };
     reader.readAsDataURL(file);
 
     if (supabase) {
       try {
-        const ext = file.name.split('.').pop() || 'png';
-        const filePath = `comprobantes/comprobante_${displayOrder.id}_${Date.now()}.${ext}`;
-        const { error: uploadErr } = await supabase.storage.from('Productos').upload(filePath, file, { upsert: true });
+        // Los comprobantes (fotos de transferencia sacadas con el celu) pesan
+        // mucho mas de lo necesario. Se comprimen a .webp con el mismo helper
+        // que ya se usa para las fotos de producto, asi no se revienta el
+        // storage con archivos de varios MB por cada pedido.
+        const isPdf = file.type === 'application/pdf';
+        let uploadBlob = file;
+        let ext = 'pdf';
+
+        if (!isPdf) {
+          const { blob, compressed } = await compressImage(file, { maxWidth: 1200, maxHeight: 1600, quality: 0.82 });
+          uploadBlob = blob;
+          ext = compressed ? 'webp' : (file.name.split('.').pop() || 'jpg');
+        }
+
+        const filePath = `comprobante_${displayOrder.id}_${Date.now()}.${ext}`;
+        const { error: uploadErr } = await supabase.storage
+          .from('comprobantes')
+          .upload(filePath, uploadBlob, { upsert: true, contentType: isPdf ? 'application/pdf' : `image/${ext === 'webp' ? 'webp' : ext}` });
 
         if (!uploadErr) {
-          const { data: urlData } = supabase.storage.from('Productos').getPublicUrl(filePath);
-          const receiptPublicUrl = urlData.publicUrl;
-          dataStore.updateOrderReceipt(displayOrder.id, receiptPublicUrl);
+          const { data: urlData } = supabase.storage.from('comprobantes').getPublicUrl(filePath);
+          dataStore.updateOrderReceipt(displayOrder.id, urlData.publicUrl);
+          setReceiptUploaded(true);
+        } else {
+          console.warn('Error subiendo comprobante a Supabase Storage:', uploadErr);
         }
       } catch (err) {
         console.warn('Error subiendo comprobante a Supabase Storage:', err);
       }
+    } else {
+      setReceiptUploaded(true);
     }
   };
 
@@ -949,17 +979,19 @@ export default function CartDrawer({
               )}
             </div>
 
-            <button 
-              onClick={handleCreateOrder} 
-              className="btn-hero-primary" 
-              style={{ 
+            <button
+              onClick={handleCreateOrder}
+              className="btn-hero-primary"
+              style={{
                 width: '100%',
-                opacity: isMinPurchaseReached ? 1 : 0.6,
-                cursor: isMinPurchaseReached ? 'pointer' : 'not-allowed'
+                opacity: isMinPurchaseReached && !isSubmittingOrder ? 1 : 0.6,
+                cursor: isMinPurchaseReached && !isSubmittingOrder ? 'pointer' : 'not-allowed'
               }}
-              disabled={!isMinPurchaseReached}
+              disabled={!isMinPurchaseReached || isSubmittingOrder}
             >
-              {isMinPurchaseReached ? 'Generar Pedido & Subir Comprobante' : `Mínimo $50.000 (Faltan $${amountNeeded.toLocaleString('es-AR')})`}
+              {isSubmittingOrder
+                ? 'Generando pedido...'
+                : (isMinPurchaseReached ? 'Generar Pedido & Subir Comprobante' : `Mínimo $50.000 (Faltan $${amountNeeded.toLocaleString('es-AR')})`)}
             </button>
           </div>
         )}

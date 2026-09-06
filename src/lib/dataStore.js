@@ -1,4 +1,5 @@
 import { supabase } from './supabaseClient';
+import { normalizePhone } from './phoneUtils';
 import {
   CATALOG_PRODUCTS,
   CATALOG_CATEGORIES,
@@ -21,6 +22,7 @@ class DataStore {
       : null;
     this.clients = [];
     this.orders = [];
+    this.raffleTickets = [];
     this.cashMovements = [];
     this.categories = CATALOG_CATEGORIES.filter(c => c.id !== 'all');
     this.transferAlias1 = 'alias.dulcevalentin.completar';
@@ -92,8 +94,27 @@ class DataStore {
       this.fetchProductsFromSupabase(),
       this.fetchCategoriesFromSupabase(),
       this.fetchOrdersFromSupabase(),
-      this.fetchClientsFromSupabase()
+      this.fetchClientsFromSupabase(),
+      this.fetchRaffleTicketsFromSupabase()
     ]);
+  }
+
+  // Boletos del sorteo (numero + a que pedido/cliente quedaron atados).
+  // Se guardan en su propia tabla (no como campo de `orders`) porque asi la
+  // base puede exigir con una clave primaria que dos boletos nunca compartan
+  // numero — antes esto se generaba con Math.random() en el navegador, sin
+  // guardarse en ningun lado y sin ningun control de que no se repitiera.
+  async fetchRaffleTicketsFromSupabase() {
+    if (!supabase) return;
+    try {
+      const { data, error } = await supabase.from('raffle_tickets').select('*').order('ticket_number', { ascending: true });
+      if (data && !error) {
+        this.raffleTickets = data;
+        this.notify();
+      }
+    } catch (err) {
+      console.warn('Supabase raffle tickets fetch warning:', err);
+    }
   }
 
   async fetchOrdersFromSupabase() {
@@ -114,6 +135,16 @@ class DataStore {
   handleRealtimeOrderInsert(row) {
     if (!row || this.orders.some(o => o.id === row.id)) return;
     this.orders = [row, ...this.orders];
+    this.notify();
+  }
+
+  // Llamado desde el listener de Supabase Realtime cuando se asigna un
+  // boleto nuevo (compra en vivo mientras el admin tiene abierta la pestaña
+  // "Sorteo en Vivo" para transmitir por Instagram) — asi el boleto aparece
+  // solo, sin que el admin tenga que refrescar en medio de la transmision.
+  handleRealtimeTicketInsert(row) {
+    if (!row || this.raffleTickets.some(t => t.ticket_number === row.ticket_number)) return;
+    this.raffleTickets = [...this.raffleTickets, row];
     this.notify();
   }
 
@@ -705,11 +736,18 @@ class DataStore {
   }
 
   // User Authentication
+  //
+  // El telefono es la identidad de la cuenta (no hay email/usuario), asi
+  // que se normaliza ANTES de guardarlo o compararlo (ver phoneUtils.js):
+  // no importa si lo tipean con espacios, guiones, +54, 0 o 15 adelante —
+  // "0341 15-555-1234" y "+54 9 3415551234" tienen que ser la MISMA cuenta,
+  // nunca dos cuentas separadas que se crucen entre si.
   registerUser(userData) {
+    const normalizedPhone = normalizePhone(userData.phone) || userData.phone || '';
     const user = {
       name: userData.name,
       dni: userData.dni,
-      phone: userData.phone,
+      phone: normalizedPhone,
       locality: userData.locality,
       password: userData.password || 'cliente123',
       role: 'client',
@@ -720,7 +758,7 @@ class DataStore {
       localStorage.setItem('dulcevalentin_current_user', JSON.stringify(user));
     }
 
-    const existingIdx = this.clients.findIndex(c => c.phone === user.phone);
+    const existingIdx = this.clients.findIndex(c => normalizePhone(c.phone) === normalizedPhone);
     if (existingIdx >= 0) {
       this.clients[existingIdx] = { ...this.clients[existingIdx], ...user };
     } else {
@@ -748,11 +786,12 @@ class DataStore {
       this.notify();
       return adminUser;
     }
-    
-    const existingClient = this.clients.find(c => c.phone === phone);
+
+    const normalizedPhone = normalizePhone(phone) || phone;
+    const existingClient = this.clients.find(c => normalizePhone(c.phone) === normalizedPhone);
     const user = existingClient || {
       name: 'Cliente Mayorista',
-      phone,
+      phone: normalizedPhone,
       role: 'client',
       created_at: new Date().toISOString()
     };
@@ -840,10 +879,85 @@ class DataStore {
     return newFormattedProducts.length;
   }
 
+  // Alta de UN solo producto desde el panel (tab "Nuevo Producto"). Mismo
+  // generador de codigo correlativo que bulkInsertProducts, para que un
+  // producto cargado a mano y uno importado por CSV nunca choquen de codigo
+  // (ademas hay un indice unico en la base como ultima red de seguridad).
+  async createProduct(data) {
+    const usedCodes = new Set(this.products.map((p) => p.code).filter(Boolean));
+    let nextNumericCode = this.products.reduce((max, p) => {
+      const n = parseInt(p.code, 10);
+      return Number.isFinite(n) && n > max ? n : max;
+    }, 0) + 1;
+    let code = String(nextNumericCode).padStart(4, '0');
+    while (usedCodes.has(code)) {
+      nextNumericCode += 1;
+      code = String(nextNumericCode).padStart(4, '0');
+    }
+
+    const categoryName = (data.category || '').trim();
+    const subcategoryName = (data.subcategory || '').trim();
+    if (categoryName) {
+      this.addCategory(categoryName, subcategoryName ? [subcategoryName] : []);
+    }
+
+    const wholesale_price = Number(data.wholesale_price) || 0;
+    const sizes = Array.isArray(data.sizes) ? data.sizes.map((s) => s.trim()).filter(Boolean) : [];
+    const colors = Array.isArray(data.colors) ? data.colors.map((c) => c.trim()).filter(Boolean) : [];
+    const stock = parseInt(data.stock, 10) || 0;
+
+    // Reparte el mismo stock total entre todos los talles habilitados, asi
+    // StockTab (que muestra stock por talle) arranca con numeros consistentes
+    // en vez de en blanco.
+    const stock_per_size = {};
+    sizes.forEach((s) => { stock_per_size[s] = stock; });
+
+    const newProduct = {
+      id: `p-${code}`,
+      code,
+      name: (data.name || '').trim() || 'Producto sin nombre',
+      category: categoryName || 'General',
+      subcategory: subcategoryName,
+      description: (data.description || '').trim(),
+      price: wholesale_price,
+      wholesale_price,
+      stock,
+      stock_per_size,
+      sizes,
+      colors,
+      image_url: (data.image_url || '').trim() || '/logo.png',
+      is_active: true,
+      is_new: true,
+      is_offer: false,
+      is_featured: false,
+      is_top_seller: false,
+      sales_count: 0
+    };
+
+    this.products = [newProduct, ...this.products];
+    this.saveProductsToLocalStorage();
+    this.notify();
+
+    if (supabase) {
+      const { error } = await supabase.from('products').insert(newProduct);
+      if (error) throw error;
+    }
+
+    return newProduct;
+  }
+
   // Create Order & Generate Raffle Tickets for REGISTERED purchases >= $50.000
   // setActiveOrder=false para pedidos armados por el admin (no es la sesion
   // del cliente, no tiene que pisarle el "pedido activo" del carrito propio).
-  createOrder(cartItems, clientDetails, { setActiveOrder = true } = {}) {
+  //
+  // Es async: antes los boletos se armaban con Math.random() en el
+  // navegador sin guardarse en ningun lado (la base ni siquiera tenia
+  // columna para eso), asi que se perdian al recargar y nada impedia que
+  // dos boletos distintos terminaran con el mismo numero. Ahora el pedido
+  // se guarda primero en Supabase y despues se le piden los boletos a una
+  // funcion de la base (assign_raffle_tickets) que los reserva de una tabla
+  // con clave primaria 1-10000: fisicamente no puede repetirse un numero.
+  async createOrder(cartItems, clientDetails, { setActiveOrder = true } = {}) {
     const cartTotal = cartItems.reduce((sum, item) => {
       const itemPrice = item.product.wholesale_price || item.product.price || 0;
       return sum + (itemPrice * item.quantity);
@@ -854,23 +968,22 @@ class DataStore {
     const discountApplied = Math.min(cartTotal, Math.max(0, clientDetails.voucherAmount || 0));
     const total = cartTotal - discountApplied;
     const isWholesaleQualified = total >= 50000;
-    
+
+    // Telefono SIEMPRE normalizado (solo digitos, ultimos 10) antes de
+    // guardarlo o usarlo para identificar al cliente: "011 15-5512-3456",
+    // "+54 9 1155123456" y "1155123456" tienen que ser la MISMA cuenta.
+    const normalizedPhone = normalizePhone(clientDetails.phone) || clientDetails.phone || '';
+
     // Raffle Tickets are strictly assigned ONLY to REGISTERED users
     const isRegisteredUser = Boolean(clientDetails.isRegistered || this.currentUser);
-    const raffleTicketsCount = (isRegisteredUser && total >= 50000) 
-      ? Math.floor(total / 50000) 
+    const raffleTicketsCount = (isRegisteredUser && total >= 50000)
+      ? Math.floor(total / 50000)
       : 0;
-
-    const generatedTickets = [];
-    for (let i = 0; i < raffleTicketsCount; i++) {
-      const ticketNum = 'TICKET-' + Math.floor(10000 + Math.random() * 90000);
-      generatedTickets.push(ticketNum);
-    }
 
     const order = {
       id: 'ORD-' + Math.floor(100000 + Math.random() * 900000),
       client_name: clientDetails.name,
-      client_phone: clientDetails.phone,
+      client_phone: normalizedPhone,
       client_dni: clientDetails.dni,
       client_locality: clientDetails.locality,
       client_address: clientDetails.address || '',
@@ -883,11 +996,72 @@ class DataStore {
       is_wholesale: true,
       discount_applied: discountApplied,
       voucher_id: clientDetails.voucherId || null,
-      raffle_tickets: generatedTickets,
+      raffle_tickets: [],
       is_registered: isRegisteredUser,
       created_at: new Date().toISOString(),
       status: 'pendiente'
     };
+
+    // El pedido se guarda en Supabase ANTES de pedir los boletos: el
+    // sorteo los ata a un order_id real (clave foranea a `orders`), asi
+    // nunca puede quedar un boleto asignado a un pedido que en los hechos
+    // no se llego a guardar.
+    if (supabase) {
+      const { error: orderErr } = await supabase.from('orders').insert({
+        id: order.id,
+        client_name: order.client_name,
+        client_phone: order.client_phone,
+        client_dni: order.client_dni,
+        client_locality: order.client_locality,
+        client_address: order.client_address,
+        client_postal_code: order.client_postal_code,
+        client_floor_apt: order.client_floor_apt,
+        delivery_method: order.delivery_method,
+        receipt_url: order.receipt_url,
+        total_amount: order.total_amount,
+        items: order.items,
+        status: order.status,
+        created_at: order.created_at,
+        is_wholesale: order.is_wholesale,
+        discount_applied: order.discount_applied,
+        voucher_id: order.voucher_id
+      });
+
+      if (orderErr) {
+        console.warn('Order insert warning:', orderErr);
+      } else if (raffleTicketsCount > 0) {
+        try {
+          const { data: ticketNums, error: ticketErr } = await supabase.rpc('assign_raffle_tickets', {
+            p_order_id: order.id,
+            p_count: raffleTicketsCount,
+            p_client_name: order.client_name,
+            p_client_phone: order.client_phone,
+            p_client_dni: order.client_dni,
+            p_client_locality: order.client_locality,
+            p_order_amount: order.total_amount
+          });
+          if (!ticketErr && Array.isArray(ticketNums)) {
+            order.raffle_tickets = ticketNums.map((n) => String(n));
+            this.raffleTickets = [
+              ...this.raffleTickets,
+              ...ticketNums.map((n) => ({
+                ticket_number: n,
+                order_id: order.id,
+                client_name: order.client_name,
+                client_phone: order.client_phone,
+                client_dni: order.client_dni,
+                client_locality: order.client_locality,
+                order_amount: order.total_amount
+              }))
+            ];
+          } else if (ticketErr) {
+            console.warn('Raffle ticket assignment warning:', ticketErr);
+          }
+        } catch (err) {
+          console.warn('Raffle ticket assignment warning:', err);
+        }
+      }
+    }
 
     // Store active order in memory and localStorage so it never disappears
     if (setActiveOrder) {
@@ -898,16 +1072,16 @@ class DataStore {
     }
 
     // Save client info to wholesale_clients
-    if (clientDetails.phone && clientDetails.name) {
+    if (normalizedPhone && clientDetails.name) {
       const clientRecord = {
         name: clientDetails.name,
         dni: clientDetails.dni || '',
-        phone: clientDetails.phone,
+        phone: normalizedPhone,
         locality: clientDetails.locality || '',
-        password: 'cliente' + (clientDetails.phone.slice(-4) || '123')
+        password: 'cliente' + (normalizedPhone.slice(-4) || '123')
       };
 
-      const existingIdx = this.clients.findIndex(c => c.phone === clientDetails.phone);
+      const existingIdx = this.clients.findIndex(c => normalizePhone(c.phone) === normalizedPhone);
       if (existingIdx >= 0) {
         this.clients[existingIdx] = { ...this.clients[existingIdx], ...clientRecord };
       } else {
@@ -944,29 +1118,6 @@ class DataStore {
 
     this.orders.unshift(order);
     this.notify();
-
-    // Insert into Supabase table orders (omitting non-existing columns like raffle_tickets)
-    if (supabase) {
-      supabase.from('orders').insert({
-        id: order.id,
-        client_name: order.client_name,
-        client_phone: order.client_phone,
-        client_dni: order.client_dni,
-        client_locality: order.client_locality,
-        client_address: order.client_address,
-        client_postal_code: order.client_postal_code,
-        client_floor_apt: order.client_floor_apt,
-        delivery_method: order.delivery_method,
-        receipt_url: order.receipt_url,
-        total_amount: order.total_amount,
-        items: order.items,
-        status: order.status,
-        created_at: order.created_at,
-        is_wholesale: order.is_wholesale,
-        discount_applied: order.discount_applied,
-        voucher_id: order.voucher_id
-      }).then(() => {}).catch((err) => console.warn('Order insert warning:', err));
-    }
 
     return order;
   }
@@ -1107,7 +1258,7 @@ class DataStore {
     this.notify();
   }
 
-  async cleanOldReceipts(daysThreshold = 30) {
+  async cleanOldReceipts(daysThreshold = 60) {
     const cutoffTime = Date.now() - (daysThreshold * 86400000);
     let cleanedCount = 0;
 
@@ -1115,9 +1266,13 @@ class DataStore {
       if (order.receipt_url && new Date(order.created_at).getTime() < cutoffTime) {
         if (supabase && order.receipt_url.includes('supabase.co')) {
           try {
-            const parts = order.receipt_url.split('/Productos/');
+            // Comprobantes nuevos viven en el bucket "comprobantes"; se deja
+            // el fallback a "Productos" por si queda algun comprobante viejo
+            // subido antes de este cambio.
+            const bucket = order.receipt_url.includes('/comprobantes/') ? 'comprobantes' : 'Productos';
+            const parts = order.receipt_url.split(`/${bucket}/`);
             if (parts[1]) {
-              await supabase.storage.from('Productos').remove([decodeURIComponent(parts[1])]);
+              await supabase.storage.from(bucket).remove([decodeURIComponent(parts[1])]);
             }
           } catch (e) {
             console.warn('Error deleting storage receipt:', e);
@@ -1143,13 +1298,26 @@ class DataStore {
     return cleanedCount;
   }
 
+  // Para el aviso del panel: cuantos comprobantes ya superaron el umbral y
+  // se pueden liberar, sin borrar nada todavia (eso lo dispara el admin a
+  // mano con el boton "Limpiar Fotos").
+  getOldReceiptsCount(daysThreshold = 60) {
+    const cutoffTime = Date.now() - (daysThreshold * 86400000);
+    return this.orders.filter(o => o.receipt_url && new Date(o.created_at).getTime() < cutoffTime).length;
+  }
+
   // Aggregated VIP Client Stats & Ranking (combines registered clients and orders)
+  //
+  // Se agrupa por telefono NORMALIZADO (no como esta escrito en cada fila):
+  // asi un mismo cliente que en un pedido puso "3415551234" y en otro
+  // "+54 9 341 555 1234" cae en la MISMA fila del ranking en vez de
+  // aparecer como dos clientes distintos con menos compras cada uno.
   getClientsWithStats() {
     const clientMap = {};
 
     // 1. Add all registered clients from wholesale_clients
     (this.clients || []).forEach(c => {
-      const key = c.phone || c.name;
+      const key = normalizePhone(c.phone) || c.name;
       if (!key) return;
       clientMap[key] = {
         name: c.name || 'Cliente Registrado',
@@ -1165,7 +1333,7 @@ class DataStore {
 
     // 2. Aggregate metrics from all orders
     this.orders.forEach(order => {
-      const key = order.client_phone || order.client_name;
+      const key = normalizePhone(order.client_phone) || order.client_name;
       if (!key) return;
       if (!clientMap[key]) {
         clientMap[key] = {
@@ -1182,34 +1350,34 @@ class DataStore {
 
       clientMap[key].total_spent += order.total_amount;
       clientMap[key].orders_count += 1;
-      clientMap[key].tickets_count += (order.raffle_tickets || []).length;
+    });
+
+    // 3. Los boletos se cuentan aparte, de la tabla real de boletos (ya no
+    // del pedido en memoria, que no los trae al recargar), agrupados por el
+    // mismo telefono normalizado.
+    (this.raffleTickets || []).forEach(t => {
+      const key = normalizePhone(t.client_phone) || t.client_name;
+      if (!key || !clientMap[key]) return;
+      clientMap[key].tickets_count += 1;
     });
 
     // Convert map to array and sort by total_spent descending
     return Object.values(clientMap).sort((a, b) => b.total_spent - a.total_spent);
   }
 
-  // All Active Raffle Tickets in Play
+  // All Active Raffle Tickets in Play — vienen de la tabla `raffle_tickets`
+  // (persistidos y con numero unico garantizado por la base), no de
+  // recorrer `orders` como antes.
   getAllRaffleTickets() {
-    const tickets = [];
-
-    this.orders.forEach(order => {
-      if (order.raffle_tickets && order.raffle_tickets.length > 0) {
-        order.raffle_tickets.forEach(ticketId => {
-          tickets.push({
-            ticket_id: ticketId,
-            order_id: order.id,
-            order_amount: order.total_amount,
-            client_name: order.client_name,
-            client_phone: order.client_phone,
-            client_dni: order.client_dni,
-            client_locality: order.client_locality
-          });
-        });
-      }
-    });
-
-    return tickets;
+    return (this.raffleTickets || []).map(t => ({
+      ticket_id: String(t.ticket_number),
+      order_id: t.order_id,
+      order_amount: Number(t.order_amount) || 0,
+      client_name: t.client_name,
+      client_phone: t.client_phone,
+      client_dni: t.client_dni,
+      client_locality: t.client_locality
+    }));
   }
 
   // Admin Metrics Calculations — el arqueo se calcula a partir de las
