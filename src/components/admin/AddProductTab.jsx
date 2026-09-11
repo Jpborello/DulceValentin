@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useMemo } from 'react';
-import { PlusCircle, X, UploadCloud, Loader2, CheckCircle2, AlertCircle, Tag } from 'lucide-react';
+import { PlusCircle, X, UploadCloud, Loader2, CheckCircle2, AlertCircle, Tag, Star, Trash2, ArrowLeft, ArrowRight, Image as ImageIcon } from 'lucide-react';
 import { supabase } from '@/lib/supabaseClient';
 import { compressImage } from '@/lib/compressImage';
 import { getProductColors } from '@/lib/catalogData';
@@ -14,21 +14,22 @@ const EMPTY_FORM = {
   customSubcategory: '',
   description: '',
   wholesale_price: '',
-  stock: '50',
-  imageUrl: ''
+  stock: '50'
 };
 
-// Alta de UN producto por vez (a diferencia de la Carga Masiva, que es para
-// listas grandes por CSV). Genera el codigo automatico, deja elegir
-// categoria/subcategoria ya existentes o escribir una nueva, y sube la foto
-// igual que en "Gestión de Imágenes".
+// Alta de UN producto por vez con soporte de MULTIPLES IMAGENES.
+// Genera el codigo automatico, comprime todas las fotos a .webp,
+// permite elegir cual es la portada y reordenarlas.
 export default function AddProductTab({ categories, onCreateProduct }) {
   const [form, setForm] = useState(EMPTY_FORM);
+  const [imageUrls, setImageUrls] = useState([]);
+  const [manualUrlInput, setManualUrlInput] = useState('');
   const [sizes, setSizes] = useState([]);
   const [newSize, setNewSize] = useState('');
   const [colors, setColors] = useState([]);
   const [newColor, setNewColor] = useState('');
   const [isUploadingImg, setIsUploadingImg] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState('');
   const [isSaving, setIsSaving] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
   const [successInfo, setSuccessInfo] = useState(null);
@@ -60,35 +61,82 @@ export default function AddProductTab({ categories, onCreateProduct }) {
     setNewColor('');
   };
 
+  // Subida en lote de multiples fotos convirtiendo a .webp
   const handleFileSelect = async (e) => {
-    const file = e.target.files[0];
+    const files = Array.from(e.target.files || []);
     e.target.value = '';
-    if (!file || !supabase) return;
+    if (files.length === 0 || !supabase) return;
 
     setIsUploadingImg(true);
     setErrorMsg('');
-    try {
-      const { blob } = await compressImage(file);
-      const filePath = `admin-uploads/nuevo-${Date.now()}.webp`;
-      const { error: uploadErr } = await supabase.storage.from('Productos').upload(filePath, blob, {
-        upsert: true,
-        contentType: 'image/webp'
-      });
-      if (uploadErr) throw uploadErr;
+    setUploadProgress(`Preparando ${files.length} imagen${files.length > 1 ? 'es' : ''}...`);
 
-      const { data: urlData } = supabase.storage.from('Productos').getPublicUrl(filePath);
-      setForm((f) => ({ ...f, imageUrl: urlData.publicUrl }));
+    try {
+      const uploadedUrls = [];
+      for (let i = 0; i < files.length; i++) {
+        const file = files[i];
+        setUploadProgress(`Comprimiendo y subiendo ${i + 1} de ${files.length}...`);
+        
+        // 1. Compresion y conversion a webp en el navegador
+        const { blob } = await compressImage(file);
+        
+        // 2. Subida a Supabase Storage bucket 'Productos'
+        const filePath = `admin-uploads/nuevo-${Date.now()}-${i}.webp`;
+        const { error: uploadErr } = await supabase.storage.from('Productos').upload(filePath, blob, {
+          upsert: true,
+          contentType: 'image/webp'
+        });
+        if (uploadErr) throw uploadErr;
+
+        const { data: urlData } = supabase.storage.from('Productos').getPublicUrl(filePath);
+        if (urlData?.publicUrl) {
+          uploadedUrls.push(urlData.publicUrl);
+        }
+      }
+
+      setImageUrls((prev) => [...prev, ...uploadedUrls]);
     } catch (err) {
-      setErrorMsg('No se pudo subir la foto: ' + (err.message || 'error desconocido'));
+      setErrorMsg('Error al subir fotos: ' + (err.message || 'error desconocido'));
     } finally {
       setIsUploadingImg(false);
+      setUploadProgress('');
     }
   };
 
+  const handleAddManualUrl = () => {
+    const trimmed = manualUrlInput.trim();
+    if (!trimmed) return;
+    setImageUrls((prev) => [...prev, trimmed]);
+    setManualUrlInput('');
+  };
+
+  const handleRemoveImage = (indexToRemove) => {
+    setImageUrls((prev) => prev.filter((_, idx) => idx !== indexToRemove));
+  };
+
+  const handleSetCover = (indexToCover) => {
+    if (indexToCover === 0) return;
+    setImageUrls((prev) => {
+      const copy = [...prev];
+      const [item] = copy.splice(indexToCover, 1);
+      return [item, ...copy];
+    });
+  };
+
+  const handleMoveImage = (fromIndex, toIndex) => {
+    if (toIndex < 0 || toIndex >= imageUrls.length) return;
+    setImageUrls((prev) => {
+      const copy = [...prev];
+      const [moved] = copy.splice(fromIndex, 1);
+      copy.splice(toIndex, 0, moved);
+      return copy;
+    });
+  };
+
   const resetForNext = () => {
-    // Deja categoria/subcategoria puestas: es comun cargar varias prendas
-    // seguidas de la misma tanda.
     setForm((f) => ({ ...EMPTY_FORM, category: f.category, customCategory: f.customCategory, subcategory: f.subcategory, customSubcategory: f.customSubcategory, stock: f.stock }));
+    setImageUrls([]);
+    setManualUrlInput('');
     setSizes([]);
     setColors([]);
   };
@@ -116,7 +164,8 @@ export default function AddProductTab({ categories, onCreateProduct }) {
         stock: form.stock,
         sizes,
         colors,
-        image_url: form.imageUrl
+        image_url: imageUrls[0] || '',
+        image_urls: imageUrls
       });
       setSuccessInfo(created);
       resetForNext();
@@ -260,20 +309,214 @@ export default function AddProductTab({ categories, onCreateProduct }) {
           </div>
         </div>
 
-        {/* Foto */}
+        {/* Fotos del Producto (Múltiples Imágenes con WebP) */}
         <div className="form-group" style={{ gridColumn: '1 / -1' }}>
-          <label className="form-label">Foto</label>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '14px', flexWrap: 'wrap' }}>
-            {form.imageUrl && (
-              <img src={form.imageUrl} alt="" style={{ width: '64px', height: '64px', objectFit: 'cover', borderRadius: '8px', border: '1px solid var(--border-color)' }} />
-            )}
-            <label htmlFor="new-product-img" className="btn-secondary" style={{ cursor: isUploadingImg ? 'wait' : 'pointer', opacity: isUploadingImg ? 0.7 : 1, display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
-              {isUploadingImg ? <Loader2 size={14} className="spin" /> : <UploadCloud size={14} />}
-              {isUploadingImg ? 'Subiendo...' : 'Subir Foto'}
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
+            <label className="form-label" style={{ margin: 0, display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <ImageIcon size={16} /> Fotos del Producto ({imageUrls.length})
             </label>
-            <input id="new-product-img" type="file" accept="image/*" onChange={handleFileSelect} disabled={isUploadingImg} style={{ display: 'none' }} />
-            <input type="text" className="form-input" placeholder="...o pegar una URL de imagen" value={form.imageUrl} onChange={update('imageUrl')} style={{ flex: 1, minWidth: '200px' }} />
+            <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
+              Se comprimen a <strong>.webp</strong> automáticamente. La primera foto es la <strong>Portada</strong>.
+            </span>
           </div>
+
+          {/* Botones de acción para subir */}
+          <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', alignItems: 'center', marginBottom: '14px' }}>
+            <label
+              htmlFor="new-product-imgs"
+              className="btn-secondary"
+              style={{
+                cursor: isUploadingImg ? 'wait' : 'pointer',
+                opacity: isUploadingImg ? 0.7 : 1,
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '8px',
+                padding: '9px 16px',
+                fontWeight: 700
+              }}
+            >
+              {isUploadingImg ? <Loader2 size={16} className="spin" /> : <UploadCloud size={16} />}
+              {isUploadingImg ? (uploadProgress || 'Procesando fotos...') : 'Subir Fotos (Podés elegir varias)'}
+            </label>
+            <input
+              id="new-product-imgs"
+              type="file"
+              accept="image/*"
+              multiple
+              onChange={handleFileSelect}
+              disabled={isUploadingImg}
+              style={{ display: 'none' }}
+            />
+
+            {/* Agregar URL manual */}
+            <div style={{ display: 'flex', gap: '6px', flex: 1, minWidth: '260px' }}>
+              <input
+                type="text"
+                className="form-input"
+                placeholder="...o pegar URL de imagen externa"
+                value={manualUrlInput}
+                onChange={(e) => setManualUrlInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    handleAddManualUrl();
+                  }
+                }}
+                style={{ fontSize: '0.84rem' }}
+              />
+              <button
+                type="button"
+                onClick={handleAddManualUrl}
+                className="btn-secondary"
+                style={{ padding: '8px 14px', fontSize: '0.82rem', whiteSpace: 'nowrap' }}
+              >
+                + Agregar
+              </button>
+            </div>
+          </div>
+
+          {/* Estado de subida en progreso */}
+          {isUploadingImg && (
+            <div style={{ padding: '10px 14px', backgroundColor: 'var(--bg-surface-elevated)', borderRadius: '8px', border: '1px dashed var(--accent-gold)', marginBottom: '12px', display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.85rem', color: 'var(--accent-gold-hover)', fontWeight: 600 }}>
+              <Loader2 size={16} className="spin" /> {uploadProgress}
+            </div>
+          )}
+
+          {/* Grilla de imágenes cargadas */}
+          {imageUrls.length > 0 ? (
+            <div style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fill, minmax(130px, 1fr))',
+              gap: '12px',
+              padding: '12px',
+              backgroundColor: 'var(--bg-surface-elevated)',
+              borderRadius: '10px',
+              border: '1px solid var(--border-color)'
+            }}>
+              {imageUrls.map((url, idx) => {
+                const isCover = idx === 0;
+                return (
+                  <div
+                    key={`${url}-${idx}`}
+                    style={{
+                      position: 'relative',
+                      borderRadius: '8px',
+                      overflow: 'hidden',
+                      border: isCover ? '2px solid var(--accent-gold)' : '1px solid var(--border-color)',
+                      backgroundColor: 'var(--bg-card)',
+                      boxShadow: isCover ? '0 0 0 1px var(--accent-gold)' : 'none',
+                      display: 'flex',
+                      flexDirection: 'column'
+                    }}
+                  >
+                    <div style={{ position: 'relative', width: '100%', height: '120px' }}>
+                      <img
+                        src={url}
+                        alt={`Foto ${idx + 1}`}
+                        style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                        onError={(e) => { e.target.src = '/logo.png'; }}
+                      />
+                      {isCover && (
+                        <div style={{
+                          position: 'absolute',
+                          top: '6px',
+                          left: '6px',
+                          backgroundColor: 'var(--accent-gold)',
+                          color: '#000',
+                          padding: '2px 6px',
+                          borderRadius: '4px',
+                          fontSize: '0.7rem',
+                          fontWeight: 900,
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '3px',
+                          boxShadow: '0 2px 4px rgba(0,0,0,0.2)'
+                        }}>
+                          <Star size={10} fill="#000" /> Portada
+                        </div>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveImage(idx)}
+                        title="Eliminar foto"
+                        style={{
+                          position: 'absolute',
+                          top: '6px',
+                          right: '6px',
+                          width: '24px',
+                          height: '24px',
+                          borderRadius: '50%',
+                          border: 'none',
+                          backgroundColor: 'rgba(220, 38, 38, 0.85)',
+                          color: '#FFF',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          cursor: 'pointer'
+                        }}
+                      >
+                        <Trash2 size={12} />
+                      </button>
+                    </div>
+
+                    {/* Botonera de orden y portada */}
+                    <div style={{ padding: '6px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '4px', backgroundColor: 'var(--bg-card)' }}>
+                      {!isCover ? (
+                        <button
+                          type="button"
+                          onClick={() => handleSetCover(idx)}
+                          className="btn-secondary"
+                          style={{ fontSize: '0.68rem', padding: '3px 6px', flex: 1, justifyContent: 'center', gap: '3px' }}
+                          title="Fijar como foto principal de portada"
+                        >
+                          <Star size={11} /> Portada
+                        </button>
+                      ) : (
+                        <span style={{ fontSize: '0.68rem', fontWeight: 700, color: 'var(--accent-gold-hover)', padding: '3px 6px' }}>
+                          Principal
+                        </span>
+                      )}
+
+                      <div style={{ display: 'flex', gap: '2px' }}>
+                        {idx > 0 && (
+                          <button
+                            type="button"
+                            onClick={() => handleMoveImage(idx, idx - 1)}
+                            title="Mover a la izquierda"
+                            style={{ background: 'none', border: '1px solid var(--border-color)', borderRadius: '4px', padding: '2px 4px', cursor: 'pointer', display: 'flex', color: 'var(--text-main)' }}
+                          >
+                            <ArrowLeft size={11} />
+                          </button>
+                        )}
+                        {idx < imageUrls.length - 1 && (
+                          <button
+                            type="button"
+                            onClick={() => handleMoveImage(idx, idx + 1)}
+                            title="Mover a la derecha"
+                            style={{ background: 'none', border: '1px solid var(--border-color)', borderRadius: '4px', padding: '2px 4px', cursor: 'pointer', display: 'flex', color: 'var(--text-main)' }}
+                          >
+                            <ArrowRight size={11} />
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
+            <div style={{
+              padding: '24px',
+              textAlign: 'center',
+              backgroundColor: 'var(--bg-surface-elevated)',
+              borderRadius: '8px',
+              border: '1px dashed var(--border-color)',
+              color: 'var(--text-muted)',
+              fontSize: '0.85rem'
+            }}>
+              No hay fotos cargadas aún. Podés subir varias imágenes juntas arriba.
+            </div>
+          )}
         </div>
 
         <div style={{ gridColumn: '1 / -1' }}>

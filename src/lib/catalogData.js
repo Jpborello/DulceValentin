@@ -47,7 +47,7 @@ export const CATALOG_CATEGORIES = [
   {
     id: 'Bebés',
     name: 'Bebés',
-    subcategories: ['Niños', 'Niñas']
+    subcategories: ['Ajuar y Sets', 'Bodys', 'Enteritos', 'Ranitas y Pantalones', 'Accesorios', 'Blanquería y Cuidado', 'Bolsos Maternales']
   },
   {
     id: 'Complementos',

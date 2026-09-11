@@ -10,6 +10,19 @@ import {
 export const INITIAL_PRODUCTS = CATALOG_PRODUCTS;
 export const CATEGORIES = CATALOG_CATEGORIES;
 
+// Helper para obtener siempre un array de URLs de imagenes valido para cualquier producto
+export function getProductImages(product) {
+  if (!product) return ['/logo.png'];
+  if (Array.isArray(product.image_urls) && product.image_urls.length > 0) {
+    const valid = product.image_urls.filter(Boolean);
+    if (valid.length > 0) return valid;
+  }
+  if (product.image_url) {
+    return [product.image_url];
+  }
+  return ['/logo.png'];
+}
+
 // In-Memory / LocalStorage State Manager with Supabase Mirror
 class DataStore {
   constructor() {
@@ -55,6 +68,7 @@ class DataStore {
           wholesale_price: p.wholesale_price,
           stock: p.stock,
           image_url: p.image_url,
+          image_urls: p.image_urls,
           is_offer: p.is_offer,
           colors: p.colors
         };
@@ -210,7 +224,10 @@ class DataStore {
           price: Number(dbP.price),
           wholesale_price: Number(dbP.wholesale_price),
           stock: Number(dbP.stock),
-          sales_count: dbP.sales_count ?? 0
+          sales_count: dbP.sales_count ?? 0,
+          image_urls: Array.isArray(dbP.image_urls) && dbP.image_urls.length > 0
+            ? dbP.image_urls.filter(Boolean)
+            : (dbP.image_url ? [dbP.image_url] : (localP.image_url ? [localP.image_url] : []))
         };
       });
 
@@ -222,7 +239,10 @@ class DataStore {
           price: Number(p.price), 
           wholesale_price: Number(p.wholesale_price),
           stock: Number(p.stock),
-          sales_count: p.sales_count ?? 0 
+          sales_count: p.sales_count ?? 0,
+          image_urls: Array.isArray(p.image_urls) && p.image_urls.length > 0
+            ? p.image_urls.filter(Boolean)
+            : (p.image_url ? [p.image_url] : [])
         }));
 
       this.products = [...merged, ...extraFromDb];
@@ -612,6 +632,20 @@ class DataStore {
     const existingP = this.products.find(p => p.id === id);
     const updatedP = existingP ? { ...existingP, ...updates } : updates;
 
+    // Sincronizar image_urls y image_url (portada)
+    if (updates.image_urls && Array.isArray(updates.image_urls)) {
+      const validUrls = updates.image_urls.filter(Boolean);
+      updatedP.image_urls = validUrls;
+      if (validUrls.length > 0) {
+        updatedP.image_url = validUrls[0];
+      }
+    } else if (updates.image_url && !updates.image_urls) {
+      const currentList = Array.isArray(existingP?.image_urls) ? [...existingP.image_urls] : [];
+      if (!currentList.includes(updates.image_url)) {
+        updatedP.image_urls = [updates.image_url, ...currentList.filter(Boolean)];
+      }
+    }
+
     if (updatedP.price !== undefined) updatedP.price = Number(updatedP.price);
     if (updatedP.wholesale_price !== undefined) updatedP.wholesale_price = Number(updatedP.wholesale_price);
 
@@ -863,6 +897,9 @@ class DataStore {
         stock: parseInt(item.stock, 10) || 0,
         sales_count: 0,
         image_url: (item.image_url || item.imagen || item.url_imagen || '/logo.png').trim(),
+        image_urls: Array.isArray(item.image_urls) && item.image_urls.length > 0 
+          ? item.image_urls.filter(Boolean) 
+          : [(item.image_url || item.imagen || item.url_imagen || '/logo.png').trim()],
         description: (item.description || item.descripcion || '').trim(),
         is_offer: Boolean(item.is_offer),
         is_top_seller: false
@@ -912,6 +949,14 @@ class DataStore {
     const stock_per_size = {};
     sizes.forEach((s) => { stock_per_size[s] = stock; });
 
+    // Multiples imagenes: toma image_urls si viene un array, y si solo viene image_url arma el array
+    const rawUrls = Array.isArray(data.image_urls) ? data.image_urls.filter(Boolean) : [];
+    if (rawUrls.length === 0 && data.image_url) {
+      rawUrls.push(data.image_url.trim());
+    }
+    const coverImage = rawUrls[0] || (data.image_url || '').trim() || '/logo.png';
+    const finalImageUrls = rawUrls.length > 0 ? rawUrls : [coverImage];
+
     const newProduct = {
       id: `p-${code}`,
       code,
@@ -925,7 +970,8 @@ class DataStore {
       stock_per_size,
       sizes,
       colors,
-      image_url: (data.image_url || '').trim() || '/logo.png',
+      image_url: coverImage,
+      image_urls: finalImageUrls,
       is_active: true,
       is_new: true,
       is_offer: false,

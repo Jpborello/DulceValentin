@@ -6,6 +6,7 @@ import { supabase } from '@/lib/supabaseClient';
 import { getProductColors } from '@/lib/catalogData';
 import { buildProductSlug } from '@/lib/productSlug';
 import ShareProductButton from '@/components/ShareProductButton';
+import ProductPageGallery from '@/components/ProductPageGallery';
 
 const SITE_URL = 'https://www.dulcevalentin.com.ar';
 
@@ -54,6 +55,11 @@ export async function generateMetadata({ params }) {
     : `${product.name} — ${product.category}${product.subcategory ? ` / ${product.subcategory}` : ''}. Precio mayorista${price ? `: $${Number(price).toLocaleString('es-AR')}` : ''}. Venta mayorista directa de fábrica en Rosario, Santa Fe.`;
   const canonicalPath = `/producto/${buildProductSlug(product)}`;
 
+  const validImages = (Array.isArray(product.image_urls) && product.image_urls.length > 0
+    ? product.image_urls
+    : [product.image_url]
+  ).filter(Boolean);
+
   return {
     title,
     description,
@@ -64,13 +70,19 @@ export async function generateMetadata({ params }) {
       siteName: 'Dulce Valentín',
       title: `${title} | Dulce Valentín`,
       description,
-      images: product.image_url ? [{ url: product.image_url, width: 800, height: 1000, alt: product.name, type: 'image/webp' }] : undefined
+      images: validImages.map((url) => ({
+        url,
+        width: 800,
+        height: 1000,
+        alt: product.name,
+        type: 'image/webp'
+      }))
     },
     twitter: {
       card: 'summary_large_image',
       title: `${title} | Dulce Valentín`,
       description,
-      images: product.image_url ? [product.image_url] : undefined
+      images: validImages
     }
   };
 }
@@ -87,12 +99,17 @@ export default async function ProductPage({ params }) {
   const isStockOk = product.stock > 10;
   const canonicalPath = `/producto/${buildProductSlug(product)}`;
 
+  const images = (Array.isArray(product.image_urls) && product.image_urls.length > 0
+    ? product.image_urls
+    : [product.image_url]
+  ).filter(Boolean);
+
   const productJsonLd = {
     '@context': 'https://schema.org',
     '@type': 'Product',
     name: product.name,
     description: product.description || `${product.name} — venta mayorista en Dulce Valentín, Rosario.`,
-    image: product.image_url ? [product.image_url] : undefined,
+    image: images.length > 0 ? images : undefined,
     category: product.subcategory ? `${product.category} / ${product.subcategory}` : product.category,
     offers: {
       '@type': 'Offer',
@@ -137,19 +154,8 @@ export default async function ProductPage({ params }) {
           {product.subcategory ? ` / ${product.subcategory}` : ''}
         </nav>
 
-        <div className="product-detail-grid" style={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-lg)', overflow: 'hidden', boxShadow: 'var(--shadow-md)' }}>
-          <div className="product-detail-img-wrapper" style={{ position: 'relative' }}>
-            {product.image_url && (
-              <Image
-                src={product.image_url}
-                alt={product.name}
-                fill
-                unoptimized
-                sizes="(max-width: 720px) 100vw, 500px"
-                style={{ objectFit: 'cover' }}
-              />
-            )}
-          </div>
+        <div className="product-detail-grid" style={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-lg)', overflow: 'hidden', boxShadow: 'var(--shadow-md)', padding: '20px' }}>
+          <ProductPageGallery images={images} name={product.name} />
 
           <div className="product-detail-info">
             <div className="product-category-name">

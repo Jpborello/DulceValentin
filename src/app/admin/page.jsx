@@ -397,9 +397,16 @@ export default function AdminPage() {
     showSuccessNotice(`${newProducts.length} productos importados masivamente, cada uno con su código único.`);
   };
 
-  const handleImageUpdate = (id, newImageUrl) => {
-    dataStore.updateProduct(id, { image_url: newImageUrl });
-    showSuccessNotice('Imagen del producto actualizada.');
+  const handleImageUpdate = (id, payload) => {
+    if (Array.isArray(payload)) {
+      const valid = payload.filter(Boolean);
+      dataStore.updateProduct(id, { image_urls: valid, image_url: valid[0] || '/logo.png' });
+    } else if (typeof payload === 'string') {
+      dataStore.updateProduct(id, { image_url: payload });
+    } else if (payload && typeof payload === 'object') {
+      dataStore.updateProduct(id, payload);
+    }
+    showSuccessNotice('Imágenes del producto actualizadas con éxito.');
   };
 
   const normalizeSearch = (str) =>

@@ -1,17 +1,24 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import Image from 'next/image';
-import { X, ShoppingCart, Tag, Palette, Share2, Check } from 'lucide-react';
+import { X, ShoppingCart, Tag, Palette, Share2, Check, ChevronLeft, ChevronRight, Camera } from 'lucide-react';
 import useCloseOnBack from '@/lib/useCloseOnBack';
 import { getProductColors } from '@/lib/catalogData';
 import { shareProduct } from '@/lib/shareProduct';
+import { getProductImages } from '@/lib/dataStore';
 
 export default function ProductDetailModal({ product, isOpen, onClose, onAddToCart, isWholesaleQualified = false }) {
   const [selectedSize, setSelectedSize] = useState(null);
   const [selectedColor, setSelectedColor] = useState(null);
+  const [activeImgIndex, setActiveImgIndex] = useState(0);
   const [isZoomed, setIsZoomed] = useState(false);
   const [shareCopied, setShareCopied] = useState(false);
+  const touchStartX = useRef(null);
+
+  const images = getProductImages(product);
+  const hasMultiple = images.length > 1;
+  const currentImage = images[activeImgIndex] || images[0] || '/logo.png';
 
   const handleShare = async () => {
     const result = await shareProduct(product);
@@ -20,6 +27,7 @@ export default function ProductDetailModal({ product, isOpen, onClose, onAddToCa
       setTimeout(() => setShareCopied(false), 2000);
     }
   };
+
   const handleClose = useCloseOnBack(isOpen, () => {
     if (isZoomed) {
       setIsZoomed(false);
@@ -38,6 +46,7 @@ export default function ProductDetailModal({ product, isOpen, onClose, onAddToCa
       const colors = getProductColors(product);
       setSelectedColor(colors && colors.length > 0 ? colors[0] : null);
 
+      setActiveImgIndex(0);
       setIsZoomed(false);
     }
   }, [product]);
@@ -47,8 +56,35 @@ export default function ProductDetailModal({ product, isOpen, onClose, onAddToCa
   const hasSizes = Array.isArray(product.sizes) && product.sizes.length > 0;
   const isStockOk = product.stock > 10;
 
+  const handlePrevImg = (e) => {
+    e?.stopPropagation();
+    setActiveImgIndex((prev) => (prev - 1 + images.length) % images.length);
+  };
+
+  const handleNextImg = (e) => {
+    e?.stopPropagation();
+    setActiveImgIndex((prev) => (prev + 1) % images.length);
+  };
+
+  const handleTouchStart = (e) => {
+    touchStartX.current = e.touches[0].clientX;
+  };
+
+  const handleTouchEnd = (e) => {
+    if (touchStartX.current === null) return;
+    const deltaX = e.changedTouches[0].clientX - touchStartX.current;
+    if (Math.abs(deltaX) > 40 && hasMultiple) {
+      if (deltaX > 0) {
+        setActiveImgIndex((prev) => (prev - 1 + images.length) % images.length);
+      } else {
+        setActiveImgIndex((prev) => (prev + 1) % images.length);
+      }
+    }
+    touchStartX.current = null;
+  };
+
   const handleAdd = () => {
-    onAddToCart({ ...product, selectedSize, selectedColor });
+    onAddToCart({ ...product, image_url: currentImage, selectedSize, selectedColor });
     handleClose();
   };
 
@@ -58,64 +94,197 @@ export default function ProductDetailModal({ product, isOpen, onClose, onAddToCa
         <button
           onClick={handleClose}
           className="qty-btn"
-          style={{ position: 'absolute', top: '14px', right: '14px', zIndex: 2, backgroundColor: 'rgba(255,255,255,0.9)' }}
+          style={{ position: 'absolute', top: '14px', right: '14px', zIndex: 10, backgroundColor: 'rgba(255,255,255,0.9)' }}
         >
           <X size={18} />
         </button>
 
         <div className="product-detail-scroll">
         <div className="product-detail-grid">
-          <div 
-            className="product-detail-img-wrapper" 
-            style={{ position: 'relative', cursor: 'zoom-in' }}
-            onClick={() => setIsZoomed(true)}
-            title="Toca o haz clic para expandir imagen"
-          >
-            <Image
-              src={product.image_url}
-              alt={product.name}
-              fill
-              unoptimized
-              sizes="(max-width: 720px) 100vw, 500px"
-              onError={(e) => { e.target.src = '/logo.png'; }}
-            />
-            {/* Bottom-Right Price Patch Overlay */}
-            <div style={{
-              position: 'absolute',
-              bottom: '10px',
-              right: '10px',
-              minWidth: '130px',
-              textAlign: 'center',
-              backgroundColor: 'var(--bg-card)',
-              color: 'var(--text-main)',
-              padding: '7px 16px',
-              borderRadius: '8px',
-              border: '2px solid var(--border-color)',
-              boxShadow: '0 4px 14px rgba(0,0,0,0.18)',
-              fontWeight: 900,
-              fontSize: '0.82rem',
-              letterSpacing: '0.5px',
-              pointerEvents: 'none',
-              userSelect: 'none',
-              zIndex: 3
-            }}>
-              ⭐ DULCE VALENTÍN
+          {/* Galería interactiva con foto principal + navegación + tira de miniaturas */}
+          <div className="product-gallery-column" style={{ display: 'flex', flexDirection: 'column' }}>
+            <div 
+              className="product-detail-img-wrapper" 
+              style={{ position: 'relative', cursor: 'zoom-in', width: '100%', minHeight: '320px', borderRadius: '12px', overflow: 'hidden' }}
+              onClick={() => setIsZoomed(true)}
+              onTouchStart={handleTouchStart}
+              onTouchEnd={handleTouchEnd}
+              title="Toca o haz clic para expandir imagen"
+            >
+              <Image
+                src={currentImage}
+                alt={product.name}
+                fill
+                unoptimized
+                sizes="(max-width: 720px) 100vw, 500px"
+                style={{ objectFit: 'cover' }}
+                onError={(e) => { e.target.src = '/logo.png'; }}
+              />
+
+              {/* Flechas de navegación principal */}
+              {hasMultiple && (
+                <>
+                  <button
+                    type="button"
+                    onClick={(e) => { e.stopPropagation(); handlePrevImg(e); }}
+                    aria-label="Foto anterior"
+                    style={{
+                      position: 'absolute',
+                      left: '10px',
+                      top: '50%',
+                      transform: 'translateY(-50%)',
+                      width: '36px',
+                      height: '36px',
+                      borderRadius: '50%',
+                      backgroundColor: 'rgba(255, 255, 255, 0.9)',
+                      color: '#0F172A',
+                      border: 'none',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      cursor: 'pointer',
+                      zIndex: 4,
+                      boxShadow: '0 2px 8px rgba(0,0,0,0.25)'
+                    }}
+                  >
+                    <ChevronLeft size={20} />
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={(e) => { e.stopPropagation(); handleNextImg(e); }}
+                    aria-label="Foto siguiente"
+                    style={{
+                      position: 'absolute',
+                      right: '10px',
+                      top: '50%',
+                      transform: 'translateY(-50%)',
+                      width: '36px',
+                      height: '36px',
+                      borderRadius: '50%',
+                      backgroundColor: 'rgba(255, 255, 255, 0.9)',
+                      color: '#0F172A',
+                      border: 'none',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      cursor: 'pointer',
+                      zIndex: 4,
+                      boxShadow: '0 2px 8px rgba(0,0,0,0.25)'
+                    }}
+                  >
+                    <ChevronRight size={20} />
+                  </button>
+
+                  {/* Contador en esquina */}
+                  <div style={{
+                    position: 'absolute',
+                    top: '10px',
+                    right: '10px',
+                    backgroundColor: 'rgba(15, 23, 42, 0.75)',
+                    color: '#FFFFFF',
+                    padding: '4px 10px',
+                    borderRadius: '14px',
+                    fontSize: '0.74rem',
+                    fontWeight: 800,
+                    backdropFilter: 'blur(4px)',
+                    zIndex: 4,
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '4px'
+                  }}>
+                    <Camera size={12} /> {activeImgIndex + 1}/{images.length}
+                  </div>
+                </>
+              )}
+
+              {/* Bottom-Right Price Patch Overlay */}
+              <div style={{
+                position: 'absolute',
+                bottom: '10px',
+                right: '10px',
+                minWidth: '130px',
+                textAlign: 'center',
+                backgroundColor: 'var(--bg-card)',
+                color: 'var(--text-main)',
+                padding: '7px 16px',
+                borderRadius: '8px',
+                border: '2px solid var(--border-color)',
+                boxShadow: '0 4px 14px rgba(0,0,0,0.18)',
+                fontWeight: 900,
+                fontSize: '0.82rem',
+                letterSpacing: '0.5px',
+                pointerEvents: 'none',
+                userSelect: 'none',
+                zIndex: 3
+              }}>
+                ⭐ DULCE VALENTÍN
+              </div>
+              <div style={{
+                position: 'absolute',
+                top: '10px',
+                left: '10px',
+                backgroundColor: 'rgba(15, 23, 42, 0.7)',
+                color: '#FFFFFF',
+                padding: '4px 10px',
+                borderRadius: '6px',
+                fontSize: '0.72rem',
+                fontWeight: 700,
+                backdropFilter: 'blur(4px)',
+                pointerEvents: 'none',
+                zIndex: 3
+              }}>
+                🔍 Tap para expandir
+              </div>
             </div>
-            <div style={{
-              position: 'absolute',
-              top: '10px',
-              left: '10px',
-              backgroundColor: 'rgba(15, 23, 42, 0.7)',
-              color: '#FFFFFF',
-              padding: '4px 10px',
-              borderRadius: '6px',
-              fontSize: '0.72rem',
-              fontWeight: 700,
-              backdropFilter: 'blur(4px)',
-              pointerEvents: 'none'
-            }}>
-              🔍 Tap para expandir
-            </div>
+
+            {/* Tira de Miniaturas (Thumbnails) */}
+            {hasMultiple && (
+              <div
+                style={{
+                  display: 'flex',
+                  gap: '8px',
+                  overflowX: 'auto',
+                  padding: '10px 2px 2px 2px',
+                  alignItems: 'center'
+                }}
+              >
+                {images.map((imgUrl, idx) => {
+                  const isActive = idx === activeImgIndex;
+                  return (
+                    <button
+                      key={`${imgUrl}-${idx}`}
+                      type="button"
+                      onClick={() => setActiveImgIndex(idx)}
+                      style={{
+                        position: 'relative',
+                        width: '62px',
+                        height: '62px',
+                        minWidth: '62px',
+                        borderRadius: '8px',
+                        overflow: 'hidden',
+                        border: isActive ? '2.5px solid var(--accent-gold)' : '1px solid var(--border-color)',
+                        boxShadow: isActive ? '0 0 0 1px var(--accent-gold)' : 'none',
+                        opacity: isActive ? 1 : 0.6,
+                        transform: isActive ? 'scale(1.02)' : 'scale(1)',
+                        transition: 'all 0.15s ease',
+                        cursor: 'pointer',
+                        padding: 0,
+                        backgroundColor: 'var(--bg-card)'
+                      }}
+                      title={`Ver foto ${idx + 1}`}
+                    >
+                      <img
+                        src={imgUrl}
+                        alt=""
+                        style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                        onError={(e) => { e.target.src = '/logo.png'; }}
+                      />
+                    </button>
+                  );
+                })}
+              </div>
+            )}
           </div>
 
           <div className="product-detail-info">
@@ -283,9 +452,83 @@ export default function ProductDetailModal({ product, isOpen, onClose, onAddToCa
           >
             <X size={22} />
           </button>
+
+          {/* Flechas de navegación en modo zoom */}
+          {hasMultiple && (
+            <>
+              <button
+                type="button"
+                onClick={(e) => { e.stopPropagation(); handlePrevImg(e); }}
+                style={{
+                  position: 'absolute',
+                  left: '20px',
+                  top: '50%',
+                  transform: 'translateY(-50%)',
+                  width: '46px',
+                  height: '46px',
+                  borderRadius: '50%',
+                  backgroundColor: 'rgba(255, 255, 255, 0.85)',
+                  color: '#000000',
+                  border: 'none',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  cursor: 'pointer',
+                  zIndex: 100000,
+                  boxShadow: '0 4px 12px rgba(0,0,0,0.5)'
+                }}
+              >
+                <ChevronLeft size={26} />
+              </button>
+
+              <button
+                type="button"
+                onClick={(e) => { e.stopPropagation(); handleNextImg(e); }}
+                style={{
+                  position: 'absolute',
+                  right: '20px',
+                  top: '50%',
+                  transform: 'translateY(-50%)',
+                  width: '46px',
+                  height: '46px',
+                  borderRadius: '50%',
+                  backgroundColor: 'rgba(255, 255, 255, 0.85)',
+                  color: '#000000',
+                  border: 'none',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  cursor: 'pointer',
+                  zIndex: 100000,
+                  boxShadow: '0 4px 12px rgba(0,0,0,0.5)'
+                }}
+              >
+                <ChevronRight size={26} />
+              </button>
+
+              <div style={{
+                position: 'absolute',
+                bottom: '24px',
+                left: '50%',
+                transform: 'translateX(-50%)',
+                backgroundColor: 'rgba(0, 0, 0, 0.75)',
+                color: '#FFFFFF',
+                padding: '6px 14px',
+                borderRadius: '20px',
+                fontSize: '0.85rem',
+                fontWeight: 700,
+                zIndex: 100000,
+                backdropFilter: 'blur(4px)'
+              }}>
+                {activeImgIndex + 1} / {images.length}
+              </div>
+            </>
+          )}
+
           <img
-            src={product.image_url}
+            src={currentImage}
             alt={product.name}
+            onClick={(e) => e.stopPropagation()}
             style={{
               maxWidth: '92vw',
               maxHeight: '92vh',
