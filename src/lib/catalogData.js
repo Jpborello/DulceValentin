@@ -119,6 +119,7 @@ export const HOME_CATEGORY_GROUPS = [
     id: 'calzado',
     name: 'Calzado',
     tagline: 'Zapatillas y calzado para toda la familia',
+    image: '/categorias/calzado.jpg',
     items: [
       { label: 'Hombre', category: 'Calzado', subcategory: 'Hombre' },
       { label: 'Mujer', category: 'Calzado', subcategory: 'Mujer' },
@@ -129,6 +130,7 @@ export const HOME_CATEGORY_GROUPS = [
     id: 'indumentaria',
     name: 'Indumentaria',
     tagline: 'Ropa de hombre, mujer e infantil',
+    image: '/categorias/indumentaria.jpg',
     items: [
       { label: 'Hombre', category: 'Hombres', expand: true },
       { label: 'Mujer', category: 'Mujeres', expand: true },
@@ -139,6 +141,7 @@ export const HOME_CATEGORY_GROUPS = [
     id: 'lenceria',
     name: 'Lencería',
     tagline: 'Lencería femenina',
+    image: '/categorias/lenceria.jpg',
     items: [
       { label: 'Lencería', category: 'Lencería', expand: true },
       // Rescata los productos historicos que quedaron cargados como
@@ -150,6 +153,7 @@ export const HOME_CATEGORY_GROUPS = [
     id: 'bebes',
     name: 'Bebés',
     tagline: 'Todo para los más chiquitos',
+    image: '/categorias/bebes.jpg',
     items: [
       { label: 'Bebés', category: 'Bebés', expand: true }
     ]

@@ -44,6 +44,7 @@ export default function WebChatWidget() {
     if (!id) return;
     try {
       const res = await fetch(`/api/webchat/message?sessionId=${encodeURIComponent(id)}`);
+      if (!res.ok) return;
       const data = await res.json();
       if (data.success && Array.isArray(data.messages)) {
         setMessages((prev) => {

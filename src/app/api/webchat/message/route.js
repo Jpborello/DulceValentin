@@ -11,6 +11,10 @@ const supabaseAdmin = createClient(supabaseUrl, serviceRoleKey);
 // respuestas del bot y del admin escritas desde el panel).
 export async function GET(req) {
   try {
+    if (!serviceRoleKey || serviceRoleKey.includes('COMPLETAR')) {
+      return NextResponse.json({ success: true, messages: [] });
+    }
+
     const { searchParams } = new URL(req.url);
     const sessionId = searchParams.get('sessionId');
 

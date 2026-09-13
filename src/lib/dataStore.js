@@ -55,7 +55,7 @@ class DataStore {
       });
     }
 
-    this.initFromSupabase();
+    this.initFromSupabase().catch(() => {});
   }
 
   saveProductsToLocalStorage() {
@@ -103,14 +103,22 @@ class DataStore {
   // then pull the real, current state from Supabase so admin edits
   // (precio, stock, categorías nuevas, etc.) siempre prevalecen.
   async initFromSupabase() {
-    await this.seedMissingCatalogInSupabase();
-    await Promise.all([
-      this.fetchProductsFromSupabase(),
-      this.fetchCategoriesFromSupabase(),
-      this.fetchOrdersFromSupabase(),
-      this.fetchClientsFromSupabase(),
-      this.fetchRaffleTicketsFromSupabase()
-    ]);
+    try {
+      await this.seedMissingCatalogInSupabase();
+    } catch (err) {
+      console.warn('Supabase catalog seed warning:', err);
+    }
+    try {
+      await Promise.allSettled([
+        this.fetchProductsFromSupabase(),
+        this.fetchCategoriesFromSupabase(),
+        this.fetchOrdersFromSupabase(),
+        this.fetchClientsFromSupabase(),
+        this.fetchRaffleTicketsFromSupabase()
+      ]);
+    } catch (err) {
+      console.warn('Supabase init warning:', err);
+    }
   }
 
   // Boletos del sorteo (numero + a que pedido/cliente quedaron atados).
@@ -393,8 +401,10 @@ class DataStore {
       if (!sessionStorage.getItem('dulcevalentin_visit_counted')) {
         sessionStorage.setItem('dulcevalentin_visit_counted', '1');
         fetch('/api/visit', { method: 'POST' })
-          .then(res => res.json())
-          .then(data => this.applyVisitStats(data))
+          .then(res => (res.ok ? res.json() : null))
+          .then(data => {
+            if (data) this.applyVisitStats(data);
+          })
           .catch(() => {});
       } else {
         this.fetchVisitCountFromSupabase();
@@ -408,7 +418,10 @@ class DataStore {
     if (typeof window === 'undefined') return;
     try {
       const res = await fetch('/api/visit');
-      if (res.ok) this.applyVisitStats(await res.json());
+      if (res.ok) {
+        const data = await res.json();
+        if (data) this.applyVisitStats(data);
+      }
     } catch (err) {}
   }
 

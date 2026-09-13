@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef } from 'react';
 import Header from '@/components/Header';
 import HeroSection from '@/components/HeroSection';
-import CarouselSection from '@/components/CarouselSection';
+import SearchBarSection from '@/components/SearchBarSection';
 import CategoryNav from '@/components/CategoryNav';
 import CategoryShowcase from '@/components/CategoryShowcase';
 import ProductGrid from '@/components/ProductGrid';
@@ -14,7 +14,7 @@ import WholesaleBanner from '@/components/WholesaleBanner';
 import TrustBar from '@/components/TrustBar';
 import ProductDetailModal from '@/components/ProductDetailModal';
 import { dataStore, CATEGORIES } from '@/lib/dataStore';
-import { supabase } from '@/lib/supabaseClient';
+import { flexibleProductMatch } from '@/lib/searchUtils';
 import { Store, MapPin, Instagram, PackageSearch } from 'lucide-react';
 import Link from 'next/link';
 
@@ -27,13 +27,8 @@ export default function Home() {
   const [selectedCategory, setSelectedCategory] = useState('all');
   const [selectedSubcategory, setSelectedSubcategory] = useState(null);
   const [searchQuery, setSearchQuery] = useState('');
+  const [catalogOpen, setCatalogOpen] = useState(false);
   const [visibleCount, setVisibleCount] = useState(PRODUCTS_PER_PAGE);
-  // Busqueda "inteligente" (tolera errores de tipeo) via Postgres en
-  // Supabase. Arranca en null: mientras no haya respuesta del servidor
-  // para la busqueda actual, se usa el filtro por substring de mas abajo
-  // como base instantanea, asi no hay ningun parpadeo/demora al tipear.
-  const [smartSearchIds, setSmartSearchIds] = useState(null);
-
   // Cart & Auth state
   const [cartItems, setCartItems] = useState([]);
   const [cartHydrated, setCartHydrated] = useState(false);
@@ -70,20 +65,21 @@ export default function Home() {
     deepLinkHandledRef.current = true;
   }, [products]);
 
-  // Links compartidos (?categoria=Mujeres&sub=Camperas) preseleccionan esa
-  // categoria/subcategoria al cargar la pagina.
+  // Links compartidos (?categoria=Indumentaria&sub=Hombre) preseleccionan esa
+  // categoria/subcategoria al cargar la pagina y abren el catalogo.
   const categoryDeepLinkHandledRef = useRef(false);
   useEffect(() => {
-    if (categoryDeepLinkHandledRef.current || categories.length === 0) return;
+    if (categoryDeepLinkHandledRef.current) return;
     const params = new URLSearchParams(window.location.search);
     const catParam = params.get('categoria');
     const subParam = params.get('sub');
-    if (catParam && categories.some((c) => c.id === catParam)) {
+    if (catParam) {
+      setCatalogOpen(true);
       setSelectedCategory(catParam);
       if (subParam) setSelectedSubcategory(subParam);
     }
     categoryDeepLinkHandledRef.current = true;
-  }, [categories]);
+  }, []);
 
   // Refleja la categoria/subcategoria elegida en la URL (sin recargar la
   // pagina) para poder copiar/compartir el link de ese filtro puntual.
@@ -140,34 +136,7 @@ export default function Home() {
     setVisibleCount(PRODUCTS_PER_PAGE);
   }, [selectedCategory, selectedSubcategory, searchQuery]);
 
-  // Busqueda tolerante a errores de tipeo: 300ms despues de que el
-  // usuario deja de tipear, le pregunta a Postgres (full-text search +
-  // similitud por trigrams) que productos matchean de verdad, y ese
-  // resultado reemplaza al filtro por substring simple de mas abajo.
-  useEffect(() => {
-    const query = searchQuery.trim();
-    if (!query || !supabase) {
-      setSmartSearchIds(null);
-      return;
-    }
-    let cancelled = false;
-    const timer = setTimeout(async () => {
-      try {
-        const { data, error } = await supabase.rpc('search_products', { search_term: query });
-        if (!cancelled && !error && Array.isArray(data)) {
-          setSmartSearchIds(new Set(data.map((p) => p.id)));
-        }
-      } catch (e) {
-        // Si falla la busqueda inteligente (sin conexion, etc.), nos
-        // quedamos con el filtro por substring de siempre, sin romper nada.
-        if (!cancelled) setSmartSearchIds(null);
-      }
-    }, 300);
-    return () => {
-      cancelled = true;
-      clearTimeout(timer);
-    };
-  }, [searchQuery]);
+
 
   // Persistir el carrito en cada cambio (recien despues de hidratar, para
   // no pisar lo guardado con el estado inicial vacio)
@@ -269,36 +238,45 @@ export default function Home() {
       const prodCatLower = normalizeStr(product.category);
       const prodSubLower = normalizeStr(product.subcategory);
 
-      matchesCategory = (
-        prodCatLower === selCatLower ||
-        prodSubLower === selCatLower ||
-        prodCatLower.includes(selCatLower) ||
-        prodSubLower.includes(selCatLower) ||
-        selCatLower.includes(prodSubLower) ||
-        selCatLower.includes(prodCatLower)
-      );
+      // Si se eligió un grupo principal desde las cards o la barra
+      if (selCatLower === 'indumentaria') {
+        matchesCategory = ['hombres', 'mujeres', 'infantil'].includes(prodCatLower) || prodCatLower.includes('indumentaria');
+      } else if (selCatLower === 'calzado') {
+        matchesCategory = prodCatLower === 'calzado' || prodCatLower.includes('calzado');
+      } else if (selCatLower === 'lenceria' || selCatLower === 'lencería') {
+        matchesCategory = prodCatLower.includes('lencer') || (prodCatLower === 'mujeres' && prodSubLower.includes('intima'));
+      } else if (selCatLower === 'bebes' || selCatLower === 'bebés') {
+        matchesCategory = prodCatLower.includes('bebe');
+      } else {
+        matchesCategory = (
+          prodCatLower === selCatLower ||
+          prodSubLower === selCatLower ||
+          prodCatLower.includes(selCatLower) ||
+          prodSubLower.includes(selCatLower) ||
+          selCatLower.includes(prodSubLower) ||
+          selCatLower.includes(prodCatLower)
+        );
+      }
     }
 
     let matchesSubcategory = !selectedSubcategory;
     if (!matchesSubcategory && selectedSubcategory) {
       const selSubLower = normalizeStr(selectedSubcategory);
       const prodSubLower = normalizeStr(product.subcategory);
-      matchesSubcategory = prodSubLower === selSubLower || prodSubLower.includes(selSubLower);
+      const prodCatLower = normalizeStr(product.category);
+
+      if (selSubLower === 'hombre' || selSubLower === 'hombres') {
+        matchesSubcategory = prodCatLower === 'hombres' || prodSubLower.includes('hombre');
+      } else if (selSubLower === 'mujer' || selSubLower === 'mujeres') {
+        matchesSubcategory = prodCatLower === 'mujeres' || prodSubLower.includes('mujer');
+      } else if (selSubLower === 'infantil') {
+        matchesSubcategory = prodCatLower === 'infantil' || prodSubLower.includes('infantil');
+      } else {
+        matchesSubcategory = prodSubLower === selSubLower || prodSubLower.includes(selSubLower);
+      }
     }
 
-    const normSearch = normalizeStr(searchQuery);
-    // Si ya tenemos respuesta de la busqueda inteligente (tolerante a
-    // errores de tipeo) para lo que esta tipeado ahora, se usa esa — sino,
-    // el match instantaneo por substring de siempre como base.
-    const matchesSearch = normSearch === '' ||
-      (smartSearchIds
-        ? smartSearchIds.has(product.id)
-        : (
-          normalizeStr(product.name).includes(normSearch) ||
-          normalizeStr(product.category).includes(normSearch) ||
-          normalizeStr(product.subcategory).includes(normSearch) ||
-          normalizeStr(product.description).includes(normSearch)
-        ));
+    const matchesSearch = flexibleProductMatch(product, searchQuery);
 
     return product.is_active !== false && matchesCategory && matchesSubcategory && matchesSearch;
   }).sort((a, b) => Number(!!b.is_new) - Number(!!a.is_new));
@@ -326,12 +304,9 @@ export default function Home() {
       .map((p) => p.id)
   );
 
-  // El home ya no lista todo el catalogo de entrada: los productos viven
-  // dentro de las categorias. La grilla aparece solo cuando el visitante
-  // eligio una categoria o esta buscando algo.
   const hasSearch = searchQuery.trim() !== '';
   const isCategoryFiltered = Boolean(selectedCategory) && selectedCategory !== 'all';
-  const showProductGrid = hasSearch || isCategoryFiltered;
+  const showProductGrid = catalogOpen || hasSearch || isCategoryFiltered;
 
   const totalCartItemsCount = cartItems.reduce((sum, item) => sum + item.quantity, 0);
   const cartSubtotal = cartItems.reduce((sum, item) => {
@@ -390,53 +365,77 @@ export default function Home() {
         </div>
       )}
 
-      {/* Hero Section */}
+      {/* Hero Section con Carrusel de Ofertas y Promociones */}
       <HeroSection
-        onExploreCatalog={() => {
-          // Sin filtro activo no existe #catalogo (la grilla no esta montada),
-          // asi que el boton del hero lleva a las cards de categorias.
-          const el = document.getElementById('catalogo') || document.getElementById('categorias');
-          if (el) el.scrollIntoView({ behavior: 'smooth' });
-        }}
-      />
-
-      {/* Carousel Section (Offers & Top Seller) */}
-      <CarouselSection
         offers={offers}
         featuredOffer={featuredOffer}
         topSeller={topSeller}
         onAddToCart={handleAddToCart}
         onOpenDetail={setDetailProduct}
+        onExploreCatalog={() => {
+          setCatalogOpen(true);
+          setSelectedCategory('all');
+          setSelectedSubcategory(null);
+          requestAnimationFrame(() => {
+            const el = document.getElementById('catalogo') || document.getElementById('categorias');
+            if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+          });
+        }}
       />
 
-      {/* Trust Bar */}
-      <TrustBar />
+      {/* Buscador Central: ¿Qué estás buscando? */}
+      <SearchBarSection
+        searchQuery={searchQuery}
+        setSearchQuery={(q) => {
+          setSearchQuery(q);
+          if (q.trim()) setCatalogOpen(true);
+        }}
+        totalResults={hasSearch ? filteredProducts.length : null}
+        onClear={() => setSearchQuery('')}
+      />
 
-      {/* Categorías principales: 4 cards + accesos secundarios */}
+      {/* Categorías principales: 4 cards (Calzado, Indumentaria, Lencería, Bebés) + secundarias */}
       <CategoryShowcase
         categories={categories}
         products={products}
         selectedCategory={selectedCategory}
         selectedSubcategory={selectedSubcategory}
         onSelect={(category, subcategory) => {
+          setCatalogOpen(true);
           setSelectedCategory(category);
           setSelectedSubcategory(subcategory);
+          requestAnimationFrame(() => {
+            requestAnimationFrame(() => {
+              const el = document.getElementById('catalogo');
+              if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            });
+          });
         }}
         searchQuery={searchQuery}
         setSearchQuery={setSearchQuery}
       />
 
-      {/* Catálogo: aparece recién cuando se eligió una categoría o hay una
-          búsqueda. Sin filtro, el home termina en las cards de categorías. */}
+      {/* Trust Bar con beneficios */}
+      <TrustBar />
+
+      {/* Catálogo: aparece recién cuando se eligió una categoría, hay una
+          búsqueda o se abrió el catálogo. */}
       {showProductGrid && (
         <main className="main-catalog-layout">
           <CategoryNav
             categories={categories}
             selectedCategory={selectedCategory}
-            onSelectCategory={setSelectedCategory}
+            onSelectCategory={(cat) => {
+              setCatalogOpen(true);
+              setSelectedCategory(cat);
+              setSelectedSubcategory(null);
+            }}
             selectedSubcategory={selectedSubcategory}
             onSelectSubcategory={setSelectedSubcategory}
+            searchQuery={searchQuery}
+            setSearchQuery={setSearchQuery}
             hasSearch={hasSearch}
+            totalCount={filteredProducts.length}
           />
 
           <ProductGrid

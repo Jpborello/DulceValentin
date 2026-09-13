@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { Footprints, Shirt, Heart, Baby, ChevronDown, Search } from 'lucide-react';
+import { Footprints, Shirt, Heart, Baby, ChevronDown, ArrowRight } from 'lucide-react';
 import {
   HOME_CATEGORY_GROUPS,
   SECONDARY_CATEGORY_IDS,
@@ -44,8 +44,10 @@ export default function CategoryShowcase({
       (c) => normStr(c.id) === normStr(idOrName) || normStr(c.name) === normStr(idOrName)
     );
 
-  // Una card esta activa si el filtro actual cae dentro de alguno de sus items.
+  // Una card esta activa si el filtro actual coincide con el grupo o cae dentro de alguno de sus items.
   const isGroupActive = (group) =>
+    normStr(selectedCategory) === normStr(group.id) ||
+    normStr(selectedCategory) === normStr(group.name) ||
     group.items.some((item) => {
       if (normStr(item.category) !== normStr(selectedCategory)) return false;
       return item.subcategory ? normStr(item.subcategory) === normStr(selectedSubcategory) : true;
@@ -57,10 +59,6 @@ export default function CategoryShowcase({
     return normStr(product.subcategory) === normStr(item.subcategory);
   };
 
-  // Se cuenta sobre los productos, no sumando el `count` de cada categoria:
-  // una misma categoria puede colgar de dos cards por una subcategoria puntual
-  // (Lenceria toma Mujeres > Ropa Intima) y sumar el total de Mujeres ahi
-  // inflaba el numero con prendas que no son de esa card.
   const countForGroup = (group) =>
     products.filter(
       (p) => p.is_active !== false && group.items.some((item) => matchesItem(p, item))
@@ -69,9 +67,8 @@ export default function CategoryShowcase({
   const handlePick = (category, subcategory = null) => {
     const cat = findCategory(category);
     onSelect(cat ? cat.id : category, subcategory);
-    // #catalogo recien se monta cuando hay un filtro activo, asi que el scroll
-    // tiene que esperar al render siguiente — en el mismo tick el nodo todavia
-    // no existe y el scroll no pasaba nada.
+    // #catalogo recien se monta cuando hay un filtro activo o catalogo abierto,
+    // asi que el scroll espera al siguiente tick para desplazarse con suavidad.
     requestAnimationFrame(() => {
       requestAnimationFrame(() => {
         const el = document.getElementById('catalogo');
@@ -112,19 +109,13 @@ export default function CategoryShowcase({
           muestra la grilla de entrada: es el unico acceso a la busqueda
           mientras el visitante todavia no eligio una categoria. */}
       <div className="cat-showcase-header">
-        <h2 id="cat-showcase-title" className="cat-showcase-title">
-          Categorías
-        </h2>
-        <div className="cat-showcase-search">
-          <Search size={18} />
-          <input
-            type="text"
-            placeholder="Buscar por prenda, modelo o categoría..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery && setSearchQuery(e.target.value)}
-            className="form-input"
-            aria-label="Buscar productos"
-          />
+        <div>
+          <h2 id="cat-showcase-title" className="cat-showcase-title">
+            Categorías
+          </h2>
+          <p className="cat-showcase-subtitle">
+            Elegí una categoría para explorar todas las prendas disponibles
+          </p>
         </div>
       </div>
 
@@ -138,23 +129,43 @@ export default function CategoryShowcase({
             <button
               key={group.id}
               type="button"
-              onClick={() => setOpenGroupId(isOpen ? null : group.id)}
-              aria-expanded={isOpen}
-              className={`cat-card ${isOpen ? 'open' : ''} ${isGroupActive(group) ? 'active' : ''}`}
+              onClick={() => handlePick(group.name || group.id, null)}
+              className={`cat-card ${isGroupActive(group) ? 'active' : ''}`}
             >
-              <span className="cat-card-icon">
-                <Icon size={26} strokeWidth={1.5} />
-              </span>
-              <span className="cat-card-body">
+              {group.image && (
+                <div className="cat-card-bg-wrap">
+                  <img
+                    src={group.image}
+                    alt={group.name}
+                    className="cat-card-bg-img"
+                    loading="lazy"
+                  />
+                  <div className="cat-card-scrim" />
+                </div>
+              )}
+
+              <div className="cat-card-top">
+                <span className="cat-card-icon">
+                  <Icon size={20} strokeWidth={1.8} />
+                </span>
+                {count > 0 && (
+                  <span className="cat-card-badge">
+                    {count} {count === 1 ? 'prenda' : 'prendas'}
+                  </span>
+                )}
+              </div>
+
+              <div className="cat-card-body">
                 <span className="cat-card-name">{group.name}</span>
                 <span className="cat-card-tagline">{group.tagline}</span>
-              </span>
-              <span className="cat-card-foot">
-                <span className="cat-card-count">
-                  {count > 0 ? `${count} ${count === 1 ? 'producto' : 'productos'}` : 'Ver'}
+              </div>
+
+              <div className="cat-card-foot">
+                <span className="cat-card-action">
+                  Ver productos
                 </span>
-                <ChevronDown size={16} className="cat-card-chevron" />
-              </span>
+                <ArrowRight size={16} className="cat-card-chevron" />
+              </div>
             </button>
           );
         })}

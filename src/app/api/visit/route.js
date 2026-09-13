@@ -102,12 +102,26 @@ async function insertVisit(geo) {
 }
 
 export async function GET() {
-  const counts = await getVisitCounts();
-  return NextResponse.json(counts);
+  if (!serviceRoleKey || serviceRoleKey.includes('COMPLETAR')) {
+    return NextResponse.json({ total: 0, today: 0, week: 0, month: 0, byRegion: [] });
+  }
+  try {
+    const counts = await getVisitCounts();
+    return NextResponse.json(counts);
+  } catch {
+    return NextResponse.json({ total: 0, today: 0, week: 0, month: 0, byRegion: [] });
+  }
 }
 
 export async function POST(request) {
-  await insertVisit(getGeoFromHeaders(request));
-  const counts = await getVisitCounts();
-  return NextResponse.json(counts);
+  if (!serviceRoleKey || serviceRoleKey.includes('COMPLETAR')) {
+    return NextResponse.json({ total: 0, today: 0, week: 0, month: 0, byRegion: [] });
+  }
+  try {
+    await insertVisit(getGeoFromHeaders(request));
+    const counts = await getVisitCounts();
+    return NextResponse.json(counts);
+  } catch {
+    return NextResponse.json({ total: 0, today: 0, week: 0, month: 0, byRegion: [] });
+  }
 }
