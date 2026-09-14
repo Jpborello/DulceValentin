@@ -1,11 +1,10 @@
 'use client';
 
-import { useState } from 'react';
-import { Footprints, Shirt, Heart, Baby, ChevronDown, ArrowRight } from 'lucide-react';
+import Link from 'next/link';
+import { Footprints, Shirt, Heart, Baby, ArrowRight } from 'lucide-react';
 import {
   HOME_CATEGORY_GROUPS,
-  SECONDARY_CATEGORY_IDS,
-  isRetiredSubcategory
+  SECONDARY_CATEGORY_IDS
 } from '@/lib/catalogData';
 
 const GROUP_ICONS = {
@@ -16,42 +15,30 @@ const GROUP_ICONS = {
 };
 
 const normStr = (str) =>
-  (str || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
+  (str || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().trim();
 
 /**
- * Las 4 categorias principales del home, en cards cuadradas. Al tocar una se
- * abre debajo el detalle con sus categorias y subcategorias; elegir cualquiera
- * filtra la grilla de productos.
+ * Las 4 categorias principales del home, en cards cuadradas. Cada una es un
+ * link directo a su propia pagina (/categoria/<id>: calzado, indumentaria,
+ * lenceria, bebes) que ya muestra todos sus productos apenas entra el
+ * visitante, con buscador y filtro por subcategoria adentro — ver
+ * `CategoryGroupCatalog`. La home ya no despliega el catalogo abajo al
+ * tocarlas.
  *
- * Las subcategorias NO estan hardcodeadas aca: salen de `categories` (lo que
- * devuelve dataStore, ya mergeado con Supabase), asi lo que el admin agrega
- * aparece solo. Los grupos de HOME_CATEGORY_GROUPS solo dicen que categoria
- * cuelga de que card.
+ * Las categorias secundarias (Blanquería, Perfumería, Complementos, y
+ * cualquier categoria nueva que el admin cargue sin asignarla a una card)
+ * siguen filtrando el catalogo de la propia home, sin navegar a otra pagina.
  */
 export default function CategoryShowcase({
   categories = [],
   products = [],
   selectedCategory,
-  selectedSubcategory,
-  onSelect,
-  searchQuery = '',
-  setSearchQuery
+  onSelect
 }) {
-  const [openGroupId, setOpenGroupId] = useState(null);
-
   const findCategory = (idOrName) =>
     categories.find(
       (c) => normStr(c.id) === normStr(idOrName) || normStr(c.name) === normStr(idOrName)
     );
-
-  // Una card esta activa si el filtro actual coincide con el grupo o cae dentro de alguno de sus items.
-  const isGroupActive = (group) =>
-    normStr(selectedCategory) === normStr(group.id) ||
-    normStr(selectedCategory) === normStr(group.name) ||
-    group.items.some((item) => {
-      if (normStr(item.category) !== normStr(selectedCategory)) return false;
-      return item.subcategory ? normStr(item.subcategory) === normStr(selectedSubcategory) : true;
-    });
 
   const matchesItem = (product, item) => {
     if (normStr(product.category) !== normStr(item.category)) return false;
@@ -64,11 +51,9 @@ export default function CategoryShowcase({
       (p) => p.is_active !== false && group.items.some((item) => matchesItem(p, item))
     ).length;
 
-  const handlePick = (category, subcategory = null) => {
+  const handlePickSecondary = (category) => {
     const cat = findCategory(category);
-    onSelect(cat ? cat.id : category, subcategory);
-    // #catalogo recien se monta cuando hay un filtro activo o catalogo abierto,
-    // asi que el scroll espera al siguiente tick para desplazarse con suavidad.
+    onSelect(cat ? cat.id : category, null);
     requestAnimationFrame(() => {
       requestAnimationFrame(() => {
         const el = document.getElementById('catalogo');
@@ -76,8 +61,6 @@ export default function CategoryShowcase({
       });
     });
   };
-
-  const openGroup = HOME_CATEGORY_GROUPS.find((g) => g.id === openGroupId) || null;
 
   // Red de seguridad: como el home ya no muestra la grilla completa, una
   // categoria que no cuelgue de ninguna card seria inalcanzable salvo por
@@ -105,9 +88,6 @@ export default function CategoryShowcase({
 
   return (
     <section id="categorias" className="cat-showcase" aria-labelledby="cat-showcase-title">
-      {/* El buscador vive aca (y no abajo del catalogo) porque el home ya no
-          muestra la grilla de entrada: es el unico acceso a la busqueda
-          mientras el visitante todavia no eligio una categoria. */}
       <div className="cat-showcase-header">
         <div>
           <h2 id="cat-showcase-title" className="cat-showcase-title">
@@ -122,16 +102,10 @@ export default function CategoryShowcase({
       <div className="cat-showcase-grid">
         {HOME_CATEGORY_GROUPS.map((group) => {
           const Icon = GROUP_ICONS[group.id] || Shirt;
-          const isOpen = openGroupId === group.id;
           const count = countForGroup(group);
 
           return (
-            <button
-              key={group.id}
-              type="button"
-              onClick={() => handlePick(group.name || group.id, null)}
-              className={`cat-card ${isGroupActive(group) ? 'active' : ''}`}
-            >
+            <Link key={group.id} href={`/categoria/${group.id}`} className="cat-card">
               {group.image && (
                 <div className="cat-card-bg-wrap">
                   <img
@@ -166,82 +140,10 @@ export default function CategoryShowcase({
                 </span>
                 <ArrowRight size={16} className="cat-card-chevron" />
               </div>
-            </button>
+            </Link>
           );
         })}
       </div>
-
-      {openGroup && (
-        <div className="cat-panel">
-          <div className="cat-panel-cols">
-            {openGroup.items.map((item, idx) => {
-              const cat = findCategory(item.category);
-
-              // Item hoja: un link directo a categoria + subcategoria.
-              if (!item.expand) {
-                const isActive =
-                  normStr(selectedCategory) === normStr(item.category) &&
-                  normStr(selectedSubcategory) === normStr(item.subcategory);
-                return (
-                  <div className="cat-panel-col" key={`${item.category}-${item.subcategory || idx}`}>
-                    <button
-                      type="button"
-                      onClick={() => handlePick(item.category, item.subcategory)}
-                      className={`cat-panel-head ${isActive ? 'active' : ''}`}
-                    >
-                      {item.label}
-                    </button>
-                  </div>
-                );
-              }
-
-              // Item columna: la categoria como titulo y sus subcategorias vivas.
-              const subs = (cat?.subcategories || []).filter(
-                (sub) => !isRetiredSubcategory(cat?.name || item.category, sub)
-              );
-
-              return (
-                <div className="cat-panel-col" key={`${item.category}-${idx}`}>
-                  <button
-                    type="button"
-                    onClick={() => handlePick(item.category, null)}
-                    className={`cat-panel-head ${
-                      normStr(selectedCategory) === normStr(item.category) && !selectedSubcategory
-                        ? 'active'
-                        : ''
-                    }`}
-                  >
-                    {item.label}
-                  </button>
-
-                  {subs.length > 0 ? (
-                    <ul className="cat-panel-list">
-                      {subs.map((sub) => (
-                        <li key={sub}>
-                          <button
-                            type="button"
-                            onClick={() => handlePick(item.category, sub)}
-                            className={`cat-panel-link ${
-                              normStr(selectedSubcategory) === normStr(sub) &&
-                              normStr(selectedCategory) === normStr(item.category)
-                                ? 'active'
-                                : ''
-                            }`}
-                          >
-                            {sub}
-                          </button>
-                        </li>
-                      ))}
-                    </ul>
-                  ) : (
-                    <p className="cat-panel-empty">Sin subcategorías cargadas todavía.</p>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      )}
 
       {secondaryCategories.length > 0 && (
         <div className="cat-secondary">
@@ -250,7 +152,7 @@ export default function CategoryShowcase({
             <button
               key={cat.id}
               type="button"
-              onClick={() => handlePick(cat.id, null)}
+              onClick={() => handlePickSecondary(cat.id)}
               className={`cat-secondary-chip ${
                 normStr(selectedCategory) === normStr(cat.id) ? 'active' : ''
               }`}

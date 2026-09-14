@@ -12,6 +12,7 @@ import {
   Eye,
   Camera
 } from 'lucide-react';
+import { getProductPrice, getProductPriceRange } from '@/lib/dataStore';
 
 const FALLBACK_PROMO_SLIDES = [
   {
@@ -181,7 +182,11 @@ export default function HeroSection({
                     <div className="hero-price-block">
                       <span className="hero-price-prefix">Precio Mayorista:</span>
                       <span className="hero-price-amount">
-                        ${slide.wholesale_price?.toLocaleString('es-AR') || 'Consultar'}
+                        {(() => {
+                          const { min, hasRange } = getProductPriceRange(slide);
+                          if (min) return hasRange ? `Desde $${min.toLocaleString('es-AR')}` : `$${min.toLocaleString('es-AR')}`;
+                          return slide.wholesale_price?.toLocaleString('es-AR') ? `$${slide.wholesale_price.toLocaleString('es-AR')}` : 'Consultar';
+                        })()}
                       </span>
                     </div>
                   </div>
@@ -190,7 +195,11 @@ export default function HeroSection({
                     {onAddToCart && (
                       <button
                         type="button"
-                        onClick={() => onAddToCart(slide)}
+                        onClick={() => {
+                          const hasSizes = Array.isArray(slide.sizes) && slide.sizes.length > 0;
+                          const selectedSize = hasSizes ? slide.sizes[0] : null;
+                          onAddToCart({ ...slide, selectedSize, unit_price: getProductPrice(slide, selectedSize) });
+                        }}
                         className="btn-hero-primary"
                         id="hero-btn-add"
                       >

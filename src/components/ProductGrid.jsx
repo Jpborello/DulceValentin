@@ -4,7 +4,7 @@ import { useState, useEffect, useRef } from 'react';
 import Image from 'next/image';
 import { ShoppingCart, Share2, Check, ChevronLeft, ChevronRight, Camera } from 'lucide-react';
 import { shareProduct } from '@/lib/shareProduct';
-import { getProductImages } from '@/lib/dataStore';
+import { getProductImages, getProductPrice, getProductPriceRange } from '@/lib/dataStore';
 
 export default function ProductGrid({ products, onAddToCart, isWholesaleQualified = false, onOpenDetail, topSellingIds }) {
   const [copiedShareId, setCopiedShareId] = useState(null);
@@ -31,10 +31,15 @@ export default function ProductGrid({ products, onAddToCart, isWholesaleQualifie
   const handleQuickAdd = (e, product) => {
     e.stopPropagation();
     const hasSizes = Array.isArray(product.sizes) && product.sizes.length > 0;
+    // El agregado rapido no deja elegir talle: si el producto tiene precio
+    // por talle, se toma el del primer talle de la lista (mismo criterio
+    // que ya usaba para elegirle el talle por defecto).
+    const selectedSize = hasSizes ? product.sizes[0] : null;
     onAddToCart({
       ...product,
-      selectedSize: hasSizes ? product.sizes[0] : null,
-      selectedColor: null
+      selectedSize,
+      selectedColor: null,
+      unit_price: getProductPrice(product, selectedSize)
     });
   };
 
@@ -130,7 +135,7 @@ function ProductGridCard({ product, onOpenDetail, onQuickAdd, onShare, isCopiedS
             alt={product.name}
             fill
             unoptimized
-            sizes="(max-width: 640px) 90vw, (max-width: 1024px) 45vw, 280px"
+            sizes="(max-width: 1024px) 45vw, 280px"
             className="product-img"
             onError={(e) => {
               e.target.src = '/logo.png';
@@ -319,7 +324,10 @@ function ProductGridCard({ product, onOpenDetail, onQuickAdd, onShare, isCopiedS
 
       <div className="product-card-footer">
         <span className="price-compact">
-          ${(product.wholesale_price || product.price)?.toLocaleString('es-AR')}
+          {(() => {
+            const { min, hasRange } = getProductPriceRange(product);
+            return hasRange ? `Desde $${min.toLocaleString('es-AR')}` : `$${min.toLocaleString('es-AR')}`;
+          })()}
         </span>
 
         <button

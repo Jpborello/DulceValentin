@@ -342,6 +342,14 @@ export default function AdminPage() {
     showSuccessNotice(`Precios incrementados un ${percentage}% correctamente.`);
   };
 
+  // Precio distinto segun el talle (ej: un talle especial que sale mas caro).
+  // Pasar null borra price_per_size y el producto vuelve a cobrar el precio
+  // mayorista unico de siempre.
+  const handleUpdatePricePerSize = async (id, pricePerSize) => {
+    await dataStore.updateProduct(id, { price_per_size: pricePerSize });
+    showSuccessNotice(pricePerSize ? 'Precio por talle guardado correctamente.' : 'Precio por talle quitado: vuelve a cobrar el precio mayorista único.');
+  };
+
   const handleToggleOffer = (id, isOffer) => {
     dataStore.updateProduct(id, { is_offer: isOffer });
     showSuccessNotice(isOffer ? 'Producto marcado en oferta.' : 'Producto sacado de oferta.');
@@ -360,6 +368,15 @@ export default function AdminPage() {
   const handleUnsetFeatured = (id) => {
     dataStore.unsetFeaturedProduct(id);
     showSuccessNotice('Oferta Destacada quitada.');
+  };
+
+  // Regla de la dueña: para acceder al precio mayorista, el pedido tiene que
+  // llevar al menos 3 unidades de un mismo articulo (despues, el resto puede
+  // ser por unidad). Los productos vendidos en pack (medias, "3 x $") quedan
+  // afuera de esa cuenta — ver CartDrawer.jsx.
+  const handleToggleExemptMin3 = (id, exempt) => {
+    dataStore.updateProduct(id, { exempt_from_min3: exempt });
+    showSuccessNotice(exempt ? 'Producto exceptuado del mínimo de 3 unidades.' : 'Producto vuelve a exigir el mínimo de 3 unidades.');
   };
 
   const handleAddCategory = (name, subcategories) => {
@@ -397,16 +414,9 @@ export default function AdminPage() {
     showSuccessNotice(`${newProducts.length} productos importados masivamente, cada uno con su código único.`);
   };
 
-  const handleImageUpdate = (id, payload) => {
-    if (Array.isArray(payload)) {
-      const valid = payload.filter(Boolean);
-      dataStore.updateProduct(id, { image_urls: valid, image_url: valid[0] || '/logo.png' });
-    } else if (typeof payload === 'string') {
-      dataStore.updateProduct(id, { image_url: payload });
-    } else if (payload && typeof payload === 'object') {
-      dataStore.updateProduct(id, payload);
-    }
-    showSuccessNotice('Imágenes del producto actualizadas con éxito.');
+  const handleImageUpdate = (id, newImageUrl) => {
+    dataStore.updateProduct(id, { image_url: newImageUrl });
+    showSuccessNotice('Imagen del producto actualizada.');
   };
 
   const normalizeSearch = (str) =>
@@ -821,6 +831,8 @@ export default function AdminPage() {
           onToggleNew={handleToggleNew}
           onSetFeatured={handleSetFeatured}
           onUnsetFeatured={handleUnsetFeatured}
+          onUpdatePricePerSize={handleUpdatePricePerSize}
+          onToggleExemptMin3={handleToggleExemptMin3}
         />
       )}
 

@@ -11,9 +11,10 @@ import CartDrawer from '@/components/CartDrawer';
 import AuthModal from '@/components/AuthModal';
 import WebChatWidget from '@/components/WebChatWidget';
 import WholesaleBanner from '@/components/WholesaleBanner';
+import ClubMayoristaBanner from '@/components/ClubMayoristaBanner';
 import TrustBar from '@/components/TrustBar';
 import ProductDetailModal from '@/components/ProductDetailModal';
-import { dataStore, CATEGORIES } from '@/lib/dataStore';
+import { dataStore, CATEGORIES, getProductPrice } from '@/lib/dataStore';
 import { flexibleProductMatch } from '@/lib/searchUtils';
 import { Store, MapPin, Instagram, PackageSearch } from 'lucide-react';
 import Link from 'next/link';
@@ -118,7 +119,16 @@ export default function Home() {
           .map((t) => {
             const baseProduct = products.find((p) => p.id === t.id);
             if (!baseProduct) return null;
-            const product = { ...baseProduct, selectedSize: t.selectedSize || null, selectedColor: t.selectedColor || null };
+            // El precio unitario guardado en el carrito queda "congelado":
+            // si el pedido ya se armo con un precio, no se recalcula al
+            // restaurar la pagina aunque el precio vigente del producto haya
+            // cambiado desde entonces. Los carritos guardados ANTES de este
+            // cambio no tienen unit_price todavia, asi que ahi si se calcula
+            // una vez (con el precio de hoy) para no dejarlos sin precio.
+            const unit_price = t.unit_price != null
+              ? t.unit_price
+              : getProductPrice(baseProduct, t.selectedSize || null);
+            const product = { ...baseProduct, selectedSize: t.selectedSize || null, selectedColor: t.selectedColor || null, unit_price };
             return { product, quantity: t.quantity || 1, variantKey: getVariantKey(product) };
           })
           .filter(Boolean);
@@ -147,7 +157,8 @@ export default function Home() {
         id: item.product.id,
         quantity: item.quantity,
         selectedSize: item.product.selectedSize || null,
-        selectedColor: item.product.selectedColor || null
+        selectedColor: item.product.selectedColor || null,
+        unit_price: item.product.unit_price != null ? item.product.unit_price : null
       }));
       window.localStorage.setItem(CART_STORAGE_KEY, JSON.stringify(tuples));
     } catch (e) {
@@ -157,7 +168,14 @@ export default function Home() {
 
   // Cart operations
   const handleAddToCart = (product) => {
-    const variantKey = getVariantKey(product);
+    // Red de seguridad: si quien llama no calculo unit_price (no debería
+    // pasar, pero por las dudas), se congela aca mismo con el precio
+    // vigente para el talle elegido, para que nunca quede un item de
+    // carrito sin precio propio.
+    const productWithPrice = product.unit_price != null
+      ? product
+      : { ...product, unit_price: getProductPrice(product, product.selectedSize || null) };
+    const variantKey = getVariantKey(productWithPrice);
     setCartItems((prev) => {
       const existing = prev.find(item => item.variantKey === variantKey);
       if (existing) {
@@ -165,7 +183,7 @@ export default function Home() {
           item.variantKey === variantKey ? { ...item, quantity: item.quantity + 1 } : item
         );
       }
-      return [...prev, { product, quantity: 1, variantKey }];
+      return [...prev, { product: productWithPrice, quantity: 1, variantKey }];
     });
 
     // Toast no invasivo en vez de abrir el drawer en cada click (especialmente en celulares)
@@ -206,9 +224,11 @@ export default function Home() {
     return order;
   };
 
-  // Auth operations
-  const handleLogin = (phone, password) => {
-    dataStore.loginUser(phone, password);
+  // Auth operations (Club Mayorista: login solo con WhatsApp, sin
+  // contraseña — knownClient viene de AuthModal, que ya consultó
+  // findClientByPhone antes de llamar acá).
+  const handleLogin = (phone, knownClient) => {
+    dataStore.loginUser(phone, knownClient);
   };
 
   const handleRegister = (userData) => {
@@ -310,7 +330,9 @@ export default function Home() {
 
   const totalCartItemsCount = cartItems.reduce((sum, item) => sum + item.quantity, 0);
   const cartSubtotal = cartItems.reduce((sum, item) => {
-    const p = item.product.wholesale_price || item.product.price || 0;
+    const p = item.product.unit_price != null
+      ? item.product.unit_price
+      : getProductPrice(item.product, item.product.selectedSize);
     return sum + (p * item.quantity);
   }, 0);
   const isWholesaleQualified = cartSubtotal >= 50000;
@@ -382,6 +404,10 @@ export default function Home() {
           });
         }}
       />
+
+      {/* Club Mayorista: banner de retención (registrate y sumás boletos
+          para el sorteo, o vés cuántos llevás si ya sos parte) */}
+      <ClubMayoristaBanner currentUser={currentUser} onOpenAuth={() => setIsAuthOpen(true)} />
 
       {/* Buscador Central: ¿Qué estás buscando? */}
       <SearchBarSection

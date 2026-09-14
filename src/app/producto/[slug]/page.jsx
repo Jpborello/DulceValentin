@@ -7,6 +7,7 @@ import { getProductColors } from '@/lib/catalogData';
 import { buildProductSlug } from '@/lib/productSlug';
 import ShareProductButton from '@/components/ShareProductButton';
 import ProductPageGallery from '@/components/ProductPageGallery';
+import { getProductPriceRange } from '@/lib/productPricing';
 
 const SITE_URL = 'https://www.dulcevalentin.com.ar';
 
@@ -92,7 +93,8 @@ export default async function ProductPage({ params }) {
   const product = await getProduct(slug);
   if (!product) notFound();
 
-  const price = product.wholesale_price || product.price;
+  const priceRange = getProductPriceRange(product);
+  const price = priceRange.min || product.wholesale_price || product.price;
   const hasSizes = Array.isArray(product.sizes) && product.sizes.length > 0;
   const colors = getProductColors(product);
   const hasColors = Array.isArray(colors) && colors.length > 0;
@@ -201,8 +203,13 @@ export default async function ProductPage({ params }) {
             <div className="product-detail-price-box">
               <span className="wholesale-tag">★ Precio Mayorista</span>
               <div className="price-row">
-                <span className="price-big">${Number(price || 0).toLocaleString('es-AR')}</span>
+                <span className="price-big">
+                  {priceRange.hasRange ? `Desde $${Number(priceRange.min).toLocaleString('es-AR')}` : `$${Number(price || 0).toLocaleString('es-AR')}`}
+                </span>
               </div>
+              {priceRange.hasRange && (
+                <p className="price-hint">El precio varía según el talle elegido (hasta ${Number(priceRange.max).toLocaleString('es-AR')}).</p>
+              )}
               <p className="price-hint">Mínimo de compra: $50.000 en pedidos por la web.</p>
             </div>
 

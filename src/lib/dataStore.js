@@ -23,6 +23,14 @@ export function getProductImages(product) {
   return ['/logo.png'];
 }
 
+// Reexportados desde productPricing.js (sin dependencias) para no romper a
+// nadie que ya los importaba desde aca. Las paginas de servidor
+// (categoria/producto) importan directo de productPricing.js para no
+// arrastrar el singleton de mas abajo (dispara un fetch a Supabase al
+// instanciarse, algo que no queremos en un Server Component).
+import { getProductPrice, getProductPriceRange } from './productPricing';
+export { getProductPrice, getProductPriceRange };
+
 // In-Memory / LocalStorage State Manager with Supabase Mirror
 class DataStore {
   constructor() {
@@ -645,37 +653,66 @@ class DataStore {
     const existingP = this.products.find(p => p.id === id);
     const updatedP = existingP ? { ...existingP, ...updates } : updates;
 
+    // dbUpdates es SOLO lo que realmente cambia, nunca el producto
+    // "fusionado" completo: mandar el objeto entero de vuelta (como se hacia
+    // antes) rompe el UPDATE real, porque incluye "search_vector" -- una
+    // columna GENERATED ALWAYS de Postgres que no se puede escribir a mano.
+    // Supabase devuelve 400 en ese caso. Esto no se habia notado porque esta
+    // llamada nunca llegaba a ejecutarse de verdad (ver comentario de mas
+    // abajo sobre la service role key rota).
+    const dbUpdates = { ...updates };
+    delete dbUpdates.code;
+
     // Sincronizar image_urls y image_url (portada)
     if (updates.image_urls && Array.isArray(updates.image_urls)) {
       const validUrls = updates.image_urls.filter(Boolean);
       updatedP.image_urls = validUrls;
+      dbUpdates.image_urls = validUrls;
       if (validUrls.length > 0) {
         updatedP.image_url = validUrls[0];
+        dbUpdates.image_url = validUrls[0];
       }
     } else if (updates.image_url && !updates.image_urls) {
       const currentList = Array.isArray(existingP?.image_urls) ? [...existingP.image_urls] : [];
       if (!currentList.includes(updates.image_url)) {
         updatedP.image_urls = [updates.image_url, ...currentList.filter(Boolean)];
+        dbUpdates.image_urls = updatedP.image_urls;
       }
     }
 
     if (updatedP.price !== undefined) updatedP.price = Number(updatedP.price);
     if (updatedP.wholesale_price !== undefined) updatedP.wholesale_price = Number(updatedP.wholesale_price);
+    if (dbUpdates.price !== undefined) dbUpdates.price = Number(dbUpdates.price);
+    if (dbUpdates.wholesale_price !== undefined) dbUpdates.wholesale_price = Number(dbUpdates.wholesale_price);
 
     this.products = this.products.map(p => p.id === id ? updatedP : p);
     this.saveProductsToLocalStorage();
     this.notify();
-    
-    if (typeof window !== 'undefined') {
+
+    // Se escribe DIRECTO a Supabase con el cliente autenticado del admin
+    // (la tabla "products" tiene politicas RLS que permiten UPDATE a
+    // cualquier usuario "authenticated", y el admin ya inicia sesion con
+    // Supabase Auth). Antes esto pasaba por /api/admin/products, una ruta
+    // de servidor que depende de SUPABASE_SERVICE_ROLE_KEY -- variable que
+    // quedo como placeholder sin completar tanto en local como en Vercel,
+    // asi que esa ruta siempre devolvia "Invalid API key" y el cambio
+    // JAMAS llegaba a la base real: solo quedaba en este estado en memoria
+    // + localStorage de ese navegador, dando la falsa impresion de que se
+    // habia guardado (hasta que se entraba desde otro dispositivo/navegador
+    // y se veia el valor viejo). Afecta a TODO lo que pasa por updateProduct:
+    // precios, stock, ofertas/destacados/nuevo, talles y colores, imagenes.
+    if (supabase) {
       try {
-        const res = await fetch('/api/admin/products', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ action: 'updateProduct', id, updates: updatedP })
-        });
-        const result = await res.json();
-        if (result && result.success && Array.isArray(result.data) && result.data.length > 0) {
-          const freshFromDb = result.data[0];
+        const { data, error } = await supabase
+          .from('products')
+          .update(dbUpdates)
+          .eq('id', id)
+          .select();
+
+        if (error) {
+          console.warn('Supabase updateProduct error:', error);
+        } else if (Array.isArray(data) && data.length > 0) {
+          const freshFromDb = data[0];
           const normalized = {
             ...freshFromDb,
             price: Number(freshFromDb.price),
@@ -687,7 +724,7 @@ class DataStore {
           this.notify();
         }
       } catch (err) {
-        console.warn('API updateProduct error:', err);
+        console.warn('Supabase updateProduct error:', err);
       }
     }
   }
@@ -766,19 +803,28 @@ class DataStore {
       const newWholesalePrice = applyToWholesale ? Math.round(p.wholesale_price * factor) : p.wholesale_price;
 
       const updatedP = { ...p, price: newPrice, wholesale_price: newWholesalePrice };
-      updatedProductsList.push(updatedP);
+      updatedProductsList.push({ id: p.id, price: newPrice, wholesale_price: newWholesalePrice });
       return updatedP;
     });
 
     this.saveProductsToLocalStorage();
     this.notify();
 
-    if (typeof window !== 'undefined' && updatedProductsList.length > 0) {
-      fetch('/api/admin/products', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'upsertProducts', productsList: updatedProductsList })
-      }).catch(err => console.warn('API bulk update error:', err));
+    // Mismo motivo que en updateProduct: se escribe directo con el cliente
+    // autenticado en vez de pasar por la ruta de servidor rota (service role
+    // key sin completar). Ademas se manda SOLO {id, price, wholesale_price}
+    // por producto (nunca la fila completa vieja "p" en memoria): un upsert
+    // con la fila entera pisaria "search_vector" (columna GENERATED ALWAYS
+    // de Postgres) y Supabase devuelve 400 en cada guardado.
+    if (supabase && updatedProductsList.length > 0) {
+      Promise.all(
+        updatedProductsList.map(({ id, price, wholesale_price }) =>
+          supabase.from('products').update({ price, wholesale_price }).eq('id', id)
+        )
+      ).then((results) => {
+        const failed = results.filter((r) => r.error);
+        if (failed.length > 0) console.warn('Supabase bulk price update errors:', failed.map((r) => r.error));
+      }).catch((err) => console.warn('Supabase bulk price update error:', err));
     }
   }
 
@@ -789,6 +835,12 @@ class DataStore {
   // no importa si lo tipean con espacios, guiones, +54, 0 o 15 adelante —
   // "0341 15-555-1234" y "+54 9 3415551234" tienen que ser la MISMA cuenta,
   // nunca dos cuentas separadas que se crucen entre si.
+  // Club Mayorista: registro sin contraseña (2026-09). La dueña decidió que
+  // para un mayorista pedirle que recuerde una clave es más friccion que
+  // valor, y el checkout de todas formas siempre pide el teléfono — así que
+  // el teléfono ES la cuenta. `password` sigue existiendo como columna
+  // NOT NULL en `wholesale_clients` por compatibilidad de esquema, pero acá
+  // se guarda un valor de relleno que nunca se usa para validar nada.
   registerUser(userData) {
     const normalizedPhone = normalizePhone(userData.phone) || userData.phone || '';
     const user = {
@@ -796,7 +848,6 @@ class DataStore {
       dni: userData.dni,
       phone: normalizedPhone,
       locality: userData.locality,
-      password: userData.password || 'cliente123',
       role: 'client',
       created_at: new Date().toISOString()
     };
@@ -811,7 +862,6 @@ class DataStore {
     } else {
       this.clients.unshift(user);
     }
-    this.notify();
 
     if (supabase) {
       supabase.rpc('upsert_wholesale_client', {
@@ -819,14 +869,61 @@ class DataStore {
         p_dni: user.dni,
         p_phone: user.phone,
         p_locality: user.locality,
-        p_password: user.password
+        p_password: 'sinclave-' + (normalizedPhone.slice(-4) || '0000')
       }).then(() => {}).catch((err) => console.warn('Client upsert warning:', err));
     }
 
     return user;
   }
 
-  loginUser(phone, password) {
+  // Boletos del sorteo del propio cliente, buscados solo por teléfono (para
+  // que los pueda ver el/ella mismo/a desde el banner del Club Mayorista,
+  // no solo una vez en la pantalla de confirmación del pedido).
+  async fetchMyRaffleTickets(phone) {
+    const normalizedPhone = normalizePhone(phone) || phone || '';
+    if (!normalizedPhone || !supabase) return [];
+    try {
+      const { data, error } = await supabase.rpc('get_my_raffle_tickets', { p_phone: normalizedPhone });
+      if (!error && Array.isArray(data)) return data;
+    } catch (err) {
+      console.warn('fetchMyRaffleTickets warning:', err);
+    }
+    return [];
+  }
+
+  // Chequea contra la base si un telefono ya tiene cuenta mayorista (para el
+  // paso 1 del modal: "solo con tu WhatsApp"). Devuelve los datos del
+  // cliente si existe, o null si es la primera vez que entra con ese numero
+  // (en ese caso el modal le pide completar Nombre/DNI/Localidad una vez).
+  async findClientByPhone(phone) {
+    const normalizedPhone = normalizePhone(phone) || phone || '';
+    if (!normalizedPhone) return null;
+
+    if (supabase) {
+      try {
+        const { data, error } = await supabase.rpc('get_wholesale_client_by_phone', { p_phone: normalizedPhone });
+        if (!error && Array.isArray(data) && data.length > 0) {
+          return data[0];
+        }
+      } catch (err) {
+        console.warn('findClientByPhone warning:', err);
+      }
+    }
+    // Fallback por si ya se cargó en memoria en esta misma sesión (ej. el
+    // propio admin tiene la lista completa cargada en ClientsTab).
+    return this.clients.find(c => normalizePhone(c.phone) === normalizedPhone) || null;
+  }
+
+  // Reconoce a un cliente que ya tiene cuenta, solo con el teléfono — ya no
+  // se pide/valida contraseña (ver comentario en registerUser). Se llama
+  // desde el modal DESPUES de confirmar con findClientByPhone que el
+  // teléfono existe, así que acá alcanza con el teléfono.
+  // `knownClient`: cuando el modal ya llamó a findClientByPhone y tiene los
+  // datos a mano (name/dni/locality), se los pasa acá para no perderlos —
+  // this.clients normalmente está vacío para un visitante cualquiera
+  // (esa lista solo se llena del lado admin), así que sin este dato
+  // caeríamos siempre en el nombre genérico "Cliente Mayorista".
+  loginUser(phone, knownClient = null) {
     if (phone === 'admin' || phone === '1122334455') {
       const adminUser = { id: 'u-admin', name: 'Administrador Dulce Valentín', phone, role: 'admin' };
       this.currentUser = adminUser;
@@ -835,13 +932,15 @@ class DataStore {
     }
 
     const normalizedPhone = normalizePhone(phone) || phone;
-    const existingClient = this.clients.find(c => normalizePhone(c.phone) === normalizedPhone);
-    const user = existingClient || {
-      name: 'Cliente Mayorista',
-      phone: normalizedPhone,
-      role: 'client',
-      created_at: new Date().toISOString()
-    };
+    const existingClient = knownClient || this.clients.find(c => normalizePhone(c.phone) === normalizedPhone);
+    const user = existingClient
+      ? { ...existingClient, phone: normalizedPhone, role: existingClient.role || 'client' }
+      : {
+          name: 'Cliente Mayorista',
+          phone: normalizedPhone,
+          role: 'client',
+          created_at: new Date().toISOString()
+        };
 
     this.currentUser = user;
     if (typeof window !== 'undefined') {
@@ -990,6 +1089,7 @@ class DataStore {
       is_offer: false,
       is_featured: false,
       is_top_seller: false,
+      exempt_from_min3: false,
       sales_count: 0
     };
 
@@ -1018,7 +1118,15 @@ class DataStore {
   // con clave primaria 1-10000: fisicamente no puede repetirse un numero.
   async createOrder(cartItems, clientDetails, { setActiveOrder = true } = {}) {
     const cartTotal = cartItems.reduce((sum, item) => {
-      const itemPrice = item.product.wholesale_price || item.product.price || 0;
+      // Se usa el precio "congelado" al momento de agregar al carrito
+      // (item.product.unit_price) en vez de releer el precio vigente del
+      // producto: si el precio ya varia por talle (price_per_size) esto es
+      // obligatorio para cobrar el que corresponde a CADA talle elegido, y
+      // de paso evita que el total cambie solo si el admin edita un precio
+      // mientras el cliente ya tiene el carrito armado.
+      const itemPrice = item.product.unit_price != null
+        ? item.product.unit_price
+        : getProductPrice(item.product, item.product.selectedSize);
       return sum + (itemPrice * item.quantity);
     }, 0);
     // Baucher/credito otorgado por el admin (ej: producto faltante en un
@@ -1276,7 +1384,9 @@ class DataStore {
     }
 
     const total = newItems.reduce((sum, item) => {
-      const itemPrice = item.product.wholesale_price || item.product.price || 0;
+      const itemPrice = item.product.unit_price != null
+        ? item.product.unit_price
+        : getProductPrice(item.product, item.product.selectedSize);
       return sum + (itemPrice * item.quantity);
     }, 0);
 

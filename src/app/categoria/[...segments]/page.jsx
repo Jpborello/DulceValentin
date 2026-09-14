@@ -1,30 +1,56 @@
-import Image from 'next/image';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { MapPin, ArrowLeft } from 'lucide-react';
 import { supabase } from '@/lib/supabaseClient';
 import { slugify } from '@/lib/slugify';
+import { isRetiredSubcategory } from '@/lib/catalogData';
+import { normalizeText } from '@/lib/searchUtils';
 import { buildProductSlug } from '@/lib/productSlug';
 import ShareCategoryButton from '@/components/ShareCategoryButton';
+import CategoryGroupCatalog from '@/components/CategoryGroupCatalog';
 
 const SITE_URL = 'https://www.dulcevalentin.com.ar';
+
+// Las 4 tarjetas principales del home (Calzado, Indumentaria, Lencería,
+// Bebés) apuntan a esta misma ruta /categoria/<id>. La mayoria de esos ids
+// ya coinciden 1 a 1 con una categoria real de Supabase (Calzado, Lencería,
+// Bebés), asi que se resuelven solos mas abajo. La unica que NO es una
+// categoria real es "Indumentaria": agrupa Hombres + Mujeres + Infantil, y
+// esa agrupacion se define aca (solo UI/navegacion, no toca la base).
+const GROUP_DEFS = {
+  indumentaria: { name: 'Indumentaria', memberNames: ['Hombres', 'Mujeres', 'Infantil'] }
+};
 
 // Las categorias reales viven en la tabla "categories" de Supabase (el admin
 // las puede editar), pero esa misma tabla tambien guarda configuracion
 // interna con ids "_config_..." (alias de transferencia, CUIT, etc.) que
 // hay que descartar aca.
-async function getCategoryDef(catSlug) {
+async function getAllCategoryDefs() {
   const { data } = await supabase
     .from('categories')
     .select('id, name, subcategories')
     .not('id', 'like', '_config_%');
-  if (!data) return null;
-  return data.find((c) => slugify(c.id) === catSlug) || null;
+  return data || [];
 }
 
 async function resolveParams(segments) {
-  const [catSlug, subSlug] = segments || [];
-  const categoryDef = await getCategoryDef(catSlug);
+  const [firstSlug, subSlug] = segments || [];
+  const allCategories = await getAllCategoryDefs();
+
+  const group = GROUP_DEFS[firstSlug];
+  if (group) {
+    // Por ahora el filtro fino de un grupo (que tier / que subcategoria) es
+    // solo interactivo del lado del cliente, no tiene su propia URL — asi
+    // que una URL con un segundo segmento para un grupo no es valida.
+    if (subSlug) return null;
+    const members = group.memberNames
+      .map((name) => allCategories.find((c) => normalizeText(c.name) === normalizeText(name)))
+      .filter(Boolean);
+    if (members.length === 0) return null;
+    return { kind: 'group', groupId: firstSlug, groupName: group.name, members };
+  }
+
+  const categoryDef = allCategories.find((c) => slugify(c.id) === firstSlug);
   if (!categoryDef) return null;
 
   let subcategory = null;
@@ -33,19 +59,25 @@ async function resolveParams(segments) {
     if (!subcategory) return null;
   }
 
-  return { categoryId: categoryDef.id, categoryName: categoryDef.name, subcategory };
+  return {
+    kind: 'category',
+    categoryId: categoryDef.id,
+    categoryName: categoryDef.name,
+    subcategory,
+    subcategories: categoryDef.subcategories || []
+  };
 }
 
-async function getProducts(categoryId, subcategory) {
-  let query = supabase
+async function getProductsForCategories(categoryIds) {
+  const { data } = await supabase
     .from('products')
-    .select('id, name, image_url, price, wholesale_price, stock, is_new')
-    .eq('category', categoryId)
-    .eq('is_active', true);
-  if (subcategory) query = query.eq('subcategory', subcategory);
-  // Los marcados "Nuevo Ingreso" (is_new) van primero, y adentro de cada
-  // grupo se mantiene el orden alfabetico de siempre.
-  const { data } = await query.order('is_new', { ascending: false }).order('name');
+    .select('id, name, category, subcategory, image_url, price, wholesale_price, price_per_size, stock, is_new')
+    .in('category', categoryIds)
+    .eq('is_active', true)
+    // Los marcados "Nuevo Ingreso" (is_new) van primero, y adentro de cada
+    // grupo se mantiene el orden alfabetico de siempre.
+    .order('is_new', { ascending: false })
+    .order('name');
   return data || [];
 }
 
@@ -54,8 +86,9 @@ export async function generateMetadata({ params }) {
   const resolved = await resolveParams(segments);
   if (!resolved) return {};
 
-  const { categoryName, subcategory } = resolved;
-  const label = subcategory ? `${subcategory} de ${categoryName}` : categoryName;
+  const label = resolved.kind === 'group'
+    ? resolved.groupName
+    : (resolved.subcategory ? `${resolved.subcategory} de ${resolved.categoryName}` : resolved.categoryName);
   const title = `${label} — Venta Mayorista`;
   const description = `Comprá ${label.toLowerCase()} al por mayor en Dulce Valentín: precios de fábrica, envíos a todo el país y retiro en Rosario, Santa Fe.`;
   const canonicalPath = `/categoria/${segments.join('/')}`;
@@ -81,17 +114,43 @@ export default async function CategoryPage({ params }) {
   const resolved = await resolveParams(segments);
   if (!resolved) notFound();
 
-  const { categoryId, categoryName, subcategory } = resolved;
-  const products = await getProducts(categoryId, subcategory);
   const canonicalPath = `/categoria/${segments.join('/')}`;
+
+  let heading, tiers, products, shareLabel, breadcrumbTrail;
+
+  if (resolved.kind === 'group') {
+    heading = resolved.groupName;
+    shareLabel = resolved.groupName;
+    tiers = resolved.members.map((c) => ({
+      id: c.name,
+      name: c.name,
+      subcategories: (c.subcategories || []).filter((s) => !isRetiredSubcategory(c.name, s))
+    }));
+    products = await getProductsForCategories(resolved.members.map((c) => c.id));
+    breadcrumbTrail = [{ name: resolved.groupName, item: `${SITE_URL}${canonicalPath}` }];
+  } else {
+    heading = resolved.subcategory ? `${resolved.subcategory} de ${resolved.categoryName}` : resolved.categoryName;
+    shareLabel = heading;
+    tiers = [{
+      id: resolved.categoryId,
+      name: resolved.categoryName,
+      subcategories: (resolved.subcategories || []).filter((s) => !isRetiredSubcategory(resolved.categoryName, s))
+    }];
+    products = await getProductsForCategories([resolved.categoryId]);
+    breadcrumbTrail = resolved.subcategory
+      ? [
+          { name: resolved.categoryName, item: `${SITE_URL}/categoria/${segments[0]}` },
+          { name: resolved.subcategory, item: `${SITE_URL}${canonicalPath}` }
+        ]
+      : [{ name: resolved.categoryName, item: `${SITE_URL}${canonicalPath}` }];
+  }
 
   const breadcrumbJsonLd = {
     '@context': 'https://schema.org',
     '@type': 'BreadcrumbList',
     itemListElement: [
       { '@type': 'ListItem', position: 1, name: 'Inicio', item: SITE_URL },
-      { '@type': 'ListItem', position: 2, name: categoryName, item: `${SITE_URL}/categoria/${segments[0]}` },
-      ...(subcategory ? [{ '@type': 'ListItem', position: 3, name: subcategory, item: `${SITE_URL}${canonicalPath}` }] : [])
+      ...breadcrumbTrail.map((b, idx) => ({ '@type': 'ListItem', position: idx + 2, name: b.name, item: b.item }))
     ]
   };
 
@@ -131,70 +190,33 @@ export default async function CategoryPage({ params }) {
       <main style={{ flex: 1, maxWidth: '1320px', width: '100%', margin: '0 auto', padding: '32px 24px' }}>
         <nav aria-label="breadcrumb" style={{ fontSize: '0.82rem', color: 'var(--text-muted)', marginBottom: '10px' }}>
           <Link href="/" style={{ color: 'var(--accent-gold-hover)', fontWeight: 600 }}>Inicio</Link>
-          {' / '}
-          {subcategory ? (
-            <>
-              <Link href={`/categoria/${segments[0]}`} style={{ color: 'var(--accent-gold-hover)', fontWeight: 600 }}>{categoryName}</Link>
-              {' / '}{subcategory}
-            </>
-          ) : categoryName}
+          {breadcrumbTrail.map((b, idx) => (
+            <span key={b.name}>
+              {' / '}
+              {idx === breadcrumbTrail.length - 1 ? (
+                b.name
+              ) : (
+                <Link href={`/categoria/${segments[0]}`} style={{ color: 'var(--accent-gold-hover)', fontWeight: 600 }}>{b.name}</Link>
+              )}
+            </span>
+          ))}
         </nav>
 
         <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '12px', flexWrap: 'wrap' }}>
           <h1 style={{ fontSize: '1.6rem', fontWeight: 800, marginBottom: '6px', color: 'var(--text-main)' }}>
-            {subcategory ? `${subcategory} de ${categoryName}` : categoryName}
+            {heading}
           </h1>
-          <ShareCategoryButton
-            label={subcategory ? `${subcategory} de ${categoryName}` : categoryName}
-            productCount={products.length}
-          />
+          <ShareCategoryButton label={shareLabel} productCount={products.length} />
         </div>
-        <p style={{ fontSize: '0.9rem', color: 'var(--text-muted)', marginBottom: '24px' }}>
-          {products.length} producto{products.length !== 1 ? 's' : ''} disponible{products.length !== 1 ? 's' : ''} — precio mayorista, mínimo de compra $50.000 en pedidos por la web.
+        <p style={{ fontSize: '0.9rem', color: 'var(--text-muted)', marginBottom: '20px' }}>
+          Precio mayorista, mínimo de compra $50.000 en pedidos por la web.
         </p>
 
-        {products.length === 0 ? (
-          <div style={{ textAlign: 'center', padding: '60px 20px', background: 'var(--bg-card)', borderRadius: 'var(--radius-lg)', border: '1px solid var(--border-color)' }}>
-            <p style={{ fontSize: '1.05rem', fontWeight: 600, color: 'var(--text-muted)' }}>
-              No hay productos disponibles en esta categoría por el momento.
-            </p>
-          </div>
-        ) : (
-          <div className="products-grid">
-            {products.map((product, idx) => (
-              <Link
-                key={product.id}
-                href={`/producto/${buildProductSlug(product)}`}
-                className={`product-card product-card-blob-${(idx % 6) + 1}`}
-                style={{ textDecoration: 'none' }}
-              >
-                <div className="product-img-wrapper" style={{ position: 'relative' }}>
-                  {product.is_new && (
-                    <div className="card-badges-topleft">
-                      <span className="card-badge-new">🆕 Nuevo</span>
-                    </div>
-                  )}
-                  {product.image_url && (
-                    <Image
-                      src={product.image_url}
-                      alt={product.name}
-                      fill
-                      unoptimized
-                      sizes="(max-width: 640px) 90vw, (max-width: 1024px) 45vw, 280px"
-                      className="product-img"
-                    />
-                  )}
-                </div>
-                <div className="product-card-footer" style={{ padding: 0 }}>
-                  <h3 className="product-title-compact" style={{ minHeight: 0, flex: 1 }}>{product.name}</h3>
-                  <span className="price-compact">
-                    ${Number(product.wholesale_price || product.price || 0).toLocaleString('es-AR')}
-                  </span>
-                </div>
-              </Link>
-            ))}
-          </div>
-        )}
+        <CategoryGroupCatalog
+          tiers={tiers}
+          initialProducts={products}
+          initialSubcategory={resolved.kind === 'category' ? resolved.subcategory : null}
+        />
       </main>
 
       <footer style={{ background: 'var(--bg-surface-dark)', color: 'var(--text-on-dark)', padding: '28px 24px', marginTop: '20px' }}>

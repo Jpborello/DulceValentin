@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { X, Trash2, Plus, Minus, ShoppingBag, Truck, Store, Upload, CheckCircle2, UserCheck, Sparkles, Tag, Copy, Check, CreditCard, Clock, Edit3, RotateCcw } from 'lucide-react';
 import { supabase } from '@/lib/supabaseClient';
-import { dataStore } from '@/lib/dataStore';
+import { dataStore, getProductPrice } from '@/lib/dataStore';
 import useCloseOnBack from '@/lib/useCloseOnBack';
 import { compressImage } from '@/lib/compressImage';
 
@@ -95,7 +95,9 @@ export default function CartDrawer({
 
   // Wholesale calculations & Minimum Purchase Requirement ($50.000)
   const cartSubtotal = cartItems.reduce((sum, item) => {
-    const itemPrice = item.product.wholesale_price || item.product.price || 0;
+    const itemPrice = item.product.unit_price != null
+      ? item.product.unit_price
+      : getProductPrice(item.product, item.product.selectedSize);
     return sum + (itemPrice * item.quantity);
   }, 0);
   const MIN_PURCHASE_THRESHOLD = 50000;
@@ -105,12 +107,33 @@ export default function CartDrawer({
   const amountNeeded = Math.max(0, MIN_PURCHASE_THRESHOLD - cartSubtotal);
   const progressPercent = Math.min(100, Math.round((cartSubtotal / MIN_PURCHASE_THRESHOLD) * 100));
 
+  // Regla de la dueña (2026-09): para acceder al precio mayorista, el pedido
+  // tiene que llevar al menos 3 unidades de UN mismo articulo — despues de
+  // eso, el resto de los articulos se pueden agregar por unidad. Los
+  // productos marcados "exempt_from_min3" en el admin (medias, packs tipo
+  // "3 x $") no cuentan para esta cuenta, pero tampoco la bloquean si son
+  // los unicos productos en el carrito (no tiene sentido pedirle 3 medias
+  // si las medias ya estan exceptuadas).
+  const minQtyQualifyingItems = cartItems.filter((item) => !item.product?.exempt_from_min3);
+  const hasMinQtyItem = minQtyQualifyingItems.length === 0 || minQtyQualifyingItems.some((item) => item.quantity >= 3);
+  const closestMinQtyItem = minQtyQualifyingItems.reduce(
+    (best, item) => (!best || item.quantity > best.quantity ? item : best),
+    null
+  );
+  const unitsNeededForMinQty = closestMinQtyItem ? Math.max(0, 3 - closestMinQtyItem.quantity) : 0;
+  const canGenerateOrder = isMinPurchaseReached && hasMinQtyItem;
+
   const handleCreateOrder = async (e) => {
     e.preventDefault();
     if (cartItems.length === 0 || isSubmittingOrder) return;
 
     if (!isMinPurchaseReached) {
       alert(`El mínimo de compra mayorista es de $50.000. Te faltan $${amountNeeded.toLocaleString('es-AR')} para poder finalizar el pedido.`);
+      return;
+    }
+
+    if (!hasMinQtyItem) {
+      alert(`Para acceder al precio mayorista necesitás llevar 3 unidades de un mismo artículo (no aplica a medias ni productos en pack). Agregá ${unitsNeededForMinQty} unidad${unitsNeededForMinQty === 1 ? '' : 'es'} más de "${closestMinQtyItem?.product?.name || 'algún producto'}", u otro, para continuar.`);
       return;
     }
 
@@ -737,13 +760,41 @@ export default function CartDrawer({
                 )}
               </div>
 
+              {/* MINIMO DE 3 UNIDADES DE UN ARTICULO (no aplica a medias / packs "3 x $") */}
+              {!hasMinQtyItem && (
+                <div style={{
+                  backgroundColor: '#FEF3C7',
+                  border: '1px solid #FDE68A',
+                  borderRadius: '10px',
+                  padding: '12px 14px',
+                  marginBottom: '16px'
+                }}>
+                  <span style={{
+                    fontSize: '0.82rem',
+                    fontWeight: 800,
+                    color: '#B45309',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '5px'
+                  }}>
+                    <Sparkles size={15} /> Llevá 3 unidades de un mismo artículo
+                  </span>
+                  <p style={{ fontSize: '0.75rem', color: '#92400E', marginTop: '6px', margin: 0, fontWeight: 600 }}>
+                    Para acceder al precio mayorista, al menos un artículo del pedido tiene que ser por 3 unidades (después, el resto lo podés llevar por unidad). Te falta{unitsNeededForMinQty === 1 ? '' : 'n'}{' '}
+                    <strong>{unitsNeededForMinQty} unidad{unitsNeededForMinQty === 1 ? '' : 'es'}</strong> más de <strong>{closestMinQtyItem?.product?.name || 'un producto'}</strong>, o elegí otro artículo y llevalo de a 3. No aplica a medias ni productos vendidos en pack.
+                  </p>
+                </div>
+              )}
+
               {/* STEP 1: CART ITEMS & REGISTRATION INPUTS */}
               <div style={{ marginBottom: '20px' }}>
                 <h4 style={{ fontSize: '0.9rem', fontWeight: 700, marginBottom: '12px', textTransform: 'uppercase', color: 'var(--accent-gold)' }}>
                   Prendas en el pedido
                 </h4>
                 {cartItems.map((item) => {
-                  const unitPrice = item.product.wholesale_price || item.product.price || 0;
+                  const unitPrice = item.product.unit_price != null
+                    ? item.product.unit_price
+                    : getProductPrice(item.product, item.product.selectedSize);
                   const itemTotal = unitPrice * item.quantity;
                   const itemSize = item.product?.selectedSize || item.selectedSize;
                   const itemColor = item.product?.selectedColor || item.selectedColor;
@@ -977,6 +1028,11 @@ export default function CartDrawer({
                   ⚠️ Mínimo de compra $50.000 (te faltan ${amountNeeded.toLocaleString('es-AR')})
                 </div>
               )}
+              {isMinPurchaseReached && !hasMinQtyItem && (
+                <div style={{ fontSize: '0.78rem', color: '#DC2626', fontWeight: 700, marginTop: '4px', textAlign: 'center' }}>
+                  ⚠️ Necesitás 3 unidades de un mismo artículo (faltan {unitsNeededForMinQty})
+                </div>
+              )}
             </div>
 
             <button
@@ -984,14 +1040,18 @@ export default function CartDrawer({
               className="btn-hero-primary"
               style={{
                 width: '100%',
-                opacity: isMinPurchaseReached && !isSubmittingOrder ? 1 : 0.6,
-                cursor: isMinPurchaseReached && !isSubmittingOrder ? 'pointer' : 'not-allowed'
+                opacity: canGenerateOrder && !isSubmittingOrder ? 1 : 0.6,
+                cursor: canGenerateOrder && !isSubmittingOrder ? 'pointer' : 'not-allowed'
               }}
-              disabled={!isMinPurchaseReached || isSubmittingOrder}
+              disabled={!canGenerateOrder || isSubmittingOrder}
             >
               {isSubmittingOrder
                 ? 'Generando pedido...'
-                : (isMinPurchaseReached ? 'Generar Pedido & Subir Comprobante' : `Mínimo $50.000 (Faltan $${amountNeeded.toLocaleString('es-AR')})`)}
+                : !hasMinQtyItem
+                  ? `Necesitás 3 unidades de un artículo (faltan ${unitsNeededForMinQty})`
+                  : !isMinPurchaseReached
+                    ? `Mínimo $50.000 (Faltan $${amountNeeded.toLocaleString('es-AR')})`
+                    : 'Generar Pedido & Subir Comprobante'}
             </button>
           </div>
         )}

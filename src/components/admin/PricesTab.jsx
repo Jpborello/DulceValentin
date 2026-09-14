@@ -1,7 +1,7 @@
 'use client';
 
-import { useState } from 'react';
-import { Save, Percent, TrendingUp, RefreshCw, Tag, Star, Sparkles } from 'lucide-react';
+import { useState, Fragment } from 'react';
+import { Save, Percent, TrendingUp, RefreshCw, Tag, Star, Sparkles, Ruler, ChevronDown, ChevronUp, X, PackageOpen } from 'lucide-react';
 
 export default function PricesTab({
   products,
@@ -13,7 +13,9 @@ export default function PricesTab({
   onToggleOffer,
   onToggleNew,
   onSetFeatured,
-  onUnsetFeatured
+  onUnsetFeatured,
+  onUpdatePricePerSize,
+  onToggleExemptMin3
 }) {
   // Mass percentage state
   const [bulkPct, setBulkPct] = useState('');
@@ -24,6 +26,52 @@ export default function PricesTab({
   // Individual percentage state per product id: { [productId]: number | string }
   const [individualPcts, setIndividualPcts] = useState({});
   const [savedIds, setSavedIds] = useState({});
+
+  // Precio por talle: que productos tienen el panel abierto, y los valores
+  // que se estan editando en sus inputs (por talle) antes de guardar.
+  const [expandedPPS, setExpandedPPS] = useState({});
+  const [ppsValues, setPpsValues] = useState({});
+  const [savedPPSIds, setSavedPPSIds] = useState({});
+
+  const toggleExpandPPS = (product) => {
+    setExpandedPPS((prev) => ({ ...prev, [product.id]: !prev[product.id] }));
+    setPpsValues((prev) => {
+      if (prev[product.id]) return prev;
+      const initial = {};
+      (product.sizes || []).forEach((size) => {
+        initial[size] = product.price_per_size?.[size] ?? product.wholesale_price ?? product.price ?? '';
+      });
+      return { ...prev, [product.id]: initial };
+    });
+  };
+
+  const handlePPSValueChange = (productId, size, value) => {
+    setPpsValues((prev) => ({
+      ...prev,
+      [productId]: { ...(prev[productId] || {}), [size]: value }
+    }));
+  };
+
+  const handleSavePPS = (product) => {
+    const values = ppsValues[product.id] || {};
+    const pricePerSize = {};
+    (product.sizes || []).forEach((size) => {
+      const num = parseFloat(values[size]);
+      pricePerSize[size] = Number.isNaN(num) ? (product.wholesale_price || product.price || 0) : num;
+    });
+    onUpdatePricePerSize(product.id, pricePerSize);
+    setSavedPPSIds((prev) => ({ ...prev, [product.id]: true }));
+    setTimeout(() => setSavedPPSIds((prev) => ({ ...prev, [product.id]: false })), 2500);
+  };
+
+  const handleClearPPS = (product) => {
+    onUpdatePricePerSize(product.id, null);
+    setPpsValues((prev) => {
+      const next = { ...prev };
+      delete next[product.id];
+      return next;
+    });
+  };
 
   const handleApplyBulk = () => {
     const pct = parseFloat(bulkPct);
@@ -252,7 +300,8 @@ export default function PricesTab({
             const currentPct = individualPcts[p.id] || '';
 
             return (
-              <tr key={p.id}>
+              <Fragment key={p.id}>
+              <tr>
                 <td style={{ fontWeight: 700, minWidth: '180px' }}>
                   <div>{p.name}</div>
                   <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontWeight: 500 }}>
@@ -274,14 +323,32 @@ export default function PricesTab({
 
                 {/* Precio Mayorista */}
                 <td>
-                  <input 
-                    type="number" 
+                  <input
+                    type="number"
                     key={`wprice-${p.id}-${p.wholesale_price}`}
-                    defaultValue={p.wholesale_price} 
+                    defaultValue={p.wholesale_price}
                     id={`wprice-${p.id}`}
-                    className="form-input" 
-                    style={{ width: '110px', padding: '6px 10px', fontWeight: 700 }} 
+                    className="form-input"
+                    style={{ width: '110px', padding: '6px 10px', fontWeight: 700 }}
                   />
+                  {Array.isArray(p.sizes) && p.sizes.length > 0 && onUpdatePricePerSize && (
+                    <button
+                      type="button"
+                      onClick={() => toggleExpandPPS(p)}
+                      style={{
+                        display: 'flex', alignItems: 'center', gap: '3px',
+                        marginTop: '5px', background: 'none', border: 'none',
+                        padding: 0, cursor: 'pointer',
+                        fontSize: '0.72rem', fontWeight: 700,
+                        color: p.price_per_size ? '#B45309' : '#2563EB'
+                      }}
+                      title="Poner un precio distinto segun el talle (ej: talle especial mas caro)"
+                    >
+                      <Ruler size={11} />
+                      {p.price_per_size ? 'Precio por talle ✓' : 'Precio por talle'}
+                      {expandedPPS[p.id] ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+                    </button>
+                  )}
                 </td>
 
                 {/* Ajuste Porcentual Individual */}
@@ -399,6 +466,24 @@ export default function PricesTab({
                     >
                       <Star size={12} fill={p.is_featured ? '#92400E' : 'none'} /> {p.is_featured ? 'Destacada ★' : 'Destacar'}
                     </button>
+                    {onToggleExemptMin3 && (
+                      <button
+                        type="button"
+                        onClick={() => onToggleExemptMin3(p.id, !p.exempt_from_min3)}
+                        title="Productos vendidos en pack (ej. medias, '3 x $') no exigen ni cuentan para el minimo de 3 unidades de un mismo articulo que pide la dueña para acceder al precio mayorista"
+                        style={{
+                          display: 'inline-flex', alignItems: 'center', gap: '4px',
+                          padding: '4px 8px', fontSize: '0.74rem', fontWeight: 700,
+                          borderRadius: '6px',
+                          border: p.exempt_from_min3 ? '1px solid #7C3AED' : '1px solid var(--border-color)',
+                          backgroundColor: p.exempt_from_min3 ? '#F5F3FF' : 'var(--bg-card)',
+                          color: p.exempt_from_min3 ? '#6D28D9' : 'var(--text-muted)',
+                          cursor: 'pointer'
+                        }}
+                      >
+                        <PackageOpen size={12} /> {p.exempt_from_min3 ? 'Sin mínimo de 3 ✓' : 'Exceptuar del mínimo x3'}
+                      </button>
+                    )}
                   </div>
                 </td>
 
@@ -438,6 +523,67 @@ export default function PricesTab({
                   </button>
                 </td>
               </tr>
+
+              {expandedPPS[p.id] && (
+                <tr>
+                  <td colSpan={6} style={{ backgroundColor: 'var(--bg-surface-elevated)', padding: '14px 16px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '10px' }}>
+                      <Ruler size={14} style={{ color: '#B45309' }} />
+                      <strong style={{ fontSize: '0.85rem' }}>Precio por talle — {p.name}</strong>
+                      <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                        (reemplaza el precio mayorista de arriba para el talle que corresponda)
+                      </span>
+                    </div>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px', alignItems: 'flex-end' }}>
+                      {(p.sizes || []).map((size) => (
+                        <div key={size} style={{ display: 'flex', flexDirection: 'column', gap: '3px' }}>
+                          <label style={{ fontSize: '0.72rem', fontWeight: 700, color: 'var(--text-muted)' }}>
+                            Talle {size}
+                          </label>
+                          <input
+                            type="number"
+                            value={ppsValues[p.id]?.[size] ?? ''}
+                            onChange={(e) => handlePPSValueChange(p.id, size, e.target.value)}
+                            className="form-input"
+                            style={{ width: '100px', padding: '6px 8px' }}
+                          />
+                        </div>
+                      ))}
+
+                      <button
+                        type="button"
+                        onClick={() => handleSavePPS(p)}
+                        className="btn-primary"
+                        style={{
+                          padding: '7px 14px', fontSize: '0.82rem', fontWeight: 700,
+                          display: 'inline-flex', alignItems: 'center', gap: '4px',
+                          backgroundColor: savedPPSIds[p.id] ? '#059669' : undefined,
+                          borderColor: savedPPSIds[p.id] ? '#059669' : undefined
+                        }}
+                      >
+                        {savedPPSIds[p.id] ? <>✓ ¡Guardado!</> : <><Save size={13} /> Guardar precios por talle</>}
+                      </button>
+
+                      {p.price_per_size && (
+                        <button
+                          type="button"
+                          onClick={() => handleClearPPS(p)}
+                          title="Volver a un precio unico para todos los talles"
+                          style={{
+                            display: 'inline-flex', alignItems: 'center', gap: '4px',
+                            padding: '7px 12px', fontSize: '0.8rem', fontWeight: 700,
+                            borderRadius: '8px', border: '1px solid var(--border-color)',
+                            backgroundColor: 'var(--bg-card)', color: '#B91C1C', cursor: 'pointer'
+                          }}
+                        >
+                          <X size={13} /> Quitar precio por talle
+                        </button>
+                      )}
+                    </div>
+                  </td>
+                </tr>
+              )}
+              </Fragment>
             );
           })}
         </tbody>

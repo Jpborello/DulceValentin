@@ -6,7 +6,7 @@ import { X, ShoppingCart, Tag, Palette, Share2, Check, ChevronLeft, ChevronRight
 import useCloseOnBack from '@/lib/useCloseOnBack';
 import { getProductColors } from '@/lib/catalogData';
 import { shareProduct } from '@/lib/shareProduct';
-import { getProductImages } from '@/lib/dataStore';
+import { getProductImages, getProductPrice } from '@/lib/dataStore';
 
 export default function ProductDetailModal({ product, isOpen, onClose, onAddToCart, isWholesaleQualified = false }) {
   const [selectedSize, setSelectedSize] = useState(null);
@@ -19,6 +19,10 @@ export default function ProductDetailModal({ product, isOpen, onClose, onAddToCa
   const images = getProductImages(product);
   const hasMultiple = images.length > 1;
   const currentImage = images[activeImgIndex] || images[0] || '/logo.png';
+  // Precio segun el talle elegido (si el producto tiene price_per_size); si
+  // no hay talle seleccionado o el producto no tiene precio por talle, cae
+  // al precio unico de siempre.
+  const currentPrice = getProductPrice(product, selectedSize);
 
   const handleShare = async () => {
     const result = await shareProduct(product);
@@ -84,7 +88,7 @@ export default function ProductDetailModal({ product, isOpen, onClose, onAddToCa
   };
 
   const handleAdd = () => {
-    onAddToCart({ ...product, image_url: currentImage, selectedSize, selectedColor });
+    onAddToCart({ ...product, image_url: currentImage, selectedSize, selectedColor, unit_price: currentPrice });
     handleClose();
   };
 
@@ -391,8 +395,13 @@ export default function ProductDetailModal({ product, isOpen, onClose, onAddToCa
             <div className="product-detail-price-box">
               <span className="wholesale-tag"><Tag size={13} /> Precio Mayorista</span>
               <div className="price-row">
-                <span className="price-big">${(product.wholesale_price || product.price)?.toLocaleString('es-AR')}</span>
+                <span className="price-big">${currentPrice.toLocaleString('es-AR')}</span>
               </div>
+              {product.price_per_size && hasSizes && (
+                <p style={{ fontSize: '0.76rem', color: 'var(--text-muted)', margin: '4px 0 0 0', fontWeight: 600 }}>
+                  El precio varía según el talle elegido.
+                </p>
+              )}
             </div>
 
             <button

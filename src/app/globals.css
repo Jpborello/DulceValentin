@@ -1302,6 +1302,104 @@ button {
   color: var(--accent-gold-hover);
 }
 
+/* Catalogo interactivo de una pagina de categoria (/categoria/...):
+   buscador + tiers (Hombre/Mujer/Infantil dentro de Indumentaria) +
+   subcategorias, todo filtrado del lado del cliente. Ver CategoryGroupCatalog.jsx */
+.gc-wrap {
+  display: flex;
+  flex-direction: column;
+}
+
+.gc-search {
+  position: relative;
+  display: flex;
+  align-items: center;
+  margin-bottom: 18px;
+}
+
+.gc-search-icon {
+  position: absolute;
+  left: 14px;
+  color: var(--text-muted);
+  pointer-events: none;
+}
+
+.gc-search-input {
+  width: 100%;
+  padding: 12px 40px 12px 42px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-color);
+  background: var(--bg-card);
+  color: var(--text-main);
+  font-size: 0.92rem;
+}
+
+.gc-search-input:focus {
+  outline: none;
+  border-color: var(--accent-gold);
+}
+
+.gc-search-clear {
+  position: absolute;
+  right: 12px;
+  color: var(--text-muted);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.gc-tier-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  padding-bottom: 4px;
+  margin-bottom: 14px;
+}
+
+.gc-tier-chip {
+  flex-shrink: 0;
+  font-size: 0.85rem;
+  font-weight: 700;
+  padding: 8px 18px;
+  border-radius: var(--radius-full);
+  background-color: var(--bg-surface-elevated);
+  color: var(--text-muted);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: var(--transition-fast);
+  border: 1px solid var(--border-color);
+}
+
+.gc-tier-chip:hover {
+  border-color: var(--border-color-strong);
+}
+
+.gc-tier-chip.active {
+  background: var(--gradient-brand);
+  color: #FFF;
+  border-color: transparent;
+  box-shadow: var(--shadow-gold);
+}
+
+.gc-results-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.gc-clear-all {
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: var(--accent-gold-hover);
+  cursor: pointer;
+  text-decoration: underline;
+}
+
 /* Catalog Grid */
 .products-grid {
   display: grid;
@@ -1903,12 +2001,30 @@ button {
     padding: 16px;
   }
 
-  /* Forzamos 1 sola columna literal (no minmax/auto-fill) para que no
-     dependa de como cada navegador calcule el ancho disponible: asi
-     queda garantizado sin importar el dispositivo. */
+  /* 2 columnas literales (no minmax/auto-fill) para que no dependa de
+     como cada navegador calcule el ancho disponible: asi queda
+     garantizado sin importar el dispositivo. Antes era 1 sola columna;
+     Juampi pidió 2 para que no sea una lista tan larga en celular. */
   .products-grid {
-    grid-template-columns: 1fr;
-    gap: 16px;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+  }
+
+  .product-card {
+    padding: 8px;
+  }
+
+  .product-title-compact {
+    font-size: 0.8rem;
+  }
+
+  .price-compact {
+    font-size: 0.98rem;
+  }
+
+  .btn-add-cart-compact {
+    width: 32px;
+    height: 32px;
   }
 
   .cart-drawer-panel {
@@ -2026,6 +2142,76 @@ button {
 @keyframes banner-flicker {
   0%, 100% { transform: scale(1); }
   50% { transform: scale(1.18); }
+}
+
+/* ==========================================================================
+   Club Mayorista Banner (retención: registro + sorteo, debajo del hero)
+   ========================================================================== */
+.club-mayorista-banner {
+  width: 100%;
+  max-width: 1320px;
+  margin: 0 auto 28px auto;
+  padding: 16px 24px;
+  border-radius: var(--radius-lg);
+  background: linear-gradient(135deg, #2C2825 0%, #1D1A18 100%);
+  color: #F4E8D3;
+  border: 1px solid var(--accent-gold);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.club-mayorista-banner--member {
+  justify-content: flex-start;
+}
+
+.club-mayorista-banner__text {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 0.92rem;
+  line-height: 1.4;
+}
+
+.club-mayorista-banner__text strong {
+  color: var(--accent-gold-light);
+}
+
+.club-mayorista-banner__icon {
+  display: inline-flex;
+  color: var(--accent-gold-light);
+  flex-shrink: 0;
+}
+
+.club-mayorista-banner__cta {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--accent-gold);
+  color: #1D1A18;
+  font-weight: 800;
+  font-size: 0.85rem;
+  padding: 10px 18px;
+  border-radius: var(--radius-full);
+  white-space: nowrap;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.club-mayorista-banner__cta:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 14px rgba(200, 157, 84, 0.35);
+}
+
+@media (max-width: 640px) {
+  .club-mayorista-banner {
+    padding: 14px 18px;
+  }
+  .club-mayorista-banner__cta {
+    width: 100%;
+    justify-content: center;
+  }
 }
 
 /* ==========================================================================
@@ -2301,10 +2487,16 @@ button {
 
 @media (max-width: 900px) {
   .cat-showcase-grid { grid-template-columns: repeat(2, 1fr); }
+  /* Con 2 columnas la card queda mucho más angosta: bajamos el piso de
+     alto que tenía pensado para 4 columnas anchas, si no queda una
+     tarjeta angosta y desproporcionadamente alta. */
+  .cat-card { min-height: 220px; }
 }
 
 .cat-card {
   position: relative;
+  width: 100%;
+  min-width: 0;
   aspect-ratio: 1 / 1.14;
   min-height: 290px;
   overflow: hidden;
@@ -2382,6 +2574,7 @@ button {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 8px;
   width: 100%;
   z-index: 2;
 }
@@ -2445,6 +2638,10 @@ button {
   color: rgba(255, 255, 255, 0.88);
   line-height: 1.35;
   text-shadow: 0 1px 6px rgba(0, 0, 0, 0.4);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
 
 .cat-card-foot {
@@ -2620,12 +2817,13 @@ button {
 /* La serif es mas ancha que la sans: a dos columnas en telefono, los nombres
    largos ("Indumentaria") se cortaban contra el borde de la card. */
 @media (max-width: 520px) {
-  .cat-card { padding: 14px; }
+  .cat-card { padding: 14px; min-height: 190px; }
   .cat-card-name { font-size: 1.05rem; }
   .cat-card-tagline { font-size: 0.72rem; }
-  .cat-card-icon { width: 38px; height: 38px; }
+  .cat-card-icon { width: 34px; height: 34px; }
   .cat-card-body { margin-top: 10px; }
-  .cat-card-foot { font-size: 0.68rem; }
+  .cat-card-foot { font-size: 0.68rem; padding-top: 8px; }
+  .cat-card-badge { font-size: 0.64rem; padding: 3px 7px; }
   .cat-showcase-title { font-size: 1.7rem; }
 }
 
