@@ -202,28 +202,6 @@ export default function ProductDetailModal({ product, isOpen, onClose, onAddToCa
                 </>
               )}
 
-              {/* Bottom-Right Price Patch Overlay */}
-              <div style={{
-                position: 'absolute',
-                bottom: '10px',
-                right: '10px',
-                minWidth: '130px',
-                textAlign: 'center',
-                backgroundColor: 'var(--bg-card)',
-                color: 'var(--text-main)',
-                padding: '7px 16px',
-                borderRadius: '8px',
-                border: '2px solid var(--border-color)',
-                boxShadow: '0 4px 14px rgba(0,0,0,0.18)',
-                fontWeight: 900,
-                fontSize: '0.82rem',
-                letterSpacing: '0.5px',
-                pointerEvents: 'none',
-                userSelect: 'none',
-                zIndex: 3
-              }}>
-                ⭐ DULCE VALENTÍN
-              </div>
               <div style={{
                 position: 'absolute',
                 top: '10px',

@@ -13,6 +13,7 @@ import WebChatWidget from '@/components/WebChatWidget';
 import WholesaleBanner from '@/components/WholesaleBanner';
 import ClubMayoristaBanner from '@/components/ClubMayoristaBanner';
 import TrustBar from '@/components/TrustBar';
+import FaqSection from '@/components/FaqSection';
 import ProductDetailModal from '@/components/ProductDetailModal';
 import { dataStore, CATEGORIES, getProductPrice } from '@/lib/dataStore';
 import { flexibleProductMatch } from '@/lib/searchUtils';
@@ -489,6 +490,10 @@ export default function Home() {
           )}
         </main>
       )}
+
+      {/* Preguntas Frecuentes: siempre visible (no depende de si esta abierto
+          el catalogo), con schema FAQPage para SEO/GEO. */}
+      <FaqSection />
 
       {/* Product Detail Modal */}
       <ProductDetailModal

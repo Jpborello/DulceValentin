@@ -783,6 +783,92 @@ button {
 }
 
 /* ==========================================================================
+   Preguntas Frecuentes (FAQ) -- con schema FAQPage para SEO y para que los
+   buscadores con IA (ChatGPT, Perplexity, Google AI Overviews) puedan citar
+   las respuestas directamente.
+   ========================================================================== */
+.faq-section {
+  width: 100%;
+  max-width: 900px;
+  margin: 12px auto 48px auto;
+  padding: 0 24px;
+}
+
+.faq-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 18px;
+}
+
+.faq-header-icon {
+  color: var(--accent-gold-hover);
+  flex-shrink: 0;
+}
+
+.faq-title {
+  font-family: var(--font-display);
+  font-size: clamp(1.4rem, 2.4vw, 1.9rem);
+  font-weight: 700;
+  color: var(--text-main);
+  margin: 0;
+}
+
+.faq-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.faq-item {
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg);
+  padding: 4px 18px;
+  transition: var(--transition-fast);
+}
+
+.faq-item[open] {
+  border-color: var(--accent-gold);
+}
+
+.faq-question {
+  padding: 14px 0;
+  font-size: 0.96rem;
+  font-weight: 700;
+  color: var(--text-main);
+  cursor: pointer;
+  list-style: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.faq-question::-webkit-details-marker {
+  display: none;
+}
+
+.faq-question::after {
+  content: '+';
+  font-size: 1.3rem;
+  font-weight: 400;
+  color: var(--accent-gold-hover);
+  flex-shrink: 0;
+}
+
+.faq-item[open] .faq-question::after {
+  content: '\2212';
+}
+
+.faq-answer {
+  font-size: 0.9rem;
+  line-height: 1.6;
+  color: var(--text-muted);
+  margin: 0 0 16px 0;
+}
+
+/* ==========================================================================
    Search Bar Section (¿Qué estás buscando?)
    ========================================================================== */
 .search-bar-section {
@@ -1633,19 +1719,6 @@ button {
   text-transform: uppercase;
   white-space: nowrap;
   box-shadow: var(--shadow-sm);
-}
-
-.card-badge-wholesale {
-  position: absolute;
-  top: 10px;
-  right: 10px;
-  background: var(--gradient-brand);
-  color: #FFF;
-  font-size: 0.7rem;
-  font-weight: 800;
-  padding: 4px 9px;
-  border-radius: var(--radius-sm);
-  box-shadow: 0 4px 10px rgba(29, 24, 21, 0.25);
 }
 
 .product-category-name {

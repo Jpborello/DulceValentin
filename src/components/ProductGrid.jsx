@@ -257,39 +257,11 @@ function ProductGridCard({ product, onOpenDetail, onQuickAdd, onShare, isCopiedS
             </>
           )}
 
-          {/* Bottom-Right Price Patch Overlay */}
-          <div
-            style={{
-              position: 'absolute',
-              bottom: '8px',
-              right: '8px',
-              minWidth: '120px',
-              textAlign: 'center',
-              backgroundColor: 'var(--bg-card)',
-              color: 'var(--text-main)',
-              padding: '6px 14px',
-              borderRadius: '8px',
-              border: '2px solid var(--border-color)',
-              boxShadow: '0 4px 12px rgba(0,0,0,0.18)',
-              fontWeight: 900,
-              fontSize: '0.78rem',
-              letterSpacing: '0.5px',
-              pointerEvents: 'none',
-              userSelect: 'none',
-              zIndex: 3
-            }}
-          >
-            ⭐ DULCE VALENTÍN
-          </div>
-
           <div className="card-badges-topleft">
             {product.is_new && <span className="card-badge-new">🆕 Nuevo</span>}
             {product.is_offer && <span className="card-badge-offer">Oferta</span>}
             {isTopSeller && <span className="card-badge-bestseller">🔥 Más Vendido</span>}
           </div>
-          <span className="card-badge-wholesale">
-            Precio Mayorista
-          </span>
 
           <button
             type="button"
