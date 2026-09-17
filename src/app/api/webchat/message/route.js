@@ -5,7 +5,9 @@ import { processIncomingChatMessage } from '@/lib/whatsappBot';
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://revrbrrzlnweuxwhpgei.supabase.co';
 const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
-const supabaseAdmin = createClient(supabaseUrl, serviceRoleKey);
+// Si falta la key en este entorno (deploy nuevo sin las variables cargadas
+// todavia), no tiramos abajo el build entero del sitio por esta ruta sola.
+const supabaseAdmin = serviceRoleKey ? createClient(supabaseUrl, serviceRoleKey) : null;
 
 // GET: el widget hace polling de los mensajes de su propia sesion (incluye
 // respuestas del bot y del admin escritas desde el panel).

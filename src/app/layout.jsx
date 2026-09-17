@@ -77,14 +77,29 @@ const localBusinessJsonLd = {
   name: 'Dulce Valentín',
   image: `${SITE_URL}/logo.png`,
   url: SITE_URL,
-  telephone: '+549341514-7414',
+  telephone: '+5493415147414',
   priceRange: '$$',
   address: {
     '@type': 'PostalAddress',
-    streetAddress: 'Pte. Perón 5349/5305/5265',
+    streetAddress: 'Av. Pres. Perón 5349/5305/5265',
     addressLocality: 'Rosario',
     addressRegion: 'Santa Fe',
+    postalCode: 'S2010AAD',
     addressCountry: 'AR'
+  },
+  // Coordenadas exactas de la ficha de Google Maps del local, para que
+  // Google y los buscadores/IA lo posicionen bien en resultados locales.
+  geo: {
+    '@type': 'GeoCoordinates',
+    latitude: -32.9602861,
+    longitude: -60.6958208
+  },
+  hasMap: 'https://maps.app.goo.gl/cnrzyNr8FxRYtqjm7',
+  // Aunque el local es de Rosario, vendemos por mayor a todo el pais —
+  // ayuda a que no se lo limite solo a busquedas locales de Rosario.
+  areaServed: {
+    '@type': 'Country',
+    name: 'Argentina'
   },
   openingHoursSpecification: [
     {

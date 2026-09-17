@@ -370,12 +370,110 @@ button {
 /* ==========================================================================
    Hero Carousel (Ofertas, Promociones y Novedades)
    ========================================================================== */
-.hero-carousel-section {
-  position: relative;
+/* Envoltorio nuevo: panel de marca fijo (izquierda) + carrusel de
+   promos existente (derecha) — "hero extendido" pedido por Juampi para
+   que el H1 y el "Envíos a Todo el País" no dependan de qué slide esté
+   activo en el carrusel. */
+.hero-extended-section {
   width: 100%;
   max-width: 1320px;
   margin: 20px auto 28px auto;
   padding: 0 24px;
+}
+
+.hero-extended-grid {
+  display: grid;
+  grid-template-columns: 0.62fr 1.38fr;
+  gap: 20px;
+  align-items: stretch;
+}
+
+.hero-brand-panel {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 10px;
+  padding: 36px 30px;
+  border-radius: var(--radius-lg);
+  background: linear-gradient(160deg, var(--bg-card) 0%, var(--bg-surface-elevated) 100%);
+  border: 1px solid var(--border-color);
+  box-shadow: 0 16px 48px -12px rgba(0, 0, 0, 0.12);
+  min-height: 430px;
+}
+
+.hero-brand-eyebrow {
+  font-size: 0.78rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--accent-gold-hover);
+}
+
+.hero-brand-title {
+  font-family: var(--font-display);
+  font-size: clamp(1.9rem, 3vw, 2.6rem);
+  font-weight: 700;
+  line-height: 1.05;
+  color: var(--text-main);
+  margin: 2px 0 0 0;
+  letter-spacing: -0.01em;
+}
+
+.hero-brand-shipping {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  width: fit-content;
+  font-size: 0.9rem;
+  font-weight: 800;
+  color: #FFFFFF;
+  background: linear-gradient(135deg, var(--accent-gold) 0%, var(--accent-gold-hover) 100%);
+  padding: 7px 14px;
+  border-radius: var(--radius-full);
+  margin: 6px 0 2px 0;
+}
+
+.hero-brand-desc {
+  font-size: 0.9rem;
+  line-height: 1.55;
+  color: var(--text-muted);
+  margin: 4px 0 0 0;
+  max-width: 42ch;
+}
+
+.hero-brand-points {
+  list-style: none;
+  padding: 0;
+  margin: 8px 0 0 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.hero-brand-points li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--text-main);
+}
+
+.hero-brand-points svg {
+  color: var(--accent-gold-hover);
+  flex-shrink: 0;
+}
+
+.hero-brand-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.hero-carousel-section {
+  position: relative;
+  width: 100%;
   user-select: none;
 }
 
@@ -445,14 +543,6 @@ button {
   background: linear-gradient(135deg, rgba(236, 111, 166, 0.16) 0%, rgba(217, 119, 6, 0.16) 100%);
   color: var(--accent-gold-hover);
   border: 1px solid color-mix(in srgb, var(--accent-gold) 35%, transparent);
-}
-
-.hero-kicker-city {
-  font-size: 0.75rem;
-  font-weight: 700;
-  color: var(--text-muted);
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
 }
 
 .hero-slide-title {
@@ -859,6 +949,15 @@ button {
 
 /* Responsividad Mobile para Hero Carousel y Search Bar */
 @media (max-width: 900px) {
+  .hero-extended-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .hero-brand-panel {
+    min-height: auto;
+    padding: 26px 20px;
+  }
+
   .hero-slide-layout {
     grid-template-columns: 1fr;
     gap: 20px;

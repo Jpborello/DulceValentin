@@ -5,7 +5,9 @@ import { normalizePhone } from '@/lib/phoneUtils';
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://revrbrrzlnweuxwhpgei.supabase.co';
 const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
-const supabaseAdmin = createClient(supabaseUrl, serviceRoleKey);
+// Si falta la key en este entorno (deploy nuevo sin las variables cargadas
+// todavia), no tiramos abajo el build entero del sitio por esta ruta sola.
+const supabaseAdmin = serviceRoleKey ? createClient(supabaseUrl, serviceRoleKey) : null;
 
 // POST: el admin otorga un baucher (ej: producto faltante en un pedido),
 // atado al telefono del cliente. Le sirva o no la proxima vez que compre,

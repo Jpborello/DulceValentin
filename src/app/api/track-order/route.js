@@ -4,7 +4,9 @@ import { createClient } from '@supabase/supabase-js';
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://revrbrrzlnweuxwhpgei.supabase.co';
 const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
-const supabaseAdmin = createClient(supabaseUrl, serviceRoleKey);
+// Si falta la key en este entorno (deploy nuevo sin las variables cargadas
+// todavia), no tiramos abajo el build entero del sitio por esta ruta sola.
+const supabaseAdmin = serviceRoleKey ? createClient(supabaseUrl, serviceRoleKey) : null;
 
 // Solo digitos, para no depender de como este formateado el telefono
 // (con espacios, guiones, +54, etc.) ni de pontos en el N de pedido.

@@ -10,8 +10,16 @@ import {
   ShoppingCart,
   ArrowRight,
   Eye,
-  Camera
+  Camera,
+  Truck,
+  Store,
+  MessageCircle
 } from 'lucide-react';
+import { COMPANY_INFO } from '@/lib/companyInfo';
+
+const WHATSAPP_URL = `https://wa.me/${COMPANY_INFO.phone.replace(/\D/g, '')}?text=${encodeURIComponent(
+  '¡Hola! Quiero hacer una consulta sobre productos de Dulce Valentín.'
+)}`;
 import { getProductPrice, getProductPriceRange } from '@/lib/dataStore';
 
 const FALLBACK_PROMO_SLIDES = [
@@ -138,14 +146,55 @@ export default function HeroSection({
   const currentSlide = slides[currentIndex] || slides[0];
 
   return (
-    <section
-      className="hero-carousel-section"
-      aria-label="Promociones y Ofertas Destacadas"
-      onMouseEnter={() => setIsPaused(true)}
-      onMouseLeave={() => setIsPaused(false)}
-      onTouchStart={handleTouchStart}
-      onTouchEnd={handleTouchEnd}
-    >
+    <section className="hero-extended-section" aria-label="Dulce Valentín — Mayorista Textil en Rosario, Envíos a Todo el País">
+      <div className="hero-extended-grid">
+        {/* Panel de marca, fijo (no rota con el carrusel): el H1 real y
+            estable de la home vive acá, junto con el mensaje de "Envíos a
+            Todo el País" que Juampi pidió sumar "de costado". Al no
+            depender del slide activo, Google y los buscadores con IA
+            siempre ven el mismo titular principal de la pagina. */}
+        <div className="hero-brand-panel">
+          <span className="hero-brand-eyebrow">Rosario · Santa Fe</span>
+          <h1 className="hero-brand-title">Mayoristas Textiles</h1>
+          <p className="hero-brand-shipping">
+            <Truck size={17} /> Envíos a Todo el País
+          </p>
+          <p className="hero-brand-desc">
+            Indumentaria, calzado y complementos a precio 100% mayorista, sin
+            intermediarios. Vendemos a revendedoras y comercios de toda la
+            Argentina.
+          </p>
+          <ul className="hero-brand-points">
+            <li>
+              <Tag size={15} /> Precio mayorista sin intermediarios
+            </li>
+            <li>
+              <Store size={15} /> Retirá en nuestro local en Rosario
+            </li>
+            <li>
+              <MessageCircle size={15} /> Te asesoramos por WhatsApp
+            </li>
+          </ul>
+          <div className="hero-brand-actions">
+            {onExploreCatalog && (
+              <button type="button" onClick={onExploreCatalog} className="btn-hero-primary">
+                Ver Catálogo <ArrowRight size={17} />
+              </button>
+            )}
+            <a href={WHATSAPP_URL} target="_blank" rel="noreferrer" className="btn-hero-outline">
+              <MessageCircle size={16} /> WhatsApp
+            </a>
+          </div>
+        </div>
+
+        <div
+          className="hero-carousel-section"
+          aria-label="Promociones y Ofertas Destacadas"
+          onMouseEnter={() => setIsPaused(true)}
+          onMouseLeave={() => setIsPaused(false)}
+          onTouchStart={handleTouchStart}
+          onTouchEnd={handleTouchEnd}
+        >
       <div className="hero-carousel-viewport">
         {slides.map((slide, index) => {
           const isActive = index === currentIndex;
@@ -163,12 +212,11 @@ export default function HeroSection({
                     <span className="hero-badge-pill">
                       {slide.badge || '🔥 Oferta Mayorista'}
                     </span>
-                    <span className="hero-kicker-city">Rosario · Envíos al País</span>
                   </div>
 
-                  <h1 className="hero-slide-title">
+                  <h2 className="hero-slide-title">
                     {slide.name}
-                  </h1>
+                  </h2>
 
                   {slide.tagline && (
                     <p className="hero-slide-tagline">{slide.tagline}</p>
@@ -298,6 +346,8 @@ export default function HeroSection({
           ))}
         </div>
       )}
+        </div>
+      </div>
     </section>
   );
 }

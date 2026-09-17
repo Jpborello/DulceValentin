@@ -6,6 +6,6 @@ export const COMPANY_INFO = {
   address: 'Pte. Perón 5349/5305/5265',
   locality: 'Rosario',
   province: 'Santa Fe',
-  postalCode: 'S2000',
+  postalCode: 'S2010AAD',
   phone: '+54 9 3415 14-7414',
 };

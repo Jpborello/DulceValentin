@@ -5,7 +5,9 @@ import { normalizePhone } from '@/lib/phoneUtils';
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://revrbrrzlnweuxwhpgei.supabase.co';
 const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
-const supabaseAdmin = createClient(supabaseUrl, serviceRoleKey);
+// Si falta la key en este entorno (deploy nuevo sin las variables cargadas
+// todavia), no tiramos abajo el build entero del sitio por esta ruta sola.
+const supabaseAdmin = serviceRoleKey ? createClient(supabaseUrl, serviceRoleKey) : null;
 
 // GET: el checkout consulta si el telefono que se esta tipeando tiene un
 // baucher activo, para mostrarlo y descontarlo del total automaticamente.

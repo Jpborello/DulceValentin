@@ -6,7 +6,12 @@ const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://revrbrrzlnw
 const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 const agentSecret = process.env.PRINT_AGENT_SECRET;
 
-const supabaseAdmin = createClient(supabaseUrl, serviceRoleKey);
+// Si falta la key en este entorno (ej: un deploy nuevo de Vercel sin las
+// variables de entorno cargadas todavia), no tiramos abajo el build entero
+// del sitio por una sola ruta de admin — dejamos el cliente en null y cada
+// handler de aca abajo (ya envuelto en try/catch) devuelve un 500 prolijo
+// en vez de romper "npm run build" para TODO el sitio.
+const supabaseAdmin = serviceRoleKey ? createClient(supabaseUrl, serviceRoleKey) : null;
 
 // El agente de impresion (programa aparte que corre en la PC del local, ver
 // /print-agent) usa este secreto para autenticarse al consultar/actualizar
