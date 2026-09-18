@@ -65,7 +65,12 @@ function ProductImageRow({ product, onUpdateImage }) {
         const filePath = `admin-uploads/${product.id || 'prod'}-${Date.now()}-${i}.webp`;
         const { error: uploadErr } = await supabase.storage.from('Productos').upload(filePath, full.blob, {
           upsert: true,
-          contentType: 'image/webp'
+          contentType: 'image/webp',
+          // Las fotos de producto no cambian una vez subidas (cada subida usa
+          // un nombre de archivo nuevo), asi que el navegador las puede cachear
+          // un año entero sin volver a pedirlas -- esto es lo que Lighthouse
+          // pide en "Usar tiempos de vida de cache eficientes".
+          cacheControl: '31536000'
         });
         if (uploadErr) throw uploadErr;
 
@@ -77,7 +82,8 @@ function ProductImageRow({ product, onUpdateImage }) {
           const thumbPath = filePath.replace(/\.webp$/, '-thumb.webp');
           await supabase.storage.from('Productos').upload(thumbPath, thumb.blob, {
             upsert: true,
-            contentType: 'image/webp'
+            contentType: 'image/webp',
+            cacheControl: '31536000'
           }).catch(() => {});
         }
 

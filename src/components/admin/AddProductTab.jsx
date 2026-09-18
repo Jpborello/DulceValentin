@@ -84,7 +84,11 @@ export default function AddProductTab({ categories, onCreateProduct }) {
         const filePath = `admin-uploads/nuevo-${Date.now()}-${i}.webp`;
         const { error: uploadErr } = await supabase.storage.from('Productos').upload(filePath, full.blob, {
           upsert: true,
-          contentType: 'image/webp'
+          contentType: 'image/webp',
+          // Un año de cache: cada subida usa un nombre de archivo nuevo, asi
+          // que la foto nunca cambia una vez publicada (pide Lighthouse en
+          // "Usar tiempos de vida de cache eficientes").
+          cacheControl: '31536000'
         });
         if (uploadErr) throw uploadErr;
 
@@ -95,7 +99,8 @@ export default function AddProductTab({ categories, onCreateProduct }) {
           const thumbPath = filePath.replace(/\.webp$/, '-thumb.webp');
           await supabase.storage.from('Productos').upload(thumbPath, thumb.blob, {
             upsert: true,
-            contentType: 'image/webp'
+            contentType: 'image/webp',
+            cacheControl: '31536000'
           }).catch(() => {});
         }
 

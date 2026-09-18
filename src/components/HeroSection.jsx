@@ -20,7 +20,7 @@ import { COMPANY_INFO } from '@/lib/companyInfo';
 const WHATSAPP_URL = `https://wa.me/${COMPANY_INFO.phone.replace(/\D/g, '')}?text=${encodeURIComponent(
   '¡Hola! Quiero hacer una consulta sobre productos de Dulce Valentín.'
 )}`;
-import { getProductPrice, getProductPriceRange } from '@/lib/dataStore';
+import { getProductPrice, getProductPriceRange, getThumbUrl } from '@/lib/dataStore';
 
 const FALLBACK_PROMO_SLIDES = [
   {
@@ -283,10 +283,24 @@ export default function HeroSection({
                 <div className="hero-slide-media">
                   <div className="hero-image-card" onClick={() => onOpenDetail && onOpenDetail(slide)}>
                     <img
-                      src={slide.image_url || '/logo.png'}
+                      src={getThumbUrl(slide.image_url) || '/logo.png'}
                       alt={slide.name}
                       className="hero-main-img"
                       loading={index === 0 ? 'eager' : 'lazy'}
+                      fetchPriority={index === 0 ? 'high' : 'auto'}
+                      onError={(e) => {
+                        // Si la miniatura puntual no existe todavia (foto
+                        // vieja sin backfill, por ejemplo), cae a la foto
+                        // completa y despues al logo -- mismo criterio que
+                        // ProductGrid.
+                        if (e.target.dataset.fallback !== 'full' && slide.image_url) {
+                          e.target.dataset.fallback = 'full';
+                          e.target.src = slide.image_url;
+                        } else if (e.target.dataset.fallback !== 'logo') {
+                          e.target.dataset.fallback = 'logo';
+                          e.target.src = '/logo.png';
+                        }
+                      }}
                     />
                     <div className="hero-image-overlay">
                       <span className="hero-overlay-tag">
