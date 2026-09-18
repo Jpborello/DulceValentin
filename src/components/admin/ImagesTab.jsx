@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { UploadCloud, Loader2, CheckCircle2, AlertCircle, Star, Trash2, ArrowLeft, ArrowRight, Image as ImageIcon } from 'lucide-react';
 import { supabase } from '@/lib/supabaseClient';
-import { compressImage } from '@/lib/compressImage';
+import { compressImageWithThumb } from '@/lib/compressImage';
 import { getProductImages } from '@/lib/dataStore';
 
 export default function ImagesTab({ products, onUpdateImage }) {
@@ -61,13 +61,25 @@ function ProductImageRow({ product, onUpdateImage }) {
         const file = files[i];
         setUploadStatus(`Comprimiendo y subiendo ${i + 1} de ${files.length}...`);
         
-        const { blob } = await compressImage(file);
+        const { full, thumb } = await compressImageWithThumb(file);
         const filePath = `admin-uploads/${product.id || 'prod'}-${Date.now()}-${i}.webp`;
-        const { error: uploadErr } = await supabase.storage.from('Productos').upload(filePath, blob, {
+        const { error: uploadErr } = await supabase.storage.from('Productos').upload(filePath, full.blob, {
           upsert: true,
           contentType: 'image/webp'
         });
         if (uploadErr) throw uploadErr;
+
+        // Miniatura para la grilla: mismo nombre + "-thumb" (convencion que
+        // usa getThumbUrl para encontrarla desde el lado del sitio). Si esta
+        // subida puntual falla no se corta el alta de la foto -- la tarjeta
+        // igual muestra la foto completa como respaldo.
+        if (thumb?.blob) {
+          const thumbPath = filePath.replace(/\.webp$/, '-thumb.webp');
+          await supabase.storage.from('Productos').upload(thumbPath, thumb.blob, {
+            upsert: true,
+            contentType: 'image/webp'
+          }).catch(() => {});
+        }
 
         const { data: urlData } = supabase.storage.from('Productos').getPublicUrl(filePath);
         if (urlData?.publicUrl) {

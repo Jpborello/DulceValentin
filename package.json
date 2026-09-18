@@ -7,7 +7,9 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "seed:admin": "node scripts/seed-admin-user.js"
+    "seed:admin": "node scripts/seed-admin-user.js",
+    "thumbs:backfill": "node scripts/generate-thumbs.js",
+    "products:cargar-lote-2026-09": "node scripts/create-new-products-2026-09.js"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.49.1",
@@ -18,6 +20,7 @@
   },
   "devDependencies": {
     "eslint": "^9.0.0",
-    "eslint-config-next": "^15.1.7"
+    "eslint-config-next": "^15.1.7",
+    "sharp": "^0.35.4"
   }
 }

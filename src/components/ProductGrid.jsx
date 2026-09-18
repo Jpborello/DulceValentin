@@ -4,7 +4,7 @@ import { useState, useEffect, useRef } from 'react';
 import Image from 'next/image';
 import { ShoppingCart, Share2, Check, ChevronLeft, ChevronRight, Camera } from 'lucide-react';
 import { shareProduct } from '@/lib/shareProduct';
-import { getProductImages, getProductPrice, getProductPriceRange } from '@/lib/dataStore';
+import { getProductImages, getProductPrice, getProductPriceRange, getThumbUrl } from '@/lib/dataStore';
 
 export default function ProductGrid({ products, onAddToCart, isWholesaleQualified = false, onOpenDetail, topSellingIds }) {
   const [copiedShareId, setCopiedShareId] = useState(null);
@@ -66,8 +66,21 @@ function ProductGridCard({ product, onOpenDetail, onQuickAdd, onShare, isCopiedS
   const [isHovered, setIsHovered] = useState(false);
   const touchStartX = useRef(null);
 
+  // Cascada de calidad para la foto de la tarjeta: primero la miniatura
+  // liviana (pensada para este tamano), y si no existe todavia (fotos
+  // subidas antes de generarse miniaturas) cae a la foto completa, y recien
+  // como ultimo recurso al logo. Se reinicia cada vez que cambia la foto
+  // activa (rotacion automatica o flechas), porque cada foto tiene su propio
+  // resultado de carga.
+  const [imgFallbackLevel, setImgFallbackLevel] = useState(0);
+  useEffect(() => {
+    setImgFallbackLevel(0);
+  }, [activeImgIndex, product.id]);
+
   const hasMultiple = images.length > 1;
   const currentImage = images[activeImgIndex] || images[0] || '/logo.png';
+  const thumbImage = getThumbUrl(currentImage);
+  const displayImage = imgFallbackLevel === 0 ? thumbImage : (imgFallbackLevel === 1 ? currentImage : '/logo.png');
 
   // Auto-rotación de imágenes para productos con múltiples fotos (se pausa al pasar el mouse)
   useEffect(() => {
@@ -131,14 +144,14 @@ function ProductGridCard({ product, onOpenDetail, onQuickAdd, onShare, isCopiedS
           onTouchEnd={handleTouchEnd}
         >
           <Image
-            src={currentImage}
+            src={displayImage}
             alt={product.name}
             fill
             unoptimized
             sizes="(max-width: 1024px) 45vw, 280px"
             className="product-img"
-            onError={(e) => {
-              e.target.src = '/logo.png';
+            onError={() => {
+              setImgFallbackLevel((lvl) => lvl + 1);
             }}
           />
 

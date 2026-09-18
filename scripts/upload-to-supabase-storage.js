@@ -4,8 +4,27 @@ const { createClient } = require('@supabase/supabase-js');
 let ws;
 try { ws = require('ws'); } catch (e) {}
 
+// Corre con "node" directo, asi que hay que leer .env.local a mano (Next.js
+// se lo carga solo, un script suelto no). Sin esto se cae al fallback de
+// abajo, que puede quedar desactualizado si la key se rota en Supabase.
+(function loadEnvLocal() {
+  const envPath = path.join(__dirname, '..', '.env.local');
+  if (!fs.existsSync(envPath)) return;
+  const content = fs.readFileSync(envPath, 'utf8');
+  content.split('\n').forEach((line) => {
+    const match = line.match(/^\s*([\w.-]+)\s*=\s*(.*)?\s*$/);
+    if (!match) return;
+    const key = match[1];
+    let value = (match[2] || '').trim();
+    if (value.startsWith('"') && value.endsWith('"')) value = value.slice(1, -1);
+    if (!process.env[key]) process.env[key] = value;
+  });
+})();
+
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://revrbrrzlnweuxwhpgei.supabase.co';
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBnaXBldWphZmp3aHFqb2Jjanp3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODU4Nzg0MDcsImV4cCI6MjEwMTQ1NDQwN30.A9sRFYI36UvOmjw3fsFGlteutTLsaPRXPszacwysbQk';
+// Fallback SOLO por si no hay .env.local a mano: publishable key actual del
+// proyecto (formato nuevo de Supabase). .env.local siempre tiene prioridad.
+const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'sb_publishable_SG-JwsfgUZuPHN23twhBlw_QhaJmwL_';
 
 const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   auth: { persistSession: false },
@@ -29,7 +48,29 @@ function getAllWebpFiles(dir, fileList = []) {
   return fileList;
 }
 
+// El bucket exige un usuario autenticado para poder subir (el panel de admin
+// funciona porque el navegador ya inicio sesion con Supabase Auth -- ver
+// src/app/admin/page.jsx). Sin este paso, un script suelto queda como
+// usuario anonimo y Supabase rechaza la subida con "new row violates
+// row-level security policy".
+async function ensureAdminAuth() {
+  const email = process.env.ADMIN_EMAIL;
+  const password = process.env.ADMIN_PASSWORD;
+  if (!email || !password) {
+    console.warn('⚠️  Falta ADMIN_EMAIL/ADMIN_PASSWORD en .env.local: si el bucket exige sesion, la subida va a fallar por RLS.\n');
+    return;
+  }
+  const { error } = await supabase.auth.signInWithPassword({ email, password });
+  if (error) {
+    console.warn(`⚠️  No se pudo iniciar sesion como admin (${email}): ${error.message}\n`);
+  } else {
+    console.log(`🔐 Sesion iniciada como ${email}.\n`);
+  }
+}
+
 async function upload() {
+  await ensureAdminAuth();
+
   let bucketName = 'Productos';
 
   // Check if bucket 'Productos' or 'productos' exists

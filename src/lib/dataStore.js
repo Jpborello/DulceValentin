@@ -23,6 +23,21 @@ export function getProductImages(product) {
   return ['/logo.png'];
 }
 
+// Deriva la URL de la miniatura liviana a partir de la URL completa de una
+// foto, siguiendo la misma convencion de nombre que usa el upload del admin
+// (".../archivo.webp" -> ".../archivo-thumb.webp"). Se usa en la grilla de
+// productos, donde se ven muchas fotos a la vez y no hace falta bajar la
+// imagen completa de 1200x1500. Si la URL no es una foto propia (pegada a
+// mano, o /logo.png) devuelve la misma URL sin tocar -- ProductGrid ya tiene
+// su propio fallback a la version full si la miniatura no existe todavia
+// (fotos subidas antes de este cambio).
+export function getThumbUrl(fullUrl) {
+  if (!fullUrl || typeof fullUrl !== 'string') return fullUrl;
+  if (!fullUrl.includes('/storage/v1/object/public/')) return fullUrl;
+  if (!fullUrl.endsWith('.webp')) return fullUrl;
+  return fullUrl.replace(/\.webp$/, '-thumb.webp');
+}
+
 // Reexportados desde productPricing.js (sin dependencias) para no romper a
 // nadie que ya los importaba desde aca. Las paginas de servidor
 // (categoria/producto) importan directo de productPricing.js para no

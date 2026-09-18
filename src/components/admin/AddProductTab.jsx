@@ -3,7 +3,7 @@
 import { useState, useMemo } from 'react';
 import { PlusCircle, X, UploadCloud, Loader2, CheckCircle2, AlertCircle, Tag, Star, Trash2, ArrowLeft, ArrowRight, Image as ImageIcon } from 'lucide-react';
 import { supabase } from '@/lib/supabaseClient';
-import { compressImage } from '@/lib/compressImage';
+import { compressImageWithThumb } from '@/lib/compressImage';
 import { getProductColors } from '@/lib/catalogData';
 
 const EMPTY_FORM = {
@@ -77,16 +77,27 @@ export default function AddProductTab({ categories, onCreateProduct }) {
         const file = files[i];
         setUploadProgress(`Comprimiendo y subiendo ${i + 1} de ${files.length}...`);
         
-        // 1. Compresion y conversion a webp en el navegador
-        const { blob } = await compressImage(file);
-        
+        // 1. Compresion y conversion a webp en el navegador (full + miniatura)
+        const { full, thumb } = await compressImageWithThumb(file);
+
         // 2. Subida a Supabase Storage bucket 'Productos'
         const filePath = `admin-uploads/nuevo-${Date.now()}-${i}.webp`;
-        const { error: uploadErr } = await supabase.storage.from('Productos').upload(filePath, blob, {
+        const { error: uploadErr } = await supabase.storage.from('Productos').upload(filePath, full.blob, {
           upsert: true,
           contentType: 'image/webp'
         });
         if (uploadErr) throw uploadErr;
+
+        // Miniatura liviana para la grilla (mismo nombre + "-thumb", ver
+        // getThumbUrl en dataStore.js). Si falla esta subida puntual no se
+        // corta el alta: la tarjeta cae a la foto completa como respaldo.
+        if (thumb?.blob) {
+          const thumbPath = filePath.replace(/\.webp$/, '-thumb.webp');
+          await supabase.storage.from('Productos').upload(thumbPath, thumb.blob, {
+            upsert: true,
+            contentType: 'image/webp'
+          }).catch(() => {});
+        }
 
         const { data: urlData } = supabase.storage.from('Productos').getPublicUrl(filePath);
         if (urlData?.publicUrl) {
