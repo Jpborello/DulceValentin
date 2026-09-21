@@ -752,8 +752,12 @@ class DataStore {
   // instante para la UI, y persiste el descuento real en la base via una
   // funcion SQL atomica (evita vender de mas con compras simultaneas y no
   // requiere que el cliente tenga permiso de UPDATE directo sobre products).
-  decrementStockAfterSale(id, qty) {
-    if (!qty || qty <= 0) return;
+  // Devuelve true si se pudo descontar, false si la funcion de la base
+  // avisa que ya no habia stock suficiente (dos compras casi simultaneas
+  // del ultimo/anteultimo producto) — createOrder usa este resultado para
+  // marcar el pedido como "stock_issue" en vez de dejarlo pasar en silencio.
+  async decrementStockAfterSale(id, qty) {
+    if (!qty || qty <= 0) return true;
 
     this.products = this.products.map(p => {
       if (p.id !== id) return p;
@@ -767,8 +771,19 @@ class DataStore {
     this.notify();
 
     if (supabase) {
-      supabase.rpc('decrement_product_stock', { p_product_id: id, p_qty: qty }).then(() => {}).catch(() => {});
+      try {
+        const { data, error } = await supabase.rpc('decrement_product_stock', { p_product_id: id, p_qty: qty });
+        if (error) {
+          console.warn('Stock decrement warning:', error);
+          return true; // error de red/conexion: no le bloqueamos el pedido al cliente por esto
+        }
+        return data !== false;
+      } catch (err) {
+        console.warn('Stock decrement warning:', err);
+        return true;
+      }
     }
+    return true;
   }
 
   // Reversa de decrementStockAfterSale: se llama cuando un pedido se
@@ -1162,6 +1177,29 @@ class DataStore {
       ? Math.floor(total / 50000)
       : 0;
 
+    // Descuenta stock de forma atomica ANTES de guardar el pedido (no
+    // despues, como era antes): asi si no alcanza porque dos compras
+    // casi simultaneas se pisaron en el ultimo/anteultimo producto, el
+    // pedido ya nace marcado con stock_issue y aparece resaltado en
+    // Pedidos del admin, en vez de que el admin se entere solo si mira el
+    // stock del producto por separado. Los items "fuera de catalogo"
+    // (cargados a mano, no existen en this.products) no tienen stock que
+    // chequear y se dejan pasar siempre.
+    const stockIssues = [];
+    for (const item of cartItems) {
+      if (this.products.some(p => p.id === item.product.id)) {
+        const ok = await this.decrementStockAfterSale(item.product.id, item.quantity);
+        if (!ok) {
+          stockIssues.push({
+            id: item.product.id,
+            name: item.product.name,
+            requested: item.quantity
+          });
+        }
+      }
+    }
+    const hasStockIssue = stockIssues.length > 0;
+
     const order = {
       id: 'ORD-' + Math.floor(100000 + Math.random() * 900000),
       client_name: clientDetails.name,
@@ -1181,7 +1219,9 @@ class DataStore {
       raffle_tickets: [],
       is_registered: isRegisteredUser,
       created_at: new Date().toISOString(),
-      status: 'pendiente'
+      status: 'pendiente',
+      stock_issue: hasStockIssue,
+      stock_issue_detail: hasStockIssue ? stockIssues : null
     };
 
     // El pedido se guarda en Supabase ANTES de pedir los boletos: el
@@ -1206,7 +1246,9 @@ class DataStore {
         created_at: order.created_at,
         is_wholesale: order.is_wholesale,
         discount_applied: order.discount_applied,
-        voucher_id: order.voucher_id
+        voucher_id: order.voucher_id,
+        stock_issue: order.stock_issue,
+        stock_issue_detail: order.stock_issue_detail
       });
 
       if (orderErr) {
@@ -1280,14 +1322,6 @@ class DataStore {
         }).then(() => {}).catch((err) => console.warn('Client upsert warning:', err));
       }
     }
-
-    // Update sales_count and stock for products (se salta los items
-    // "fuera de catalogo" cargados a mano, que no existen en this.products)
-    cartItems.forEach(item => {
-      if (this.products.some(p => p.id === item.product.id)) {
-        this.decrementStockAfterSale(item.product.id, item.quantity);
-      }
-    });
 
     // Add cash movement
     this.cashMovements.unshift({

@@ -840,8 +840,18 @@ export default function OrdersTab({ orders, mpTransfers, mpConfigured, mpLoading
               const isDelivery = ord.delivery_method !== 'retiro' && !ord.delivery_method?.toLowerCase().includes('retiro');
 
               return (
-                <tr key={ord.id}>
-                  <td style={{ fontWeight: 800 }}>{ord.id}</td>
+                <tr key={ord.id} style={ord.stock_issue ? { backgroundColor: 'rgba(239, 68, 68, 0.06)' } : undefined}>
+                  <td style={{ fontWeight: 800 }}>
+                    {ord.id}
+                    {ord.stock_issue && (
+                      <div
+                        title={`Sin stock suficiente para: ${(ord.stock_issue_detail || []).map(i => `${i.name} (pidió ${i.requested})`).join(', ')}`}
+                        style={{ marginTop: '4px', fontSize: '0.68rem', fontWeight: 800, color: '#DC2626', display: 'flex', alignItems: 'center', gap: '3px', cursor: 'help' }}
+                      >
+                        ⚠️ Sin stock
+                      </div>
+                    )}
+                  </td>
                   <td style={{ fontWeight: 700 }}>{ord.client_name}</td>
                   <td>{ord.client_dni || 'No provisto'}</td>
                   <td>
