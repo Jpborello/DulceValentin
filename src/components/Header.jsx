@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import Image from 'next/image';
 import { ShoppingBag, User, Menu, X, Shield } from 'lucide-react';
 import Link from 'next/link';
 import ThemeToggle from './ThemeToggle';
@@ -24,9 +25,12 @@ export default function Header({
       <div className="header-content">
         {/* Brand Logo & Name */}
         <Link href="/" className="brand-logo-wrapper">
-          <img 
-            src="/logo.png" 
+          <Image 
+            src="/logo.webp" 
             alt="Logo Dulce Valentín" 
+            width={44}
+            height={44}
+            priority
             className="brand-logo-img"
           />
           <div>

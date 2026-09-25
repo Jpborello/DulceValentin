@@ -54,7 +54,6 @@ export default function ProductPageGallery({ images = [], name = '' }) {
           src={currentImg}
           alt={name}
           fill
-          unoptimized
           sizes="(max-width: 720px) 100vw, 500px"
           style={{ objectFit: 'cover' }}
           onError={(e) => { e.target.src = '/logo.png'; }}

@@ -122,25 +122,29 @@ class DataStore {
     }
   }
 
-  // Seed any missing catalog rows once (never overwrites existing data),
-  // then pull the real, current state from Supabase so admin edits
-  // (precio, stock, categorías nuevas, etc.) siempre prevalecen.
+  // Inicialización liviana para visitantes y catálogo público: sólo productos y categorías.
+  // No descarga pedidos, clientes ni boletos (ahorro masivo de red en móviles y protección de privacidad).
   async initFromSupabase() {
-    try {
-      await this.seedMissingCatalogInSupabase();
-    } catch (err) {
-      console.warn('Supabase catalog seed warning:', err);
-    }
     try {
       await Promise.allSettled([
         this.fetchProductsFromSupabase(),
-        this.fetchCategoriesFromSupabase(),
+        this.fetchCategoriesFromSupabase()
+      ]);
+    } catch (err) {
+      console.warn('Supabase init warning:', err);
+    }
+  }
+
+  // Inicialización exclusiva para el panel de administración autenticado.
+  async initAdminFromSupabase() {
+    try {
+      await Promise.allSettled([
         this.fetchOrdersFromSupabase(),
         this.fetchClientsFromSupabase(),
         this.fetchRaffleTicketsFromSupabase()
       ]);
     } catch (err) {
-      console.warn('Supabase init warning:', err);
+      console.warn('Supabase admin init warning:', err);
     }
   }
 

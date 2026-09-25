@@ -6,7 +6,24 @@ import { ShoppingCart, Share2, Check, ChevronLeft, ChevronRight, Camera } from '
 import { shareProduct } from '@/lib/shareProduct';
 import { getProductImages, getProductPrice, getProductPriceRange, getThumbUrl } from '@/lib/dataStore';
 
-export default function ProductGrid({ products, onAddToCart, isWholesaleQualified = false, onOpenDetail, topSellingIds }) {
+export function ProductGridSkeleton({ count = 8 }) {
+  return (
+    <div className="products-grid">
+      {Array.from({ length: count }).map((_, i) => (
+        <div key={i} className="product-card" style={{ pointerEvents: 'none', opacity: 0.85 }}>
+          <div className="product-img-wrapper skeleton-shimmer" style={{ width: '100%', height: '260px' }} />
+          <div className="product-card-body" style={{ padding: '12px' }}>
+            <div className="skeleton-shimmer" style={{ height: '13px', width: '45%', borderRadius: '4px', marginBottom: '8px' }} />
+            <div className="skeleton-shimmer" style={{ height: '17px', width: '85%', borderRadius: '4px', marginBottom: '12px' }} />
+            <div className="skeleton-shimmer" style={{ height: '22px', width: '50%', borderRadius: '6px' }} />
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+export default function ProductGrid({ products, onAddToCart, isWholesaleQualified = false, onOpenDetail, topSellingIds, isLoading = false }) {
   const [copiedShareId, setCopiedShareId] = useState(null);
 
   const handleShare = async (e, product) => {
@@ -17,6 +34,10 @@ export default function ProductGrid({ products, onAddToCart, isWholesaleQualifie
       setTimeout(() => setCopiedShareId((cur) => (cur === product.id ? null : cur)), 2000);
     }
   };
+
+  if (isLoading) {
+    return <ProductGridSkeleton count={8} />;
+  }
 
   if (!products || products.length === 0) {
     return (
@@ -82,13 +103,17 @@ function ProductGridCard({ product, onOpenDetail, onQuickAdd, onShare, isCopiedS
   const thumbImage = getThumbUrl(currentImage);
   const displayImage = imgFallbackLevel === 0 ? thumbImage : (imgFallbackLevel === 1 ? currentImage : '/logo.png');
 
-  // Auto-rotación de imágenes para productos con múltiples fotos (se pausa al pasar el mouse)
+  // Auto-rotación sutil de imágenes en Desktop (se pausa al pasar el mouse).
+  // En móviles y táctiles se desactiva para mantener el scroll fluido a 60fps,
+  // ahorrar datos en 4G y no sobrecalentar el celular (el usuario usa swipe o flechas).
   useEffect(() => {
     if (!hasMultiple || isHovered) return;
+    if (typeof window !== 'undefined' && (window.innerWidth < 768 || window.matchMedia('(hover: none)').matches)) {
+      return;
+    }
 
-    // Desfase sutil basado en el código para que las tarjetas roten de forma fluida y no al unísono
     const codeNum = parseInt(product.code, 10) || 0;
-    const intervalTime = 3800 + (codeNum % 5) * 350;
+    const intervalTime = 4500 + (codeNum % 5) * 400;
 
     const timer = setInterval(() => {
       setActiveImgIndex((prev) => (prev + 1) % images.length);
@@ -147,8 +172,7 @@ function ProductGridCard({ product, onOpenDetail, onQuickAdd, onShare, isCopiedS
             src={displayImage}
             alt={product.name}
             fill
-            unoptimized
-            sizes="(max-width: 1024px) 45vw, 280px"
+            sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 280px"
             className="product-img"
             onError={() => {
               setImgFallbackLevel((lvl) => lvl + 1);

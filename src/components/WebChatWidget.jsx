@@ -59,12 +59,16 @@ export default function WebChatWidget() {
     }
   }, []);
 
-  // Poll for admin/bot replies while the panel is open, and lightly while closed
-  // too (so the badge can show unread replies without needing to reopen).
+  // Polling eficiente: solo consulta activamente cada 5 segundos mientras el panel está ABIERTO.
+  // Si está cerrado, hace solo una verificación inicial al inicio y no mantiene
+  // ningún timer corriendo en segundo plano (ahorro masivo de batería y datos móviles).
   useEffect(() => {
     if (!sessionId) return;
     fetchMessages(sessionId, isOpen);
-    pollRef.current = setInterval(() => fetchMessages(sessionId, isOpen), POLL_MS);
+
+    if (!isOpen) return;
+
+    pollRef.current = setInterval(() => fetchMessages(sessionId, true), POLL_MS);
     return () => clearInterval(pollRef.current);
   }, [sessionId, isOpen, fetchMessages]);
 

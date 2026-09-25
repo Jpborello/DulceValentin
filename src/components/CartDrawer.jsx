@@ -1,11 +1,12 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { X, Trash2, Plus, Minus, ShoppingBag, Truck, Store, Upload, CheckCircle2, UserCheck, Sparkles, Tag, Copy, Check, CreditCard, Clock, Edit3, RotateCcw } from 'lucide-react';
+import { X, Trash2, Plus, Minus, ShoppingBag, Truck, Store, Upload, CheckCircle2, UserCheck, Sparkles, Tag, Copy, Check, CreditCard, Clock, Edit3, RotateCcw, MessageCircle } from 'lucide-react';
 import { supabase } from '@/lib/supabaseClient';
 import { dataStore, getProductPrice } from '@/lib/dataStore';
 import useCloseOnBack from '@/lib/useCloseOnBack';
 import { compressImage } from '@/lib/compressImage';
+import { COMPANY_INFO } from '@/lib/companyInfo';
 
 export default function CartDrawer({
   isOpen,
@@ -41,6 +42,32 @@ export default function CartDrawer({
   const [copiedAlias, setCopiedAlias] = useState(false);
   const [isFinishedSuccess, setIsFinishedSuccess] = useState(false);
   const [completedOrderId, setCompletedOrderId] = useState('');
+
+  const getWhatsAppShareUrl = (order) => {
+    if (!order) return '#';
+    const itemsList = (order.items || [])
+      .map(
+        (it) =>
+          `• ${it.quantity}x ${it.name}${it.selectedSize ? ` (Talle: ${it.selectedSize})` : ''}${it.selectedColor ? ` [Color: ${it.selectedColor}]` : ''} - $${((it.unit_price || it.price || 0) * it.quantity).toLocaleString('es-AR')}`
+      )
+      .join('\n');
+
+    const text = `¡Hola Dulce Valentín! 👋 Acabo de realizar el pedido *#${order.id}* desde la web.
+
+👤 *Cliente:* ${order.client_name || clientName || 'Mayorista'}
+📱 *Teléfono:* ${order.client_phone || clientPhone || ''}
+📦 *Entrega:* ${order.delivery_method || deliveryMethod || 'Envío a convenir'}
+
+🛍️ *Detalle del Pedido:*
+${itemsList}
+
+💰 *TOTAL:* $${Number(order.total_amount || 0).toLocaleString('es-AR')}
+
+Adjunto mi comprobante para coordinar el despacho. ¡Muchas gracias!`;
+
+    const phoneDigits = (COMPANY_INFO.phone || '5493415147414').replace(/\D/g, '');
+    return `https://wa.me/${phoneDigits}?text=${encodeURIComponent(text)}`;
+  };
 
   // Baucher/credito disponible para el telefono que se esta cargando (ya
   // sea de una cuenta registrada o tipeado a mano) — se detecta solo, sin
@@ -398,6 +425,32 @@ export default function CartDrawer({
                 </ul>
               </div>
 
+              {/* Botón directo de WhatsApp para enviar el resumen del pedido */}
+              <a 
+                href={getWhatsAppShareUrl(createdOrder || activeOrder || { id: completedOrderId, total_amount: cartTotal, items: cartItems.map(i => ({ ...i.product, quantity: i.quantity })) })}
+                target="_blank"
+                rel="noopener noreferrer"
+                style={{ 
+                  display: 'flex', 
+                  alignItems: 'center', 
+                  justifyContent: 'center', 
+                  gap: '10px', 
+                  width: '100%', 
+                  padding: '14px', 
+                  borderRadius: '12px', 
+                  fontWeight: 800, 
+                  fontSize: '1rem', 
+                  backgroundColor: '#25D366', 
+                  color: '#FFFFFF', 
+                  textDecoration: 'none', 
+                  marginBottom: '12px', 
+                  boxShadow: '0 4px 14px rgba(37, 211, 102, 0.35)', 
+                  transition: 'transform 0.15s ease' 
+                }}
+              >
+                <MessageCircle size={20} /> 📲 Enviar Pedido a WhatsApp
+              </a>
+
               <button 
                 onClick={handleResetToCatalog}
                 className="btn-hero-primary" 
@@ -438,6 +491,30 @@ export default function CartDrawer({
                     🎉 Precio Mayorista Aplicado{displayOrder.discount_applied ? ` (-$${displayOrder.discount_applied.toLocaleString('es-AR')} crédito)` : ''}
                   </div>
                 )}
+
+                <a
+                  href={getWhatsAppShareUrl(displayOrder)}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '8px',
+                    width: '100%',
+                    padding: '11px',
+                    borderRadius: '10px',
+                    fontWeight: 800,
+                    fontSize: '0.92rem',
+                    backgroundColor: '#25D366',
+                    color: '#FFFFFF',
+                    textDecoration: 'none',
+                    marginTop: '12px',
+                    boxShadow: '0 3px 10px rgba(37, 211, 102, 0.3)'
+                  }}
+                >
+                  <MessageCircle size={18} /> 📲 Notificar Pedido por WhatsApp
+                </a>
 
                 {/* Raffle Tickets Assigned Card (ONLY for registered users) */}
                 {displayOrder.raffle_tickets && displayOrder.raffle_tickets.length > 0 ? (

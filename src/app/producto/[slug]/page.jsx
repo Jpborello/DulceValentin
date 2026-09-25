@@ -1,3 +1,4 @@
+import { cache } from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
@@ -11,10 +12,9 @@ import { getProductPriceRange } from '@/lib/productPricing';
 
 const SITE_URL = 'https://www.dulcevalentin.com.ar';
 
-// Server Component (sin 'use client'): el HTML con el producto real ya
-// viene armado desde el servidor, para que Google y las vistas previas de
-// WhatsApp/redes vean el contenido sin depender de que se ejecute JS.
-async function getProduct(slug) {
+// Server Component: el HTML con el producto real ya viene armado desde el servidor.
+// cache() asegura que generateMetadata y ProductPage compartan la misma llamada a la base.
+const getProduct = cache(async (slug) => {
   if (!slug) return null;
 
   // Los ids del catalogo suelen ser "prefijo-numero" (ej "p-0040"), pero
@@ -42,7 +42,7 @@ async function getProduct(slug) {
     .eq('is_active', true)
     .maybeSingle();
   return data;
-}
+});
 
 export async function generateMetadata({ params }) {
   const { slug } = await params;

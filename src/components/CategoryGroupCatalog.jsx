@@ -7,6 +7,7 @@ import Link from 'next/link';
 import { buildProductSlug } from '@/lib/productSlug';
 import { getProductPriceRange } from '@/lib/productPricing';
 import { flexibleProductMatch, normalizeText } from '@/lib/searchUtils';
+import { getThumbUrl } from '@/lib/dataStore';
 
 const PRODUCTS_PER_PAGE = 24;
 
@@ -172,11 +173,10 @@ export default function CategoryGroupCatalog({ tiers = [], initialProducts = [],
                 )}
                 {product.image_url && (
                   <Image
-                    src={product.image_url}
+                    src={getThumbUrl(product.image_url)}
                     alt={product.name}
                     fill
-                    unoptimized
-                    sizes="(max-width: 1024px) 45vw, 280px"
+                    sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 280px"
                     className="product-img"
                   />
                 )}

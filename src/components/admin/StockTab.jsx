@@ -8,6 +8,10 @@ export default function StockTab({ products, searchFilter, setSearchFilter, onUp
   // Local state for stock per size per product
   const [sizeStockState, setSizeStockState] = useState({});
   const [managingProduct, setManagingProduct] = useState(null);
+  const [stockFilter, setStockFilter] = useState('all'); // 'all', 'critical', 'out_of_stock'
+
+  const criticalCount = products.filter(p => p.stock > 0 && p.stock <= 5).length;
+  const outOfStockCount = products.filter(p => p.stock <= 0).length;
 
   const handleSizeStockChange = (productId, size, val) => {
     const num = parseInt(val, 10) || 0;
@@ -19,6 +23,12 @@ export default function StockTab({ products, searchFilter, setSearchFilter, onUp
       }
     }));
   };
+
+  const displayedProducts = products.filter(p => {
+    if (stockFilter === 'critical') return p.stock > 0 && p.stock <= 5;
+    if (stockFilter === 'out_of_stock') return p.stock <= 0;
+    return true;
+  });
 
   return (
     <div>
@@ -39,6 +49,83 @@ export default function StockTab({ products, searchFilter, setSearchFilter, onUp
         />
       </div>
 
+      {/* Alerta de Stock Crítico / Agotado */}
+      {(criticalCount > 0 || outOfStockCount > 0) && (
+        <div style={{
+          backgroundColor: '#FFFBEB',
+          border: '1px solid #FDE68A',
+          borderRadius: '10px',
+          padding: '12px 16px',
+          marginBottom: '16px',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          flexWrap: 'wrap',
+          gap: '10px'
+        }}>
+          <div style={{ fontSize: '0.88rem', color: '#92400E', fontWeight: 700 }}>
+            ⚠️ <strong>Atención:</strong> Tenés{' '}
+            {criticalCount > 0 && <span><strong>{criticalCount}</strong> prendas con stock crítico (≤ 5 un.)</span>}
+            {criticalCount > 0 && outOfStockCount > 0 && ' y '}
+            {outOfStockCount > 0 && <span><strong>{outOfStockCount}</strong> prendas agotadas</span>}.
+          </div>
+          <div style={{ display: 'flex', gap: '8px' }}>
+            <button
+              type="button"
+              onClick={() => setStockFilter('all')}
+              style={{
+                padding: '5px 12px',
+                borderRadius: '6px',
+                fontSize: '0.78rem',
+                fontWeight: 700,
+                border: '1px solid #D97706',
+                backgroundColor: stockFilter === 'all' ? '#D97706' : '#FFFFFF',
+                color: stockFilter === 'all' ? '#FFFFFF' : '#92400E',
+                cursor: 'pointer'
+              }}
+            >
+              Ver Todos ({products.length})
+            </button>
+            {criticalCount > 0 && (
+              <button
+                type="button"
+                onClick={() => setStockFilter('critical')}
+                style={{
+                  padding: '5px 12px',
+                  borderRadius: '6px',
+                  fontSize: '0.78rem',
+                  fontWeight: 700,
+                  border: '1px solid #D97706',
+                  backgroundColor: stockFilter === 'critical' ? '#D97706' : '#FFFFFF',
+                  color: stockFilter === 'critical' ? '#FFFFFF' : '#92400E',
+                  cursor: 'pointer'
+                }}
+              >
+                ⚠️ Solo Críticos ({criticalCount})
+              </button>
+            )}
+            {outOfStockCount > 0 && (
+              <button
+                type="button"
+                onClick={() => setStockFilter('out_of_stock')}
+                style={{
+                  padding: '5px 12px',
+                  borderRadius: '6px',
+                  fontSize: '0.78rem',
+                  fontWeight: 700,
+                  border: '1px solid #DC2626',
+                  backgroundColor: stockFilter === 'out_of_stock' ? '#DC2626' : '#FFFFFF',
+                  color: stockFilter === 'out_of_stock' ? '#FFFFFF' : '#DC2626',
+                  cursor: 'pointer'
+                }}
+              >
+                🚫 Solo Agotados ({outOfStockCount})
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+
       <table className="admin-table">
         <thead>
           <tr>
@@ -53,7 +140,7 @@ export default function StockTab({ products, searchFilter, setSearchFilter, onUp
           </tr>
         </thead>
         <tbody>
-          {products.map((p) => {
+          {displayedProducts.map((p) => {
             const hasSizes = Array.isArray(p.sizes) && p.sizes.length > 0;
             const currentSizeMap = sizeStockState[p.id] || p.stock_per_size || {};
             const isActive = p.is_active !== false;
@@ -125,8 +212,20 @@ export default function StockTab({ products, searchFilter, setSearchFilter, onUp
                 </td>
 
                 {/* Stock Total */}
-                <td style={{ fontWeight: 800, fontSize: '0.95rem', color: p.stock > 10 ? '#059669' : '#DC2626' }}>
-                  {p.stock} un.
+                <td>
+                  {p.stock <= 0 ? (
+                    <span style={{ backgroundColor: '#FEE2E2', color: '#DC2626', padding: '4px 8px', borderRadius: '4px', fontSize: '0.78rem', fontWeight: 800 }}>
+                      🚫 Agotado
+                    </span>
+                  ) : p.stock <= 5 ? (
+                    <span style={{ backgroundColor: '#FEF3C7', color: '#D97706', padding: '4px 8px', borderRadius: '4px', fontSize: '0.78rem', fontWeight: 800 }}>
+                      ⚠️ Crítico ({p.stock} un.)
+                    </span>
+                  ) : (
+                    <span style={{ fontWeight: 800, fontSize: '0.92rem', color: '#059669' }}>
+                      {p.stock} un.
+                    </span>
+                  )}
                 </td>
 
                 {/* Acción Modificar */}

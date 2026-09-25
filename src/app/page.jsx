@@ -7,14 +7,17 @@ import SearchBarSection from '@/components/SearchBarSection';
 import CategoryNav from '@/components/CategoryNav';
 import CategoryShowcase from '@/components/CategoryShowcase';
 import ProductGrid from '@/components/ProductGrid';
-import CartDrawer from '@/components/CartDrawer';
-import AuthModal from '@/components/AuthModal';
-import WebChatWidget from '@/components/WebChatWidget';
+import dynamic from 'next/dynamic';
+
+const CartDrawer = dynamic(() => import('@/components/CartDrawer'), { ssr: false });
+const AuthModal = dynamic(() => import('@/components/AuthModal'), { ssr: false });
+const WebChatWidget = dynamic(() => import('@/components/WebChatWidget'), { ssr: false });
+const ProductDetailModal = dynamic(() => import('@/components/ProductDetailModal'), { ssr: false });
+
 import WholesaleBanner from '@/components/WholesaleBanner';
 import ClubMayoristaBanner from '@/components/ClubMayoristaBanner';
 import TrustBar from '@/components/TrustBar';
 import FaqSection from '@/components/FaqSection';
-import ProductDetailModal from '@/components/ProductDetailModal';
 import { dataStore, CATEGORIES, getProductPrice } from '@/lib/dataStore';
 import { flexibleProductMatch } from '@/lib/searchUtils';
 import { Store, MapPin, Instagram, PackageSearch } from 'lucide-react';
@@ -29,6 +32,9 @@ export default function Home() {
   const [selectedCategory, setSelectedCategory] = useState('all');
   const [selectedSubcategory, setSelectedSubcategory] = useState(null);
   const [searchQuery, setSearchQuery] = useState('');
+  const [quickFilter, setQuickFilter] = useState('all');
+  const [selectedSizeFilter, setSelectedSizeFilter] = useState(null);
+  const [isLoading, setIsLoading] = useState(true);
   const [catalogOpen, setCatalogOpen] = useState(false);
   const [visibleCount, setVisibleCount] = useState(PRODUCTS_PER_PAGE);
   // Cart & Auth state
@@ -46,9 +52,13 @@ export default function Home() {
     dataStore.fetchVisitCountFromSupabase();
 
     const updateStoreData = () => {
-      setProducts(dataStore.getProducts());
+      const prods = dataStore.getProducts();
+      setProducts(prods);
       setCategories(dataStore.getCategories());
       setCurrentUser(dataStore.currentUser);
+      if (prods && prods.length > 0) {
+        setIsLoading(false);
+      }
     };
 
     updateStoreData();
@@ -145,7 +155,7 @@ export default function Home() {
   // para no arrancar una nueva búsqueda con la paginación ya "gastada".
   useEffect(() => {
     setVisibleCount(PRODUCTS_PER_PAGE);
-  }, [selectedCategory, selectedSubcategory, searchQuery]);
+  }, [selectedCategory, selectedSubcategory, searchQuery, quickFilter, selectedSizeFilter]);
 
 
 
@@ -299,8 +309,37 @@ export default function Home() {
 
     const matchesSearch = flexibleProductMatch(product, searchQuery);
 
-    return product.is_active !== false && matchesCategory && matchesSubcategory && matchesSearch;
+    let matchesQuick = true;
+    if (quickFilter === 'offers') {
+      matchesQuick = Boolean(product.is_offer);
+    } else if (quickFilter === 'new') {
+      matchesQuick = Boolean(product.is_new);
+    } else if (quickFilter === 'top') {
+      matchesQuick = Boolean(product.is_top_seller || topSellingIds?.has(product.id));
+    } else if (quickFilter === 'under20k') {
+      const price = product.wholesale_price || product.price || 0;
+      matchesQuick = price <= 20000;
+    }
+
+    let matchesSize = true;
+    if (selectedSizeFilter) {
+      const pSizes = Array.isArray(product.sizes) ? product.sizes.map((s) => String(s).toLowerCase().trim()) : [];
+      matchesSize = pSizes.includes(selectedSizeFilter.toLowerCase().trim());
+    }
+
+    return product.is_active !== false && matchesCategory && matchesSubcategory && matchesSearch && matchesQuick && matchesSize;
   }).sort((a, b) => Number(!!b.is_new) - Number(!!a.is_new));
+
+  // Talles disponibles presentes en el catálogo activo
+  const availableSizes = Array.from(
+    new Set(
+      products
+        .filter((p) => p.is_active !== false && Array.isArray(p.sizes))
+        .flatMap((p) => p.sizes)
+        .map((s) => String(s).trim())
+        .filter(Boolean)
+    )
+  ).slice(0, 14);
 
   // Se derivan del estado local `products` (arranca en [] en server y
   // cliente por igual) en vez de leer directo del singleton `dataStore`,
@@ -327,7 +366,8 @@ export default function Home() {
 
   const hasSearch = searchQuery.trim() !== '';
   const isCategoryFiltered = Boolean(selectedCategory) && selectedCategory !== 'all';
-  const showProductGrid = catalogOpen || hasSearch || isCategoryFiltered;
+  const isQuickFiltered = quickFilter !== 'all' || Boolean(selectedSizeFilter);
+  const showProductGrid = catalogOpen || hasSearch || isCategoryFiltered || isQuickFiltered;
 
   const totalCartItemsCount = cartItems.reduce((sum, item) => sum + item.quantity, 0);
   const cartSubtotal = cartItems.reduce((sum, item) => {
@@ -465,12 +505,84 @@ export default function Home() {
             totalCount={filteredProducts.length}
           />
 
+          {/* Chips de Filtros Rápidos */}
+          <div className="quick-filters-container">
+            <button
+              type="button"
+              onClick={() => setQuickFilter('all')}
+              className={`quick-filter-chip ${quickFilter === 'all' ? 'active' : ''}`}
+            >
+              Todos ({products.length})
+            </button>
+            <button
+              type="button"
+              onClick={() => setQuickFilter(quickFilter === 'offers' ? 'all' : 'offers')}
+              className={`quick-filter-chip ${quickFilter === 'offers' ? 'active' : ''}`}
+            >
+              🔥 Solo Ofertas
+            </button>
+            <button
+              type="button"
+              onClick={() => setQuickFilter(quickFilter === 'new' ? 'all' : 'new')}
+              className={`quick-filter-chip ${quickFilter === 'new' ? 'active' : ''}`}
+            >
+              🆕 Nuevos Ingresos
+            </button>
+            <button
+              type="button"
+              onClick={() => setQuickFilter(quickFilter === 'top' ? 'all' : 'top')}
+              className={`quick-filter-chip ${quickFilter === 'top' ? 'active' : ''}`}
+            >
+              ⭐ Más Vendidos
+            </button>
+            <button
+              type="button"
+              onClick={() => setQuickFilter(quickFilter === 'under20k' ? 'all' : 'under20k')}
+              className={`quick-filter-chip ${quickFilter === 'under20k' ? 'active' : ''}`}
+            >
+              🏷️ Hasta $20.000
+            </button>
+          </div>
+
+          {/* Filtro por Talle */}
+          {availableSizes.length > 0 && (
+            <div style={{ marginBottom: '14px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px' }}>
+                <span style={{ fontSize: '0.8rem', fontWeight: 800, color: 'var(--text-muted)' }}>
+                  Filtrar por Talle:
+                </span>
+                {selectedSizeFilter && (
+                  <button
+                    type="button"
+                    onClick={() => setSelectedSizeFilter(null)}
+                    style={{ background: 'none', border: 'none', color: 'var(--accent-crimson)', fontSize: '0.78rem', fontWeight: 700, cursor: 'pointer' }}
+                  >
+                    ✕ Quitar talle ({selectedSizeFilter})
+                  </button>
+                )}
+              </div>
+              <div className="size-filter-wrapper">
+                {availableSizes.map((sz) => (
+                  <button
+                    key={sz}
+                    type="button"
+                    onClick={() => setSelectedSizeFilter(selectedSizeFilter === sz ? null : sz)}
+                    className={`size-filter-chip ${selectedSizeFilter === sz ? 'active' : ''}`}
+                  >
+                    {sz}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
           <ProductGrid
             products={filteredProducts.slice(0, visibleCount)}
             onAddToCart={handleAddToCart}
             isWholesaleQualified={isWholesaleQualified}
             onOpenDetail={setDetailProduct}
             topSellingIds={topSellingIds}
+            isLoading={isLoading && products.length === 0}
           />
 
           {filteredProducts.length > 0 && (

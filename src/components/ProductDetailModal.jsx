@@ -119,7 +119,6 @@ export default function ProductDetailModal({ product, isOpen, onClose, onAddToCa
                 src={currentImage}
                 alt={product.name}
                 fill
-                unoptimized
                 sizes="(max-width: 720px) 100vw, 500px"
                 style={{ objectFit: 'cover' }}
                 onError={(e) => { e.target.src = '/logo.png'; }}

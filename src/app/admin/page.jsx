@@ -256,6 +256,7 @@ export default function AdminPage() {
     };
 
     updateState();
+    dataStore.initAdminFromSupabase();
     fetchMpTransfers();
 
     const unsubscribe = dataStore.subscribe(updateState);

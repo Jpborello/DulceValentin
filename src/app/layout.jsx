@@ -1,5 +1,24 @@
 import './globals.css';
 import Script from 'next/script';
+import { Outfit, Plus_Jakarta_Sans, EB_Garamond } from 'next/font/google';
+
+const outfit = Outfit({
+  subsets: ['latin'],
+  variable: '--font-heading-next',
+  display: 'swap'
+});
+
+const plusJakartaSans = Plus_Jakarta_Sans({
+  subsets: ['latin'],
+  variable: '--font-body-next',
+  display: 'swap'
+});
+
+const ebGaramond = EB_Garamond({
+  subsets: ['latin'],
+  variable: '--font-display-next',
+  display: 'swap'
+});
 
 const SITE_URL = 'https://www.dulcevalentin.com.ar';
 
@@ -114,7 +133,7 @@ const localBusinessJsonLd = {
 
 export default function RootLayout({ children }) {
   return (
-    <html lang="es" suppressHydrationWarning>
+    <html lang="es" suppressHydrationWarning className={`${outfit.variable} ${plusJakartaSans.variable} ${ebGaramond.variable}`}>
       <head>
         {/* Aplica el tema guardado ANTES de pintar la pagina, para que no se
             vea un flash de tema claro y despues salte a oscuro. */}

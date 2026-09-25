@@ -1,3 +1,4 @@
+import { cache } from 'react';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { MapPin, ArrowLeft } from 'lucide-react';
@@ -25,13 +26,13 @@ const GROUP_DEFS = {
 // las puede editar), pero esa misma tabla tambien guarda configuracion
 // interna con ids "_config_..." (alias de transferencia, CUIT, etc.) que
 // hay que descartar aca.
-async function getAllCategoryDefs() {
+const getAllCategoryDefs = cache(async () => {
   const { data } = await supabase
     .from('categories')
     .select('id, name, subcategories')
     .not('id', 'like', '_config_%');
   return data || [];
-}
+});
 
 async function resolveParams(segments) {
   const [firstSlug, subSlug] = segments || [];
