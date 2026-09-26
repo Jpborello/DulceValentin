@@ -1,367 +1,193 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
-import {
-  Flame,
-  Sparkles,
-  Tag,
-  ChevronLeft,
-  ChevronRight,
-  ShoppingCart,
-  ArrowRight,
-  Eye,
-  Camera,
-  Truck,
-  Store,
-  MessageCircle
-} from 'lucide-react';
+import { useRef, useState, useEffect, useCallback } from 'react';
+import { ChevronLeft, ChevronRight, ArrowRight, MessageCircle } from 'lucide-react';
 import { COMPANY_INFO } from '@/lib/companyInfo';
+import { getProductPriceRange, getThumbUrl } from '@/lib/dataStore';
 
 const WHATSAPP_URL = `https://wa.me/${COMPANY_INFO.phone.replace(/\D/g, '')}?text=${encodeURIComponent(
   '¡Hola! Quiero hacer una consulta sobre productos de Dulce Valentín.'
 )}`;
-import { getProductPrice, getProductPriceRange, getThumbUrl } from '@/lib/dataStore';
 
-const FALLBACK_PROMO_SLIDES = [
-  {
-    id: 'promo-bolso-maternal',
-    name: 'Bolso Maternal Jeans Premium',
-    category: 'Bebés',
-    subcategory: 'Bolsos Maternales',
-    badge: '🔥 Súper Oferta Mayorista',
-    tagline: 'Calidad Premium · Incluye cambiador acolchado térmico',
-    description: 'Bolso maternal en tela de jean reforzada con múltiples bolsillos organizadores. Ideal para reventa con altísimo margen.',
-    image_url: 'https://revrbrrzlnweuxwhpgei.supabase.co/storage/v1/object/public/Productos/catalogo-2026/p-0044-bolso-maternal-de-jeans-premium-1.webp',
-    wholesale_price: 19900
-  },
-  {
-    id: 'promo-ajuar-cajita',
-    name: 'Ajuar Cajita 7 Piezas RN',
-    category: 'Bebés',
-    subcategory: 'Ajuar y Sets',
-    badge: '✨ Novedad Exclusiva',
-    tagline: '100% Algodón Hipoalergénico · Presentación para regalo',
-    description: 'Set completo de 7 piezas presentado en caja de regalo: mantita, ranita, gorrito, manoplas, babero, body y batita.',
-    image_url: 'https://revrbrrzlnweuxwhpgei.supabase.co/storage/v1/object/public/Productos/catalogo-2026/p-0017-ajuar-cajita-7-piezas-rn-1.webp',
-    wholesale_price: 21000
-  },
-  {
-    id: 'promo-cambiador-nidito',
-    name: 'Set Nidito Contenedor + Almohadita',
-    category: 'Bebés',
-    subcategory: 'Blanquería y Cuidado',
-    badge: '⭐ Producto Estrella',
-    tagline: 'Combo Completo de Descanso y Confort',
-    description: 'Confección hipoalergénica de primera calidad. Producto de altísima rotación mayorista con entrega inmediata.',
-    image_url: 'https://revrbrrzlnweuxwhpgei.supabase.co/storage/v1/object/public/Productos/catalogo-2026/p-0027-set-nidito-contenedor-cambiador-almohadita-1.webp',
-    wholesale_price: 36000
-  }
-];
+// Foto del frente del local (public/hero/). Hay dos tamaños para que el
+// celular no descargue la version grande.
+const HERO_IMG = '/hero/local-dulce-valentin-1376.webp';
+const HERO_IMG_SMALL = '/hero/local-dulce-valentin-800.webp';
 
+// Tope de productos en la tira: suficientes para recorrer sin que se haga eterna.
+const MAX_ITEMS = 12;
+
+const ITEM_KINDS = {
+  destacado: 'Destacado',
+  liquidacion: 'Liquidación',
+  nuevo: 'Nuevo ingreso'
+};
+
+const formatPrice = (product) => {
+  const { min, hasRange } = getProductPriceRange(product);
+  if (min) return hasRange ? `Desde $${min.toLocaleString('es-AR')}` : `$${min.toLocaleString('es-AR')}`;
+  if (product.wholesale_price) return `$${Number(product.wholesale_price).toLocaleString('es-AR')}`;
+  return 'Consultar precio';
+};
+
+/**
+ * Hero de la home: foto del local a todo el ancho con el H1 fijo encima
+ * (no rota, asi Google y los buscadores con IA siempre leen el mismo
+ * titular), y debajo una tira deslizable con la oferta destacada
+ * (is_featured), las liquidaciones (is_offer) y los nuevos ingresos (is_new).
+ */
 export default function HeroSection({
   offers = [],
   featuredOffer = null,
-  topSeller = null,
-  onAddToCart,
+  newArrivals = [],
   onOpenDetail,
   onExploreCatalog
 }) {
-  const [currentIndex, setCurrentIndex] = useState(0);
-  const [isPaused, setIsPaused] = useState(false);
-  const touchStartXRef = useRef(null);
+  const trackRef = useRef(null);
+  const [canPrev, setCanPrev] = useState(false);
+  const [canNext, setCanNext] = useState(false);
 
-  // Construir la lista de slides dinámicos con ofertas, destacados y promociones
-  const slides = [];
+  const items = [];
+  const pushItem = (product, kind) => {
+    if (!product || items.length >= MAX_ITEMS) return;
+    if (items.some((i) => i.id === product.id)) return;
+    items.push({ ...product, kind });
+  };
+  pushItem(featuredOffer, 'destacado');
+  (Array.isArray(offers) ? offers : []).forEach((p) => pushItem(p, 'liquidacion'));
+  (Array.isArray(newArrivals) ? newArrivals : []).forEach((p) => pushItem(p, 'nuevo'));
 
-  if (featuredOffer) {
-    slides.push({
-      ...featuredOffer,
-      badge: '✨ Oferta Destacada',
-      tagline: 'Oportunidad Exclusiva Mayorista'
-    });
-  }
+  const updateArrows = useCallback(() => {
+    const el = trackRef.current;
+    if (!el) return;
+    setCanPrev(el.scrollLeft > 4);
+    setCanNext(el.scrollLeft + el.clientWidth < el.scrollWidth - 4);
+  }, []);
 
-  if (Array.isArray(offers) && offers.length > 0) {
-    offers.forEach((offer) => {
-      if (!slides.some((s) => s.id === offer.id)) {
-        slides.push({
-          ...offer,
-          badge: offer.is_offer ? '🔥 Oferta Especial' : '🎉 Promoción',
-          tagline: offer.subcategory || offer.category || 'Mayorista Directo'
-        });
-      }
-    });
-  }
-
-  if (topSeller && !slides.some((s) => s.id === topSeller.id)) {
-    slides.push({
-      ...topSeller,
-      badge: '⭐ Más Vendido de la Semana',
-      tagline: `Mayor Rotación (${topSeller.sales_count || 120}+ vendidos)`
-    });
-  }
-
-  // Si no hay suficientes ofertas dinámicas cargadas, complementar con las promociones destacadas
-  if (slides.length < 2) {
-    FALLBACK_PROMO_SLIDES.forEach((fb) => {
-      if (!slides.some((s) => s.id === fb.id)) {
-        slides.push(fb);
-      }
-    });
-  }
-
-  // Rotación automática cada 4.8 segundos si no está en pausa
   useEffect(() => {
-    if (isPaused || slides.length <= 1) return;
-    const interval = setInterval(() => {
-      setCurrentIndex((prev) => (prev + 1) % slides.length);
-    }, 4800);
-    return () => clearInterval(interval);
-  }, [slides.length, isPaused]);
+    updateArrows();
+    const el = trackRef.current;
+    if (!el) return;
+    el.addEventListener('scroll', updateArrows, { passive: true });
+    window.addEventListener('resize', updateArrows);
+    return () => {
+      el.removeEventListener('scroll', updateArrows);
+      window.removeEventListener('resize', updateArrows);
+    };
+  }, [updateArrows, items.length]);
 
-  const handlePrev = () => {
-    setCurrentIndex((prev) => (prev - 1 + slides.length) % slides.length);
+  const scrollByPage = (direction) => {
+    const el = trackRef.current;
+    if (!el) return;
+    const reduce = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+    el.scrollBy({ left: direction * el.clientWidth * 0.9, behavior: reduce ? 'auto' : 'smooth' });
   };
-
-  const handleNext = () => {
-    setCurrentIndex((prev) => (prev + 1) % slides.length);
-  };
-
-  // Soporte para gestos táctiles (swipe en mobile)
-  const handleTouchStart = (e) => {
-    touchStartXRef.current = e.touches[0].clientX;
-  };
-
-  const handleTouchEnd = (e) => {
-    if (touchStartXRef.current === null) return;
-    const diffX = e.changedTouches[0].clientX - touchStartXRef.current;
-    if (diffX > 45) {
-      handlePrev();
-    } else if (diffX < -45) {
-      handleNext();
-    }
-    touchStartXRef.current = null;
-  };
-
-  const currentSlide = slides[currentIndex] || slides[0];
 
   return (
-    <section className="hero-extended-section" aria-label="Dulce Valentín — Mayorista Textil en Rosario, Envíos a Todo el País">
-      <div className="hero-extended-grid">
-        {/* Panel de marca, fijo (no rota con el carrusel): el H1 real y
-            estable de la home vive acá, junto con el mensaje de "Envíos a
-            Todo el País" que Juampi pidió sumar "de costado". Al no
-            depender del slide activo, Google y los buscadores con IA
-            siempre ven el mismo titular principal de la pagina. */}
-        <div className="hero-brand-panel">
-          <span className="hero-brand-eyebrow">Rosario · Santa Fe</span>
-          <h1 className="hero-brand-title">Mayoristas Textiles</h1>
-          <p className="hero-brand-shipping">
-            <Truck size={17} /> Envíos a Todo el País
-          </p>
-          <p className="hero-brand-desc">
-            Indumentaria, calzado y complementos a precio 100% mayorista, sin
-            intermediarios. Vendemos a revendedoras y comercios de toda la
-            Argentina.
-          </p>
-          <ul className="hero-brand-points">
-            <li>
-              <Tag size={15} /> Precio mayorista sin intermediarios
-            </li>
-            <li>
-              <Store size={15} /> Retirá en nuestro local en Rosario
-            </li>
-            <li>
-              <MessageCircle size={15} /> Te asesoramos por WhatsApp
-            </li>
-          </ul>
-          <div className="hero-brand-actions">
-            {onExploreCatalog && (
-              <button type="button" onClick={onExploreCatalog} className="btn-hero-primary">
-                Ver Catálogo <ArrowRight size={17} />
-              </button>
-            )}
-            <a href={WHATSAPP_URL} target="_blank" rel="noreferrer" className="btn-hero-outline">
-              <MessageCircle size={16} /> WhatsApp
-            </a>
+    <>
+      <section className="dvh" aria-labelledby="dvh-title">
+        <picture>
+          <source media="(max-width: 820px)" srcSet={HERO_IMG_SMALL} />
+          <img
+            src={HERO_IMG}
+            alt="Frente del local mayorista Dulce Valentín en Av. Pres. Perón 5349, Rosario"
+            className="dvh-bg"
+            width={1376}
+            height={768}
+            fetchPriority="high"
+            decoding="async"
+          />
+        </picture>
+        <div className="dvh-scrim" aria-hidden="true" />
+        <div className="dvh-inner">
+          <div className="dvh-copy">
+            <span className="dvh-eyebrow">Dulce Valentín · Rosario, Santa Fe</span>
+            <h1 id="dvh-title" className="dvh-title">
+              Mayorista de ropa, calzado y <em>lencería</em> en Rosario
+            </h1>
+            <p className="dvh-lead">
+              Venta por mayor de indumentaria, calzado, lencería y artículos para
+              bebés. Local en Av. Pres. Perón 5349, Rosario, y envíos a todo el país.
+            </p>
+            <div className="dvh-actions">
+              {onExploreCatalog && (
+                <button type="button" onClick={onExploreCatalog} className="dvh-btn dvh-btn--primary">
+                  Ver catálogo mayorista <ArrowRight size={18} aria-hidden="true" />
+                </button>
+              )}
+              <a href={WHATSAPP_URL} target="_blank" rel="noreferrer" className="dvh-btn dvh-btn--secondary">
+                <MessageCircle size={18} aria-hidden="true" /> Consultar por WhatsApp
+              </a>
+            </div>
           </div>
         </div>
+      </section>
 
-        <div
-          className="hero-carousel-section"
-          aria-label="Promociones y Ofertas Destacadas"
-          onMouseEnter={() => setIsPaused(true)}
-          onMouseLeave={() => setIsPaused(false)}
-          onTouchStart={handleTouchStart}
-          onTouchEnd={handleTouchEnd}
-        >
-      <div className="hero-carousel-viewport">
-        {slides.map((slide, index) => {
-          const isActive = index === currentIndex;
-          return (
-            <div
-              key={slide.id || index}
-              className={`hero-carousel-slide ${isActive ? 'active' : ''}`}
-              aria-hidden={!isActive}
-            >
-              {/* Contenedor de contenido editorial y oferta */}
-              <div className="hero-slide-layout">
-                {/* Columna Texto y CTA */}
-                <div className="hero-slide-info">
-                  <div className="hero-kicker-row">
-                    <span className="hero-badge-pill">
-                      {slide.badge || '🔥 Oferta Mayorista'}
-                    </span>
-                  </div>
+      {items.length > 0 && (
+        <section className="dvn" aria-labelledby="dvn-title">
+          <div className="dvn-head">
+            <h2 id="dvn-title" className="dvn-title">Liquidaciones y nuevos ingresos</h2>
+            <div className="dvn-arrows">
+              <button
+                type="button"
+                className="dvn-arrow"
+                onClick={() => scrollByPage(-1)}
+                disabled={!canPrev}
+                aria-label="Ver anteriores"
+              >
+                <ChevronLeft size={20} aria-hidden="true" />
+              </button>
+              <button
+                type="button"
+                className="dvn-arrow"
+                onClick={() => scrollByPage(1)}
+                disabled={!canNext}
+                aria-label="Ver siguientes"
+              >
+                <ChevronRight size={20} aria-hidden="true" />
+              </button>
+            </div>
+          </div>
 
-                  <h2 className="hero-slide-title">
-                    {slide.name}
-                  </h2>
-
-                  {slide.tagline && (
-                    <p className="hero-slide-tagline">{slide.tagline}</p>
-                  )}
-
-                  <p className="hero-slide-desc">
-                    {slide.description || 'Prendas confeccionadas con la mejor calidad textil. Precios 100% mayoristas sin intermediarios.'}
-                  </p>
-
-                  <div className="hero-slide-pricing">
-                    <div className="hero-price-block">
-                      <span className="hero-price-prefix">Precio Mayorista:</span>
-                      <span className="hero-price-amount">
-                        {(() => {
-                          const { min, hasRange } = getProductPriceRange(slide);
-                          if (min) return hasRange ? `Desde $${min.toLocaleString('es-AR')}` : `$${min.toLocaleString('es-AR')}`;
-                          return slide.wholesale_price?.toLocaleString('es-AR') ? `$${slide.wholesale_price.toLocaleString('es-AR')}` : 'Consultar';
-                        })()}
-                      </span>
-                    </div>
-                  </div>
-
-                  <div className="hero-slide-actions">
-                    {onAddToCart && (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          const hasSizes = Array.isArray(slide.sizes) && slide.sizes.length > 0;
-                          const selectedSize = hasSizes ? slide.sizes[0] : null;
-                          onAddToCart({ ...slide, selectedSize, unit_price: getProductPrice(slide, selectedSize) });
-                        }}
-                        className="btn-hero-primary"
-                        id="hero-btn-add"
-                      >
-                        <ShoppingCart size={18} /> Pedir en Oferta
-                      </button>
-                    )}
-
-                    {onOpenDetail && (
-                      <button
-                        type="button"
-                        onClick={() => onOpenDetail(slide)}
-                        className="btn-hero-outline"
-                        id="hero-btn-detail"
-                      >
-                        <Eye size={17} /> Ver Detalle
-                      </button>
-                    )}
-
-                    {onExploreCatalog && (
-                      <button
-                        type="button"
-                        onClick={onExploreCatalog}
-                        className="btn-hero-ghost"
-                        id="hero-btn-catalog"
-                      >
-                        Ver Catálogo <ArrowRight size={16} />
-                      </button>
-                    )}
-                  </div>
-                </div>
-
-                {/* Columna Imagen del Producto / Oferta */}
-                <div className="hero-slide-media">
-                  <div className="hero-image-card" onClick={() => onOpenDetail && onOpenDetail(slide)}>
+          <ul className="dvn-track" ref={trackRef}>
+            {items.map((item, index) => (
+              <li key={item.id} className="dvn-item">
+                <button
+                  type="button"
+                  className="dvn-card"
+                  onClick={() => onOpenDetail && onOpenDetail(item)}
+                  aria-label={`${ITEM_KINDS[item.kind]}: ${item.name}, ${formatPrice(item)}`}
+                >
+                  <span className="dvn-media">
                     <img
-                      src={getThumbUrl(slide.image_url) || '/logo.png'}
-                      alt={slide.name}
-                      className="hero-main-img"
-                      loading={index === 0 ? 'eager' : 'lazy'}
-                      fetchPriority={index === 0 ? 'high' : 'auto'}
+                      src={getThumbUrl(item.image_url) || '/logo.png'}
+                      alt=""
+                      className="dvn-img"
+                      loading={index < 4 ? 'eager' : 'lazy'}
                       onError={(e) => {
-                        // Si la miniatura puntual no existe todavia (foto
-                        // vieja sin backfill, por ejemplo), cae a la foto
-                        // completa y despues al logo -- mismo criterio que
-                        // ProductGrid.
-                        if (e.target.dataset.fallback !== 'full' && slide.image_url) {
+                        // Miniatura inexistente -> foto completa -> logo.
+                        if (e.target.dataset.fallback !== 'full' && item.image_url) {
                           e.target.dataset.fallback = 'full';
-                          e.target.src = slide.image_url;
+                          e.target.src = item.image_url;
                         } else if (e.target.dataset.fallback !== 'logo') {
                           e.target.dataset.fallback = 'logo';
                           e.target.src = '/logo.png';
                         }
                       }}
                     />
-                    <div className="hero-image-overlay">
-                      <span className="hero-overlay-tag">
-                        <Tag size={13} /> {slide.category || 'Mayorista'}
-                      </span>
-                      {slide.image_urls && slide.image_urls.length > 1 && (
-                        <span className="hero-overlay-photos">
-                          <Camera size={12} /> {slide.image_urls.length} fotos
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          );
-        })}
-      </div>
-
-      {/* Flechas de navegación */}
-      {slides.length > 1 && (
-        <>
-          <button
-            type="button"
-            className="hero-nav-arrow hero-nav-prev"
-            onClick={handlePrev}
-            aria-label="Oferta anterior"
-            title="Oferta anterior"
-          >
-            <ChevronLeft size={24} />
-          </button>
-          <button
-            type="button"
-            className="hero-nav-arrow hero-nav-next"
-            onClick={handleNext}
-            aria-label="Siguiente oferta"
-            title="Siguiente oferta"
-          >
-            <ChevronRight size={24} />
-          </button>
-        </>
+                    <span className={`dvn-badge dvn-badge--${item.kind}`}>{ITEM_KINDS[item.kind]}</span>
+                  </span>
+                  <span className="dvn-body">
+                    {item.category && <span className="dvn-cat">{item.category}</span>}
+                    <span className="dvn-name">{item.name}</span>
+                    <span className="dvn-price">{formatPrice(item)}</span>
+                  </span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        </section>
       )}
-
-      {/* Paginación con Dots indicadores */}
-      {slides.length > 1 && (
-        <div className="hero-carousel-dots" role="tablist">
-          {slides.map((s, idx) => (
-            <button
-              key={s.id || idx}
-              type="button"
-              role="tab"
-              aria-selected={idx === currentIndex}
-              className={`hero-dot ${idx === currentIndex ? 'active' : ''}`}
-              onClick={() => setCurrentIndex(idx)}
-              aria-label={`Ir a oferta ${idx + 1}: ${s.name}`}
-            />
-          ))}
-        </div>
-      )}
-        </div>
-      </div>
-    </section>
+    </>
   );
 }

@@ -210,7 +210,7 @@ export default async function CategoryPage({ params }) {
           <ShareCategoryButton label={shareLabel} productCount={products.length} />
         </div>
         <p style={{ fontSize: '0.9rem', color: 'var(--text-muted)', marginBottom: '20px' }}>
-          Precio mayorista, mínimo de compra $50.000 en pedidos por la web.
+          Precio mayorista: tu primer artículo x3 unidades y el resto por unidad.
         </p>
 
         <CategoryGroupCatalog

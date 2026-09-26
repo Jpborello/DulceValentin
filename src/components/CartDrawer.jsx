@@ -120,19 +120,16 @@ Adjunto mi comprobante para coordinar el despacho. ¡Muchas gracias!`;
     setTimeout(() => setCopiedAlias2(false), 2500);
   };
 
-  // Wholesale calculations & Minimum Purchase Requirement ($50.000)
+  // Totales del carrito. Ya no hay monto minimo de compra: la unica regla
+  // es la del articulo x3 (ver mas abajo).
   const cartSubtotal = cartItems.reduce((sum, item) => {
     const itemPrice = item.product.unit_price != null
       ? item.product.unit_price
       : getProductPrice(item.product, item.product.selectedSize);
     return sum + (itemPrice * item.quantity);
   }, 0);
-  const MIN_PURCHASE_THRESHOLD = 50000;
-  const isMinPurchaseReached = cartSubtotal >= MIN_PURCHASE_THRESHOLD;
   const voucherDiscount = Math.min(cartSubtotal, voucher?.amount || 0);
   const finalTotal = cartSubtotal - voucherDiscount;
-  const amountNeeded = Math.max(0, MIN_PURCHASE_THRESHOLD - cartSubtotal);
-  const progressPercent = Math.min(100, Math.round((cartSubtotal / MIN_PURCHASE_THRESHOLD) * 100));
 
   // Regla de la dueña (2026-09): para acceder al precio mayorista, el pedido
   // tiene que llevar al menos 3 unidades de UN mismo articulo — despues de
@@ -148,16 +145,11 @@ Adjunto mi comprobante para coordinar el despacho. ¡Muchas gracias!`;
     null
   );
   const unitsNeededForMinQty = closestMinQtyItem ? Math.max(0, 3 - closestMinQtyItem.quantity) : 0;
-  const canGenerateOrder = isMinPurchaseReached && hasMinQtyItem;
+  const canGenerateOrder = hasMinQtyItem;
 
   const handleCreateOrder = async (e) => {
     e.preventDefault();
     if (cartItems.length === 0 || isSubmittingOrder) return;
-
-    if (!isMinPurchaseReached) {
-      alert(`El mínimo de compra mayorista es de $50.000. Te faltan $${amountNeeded.toLocaleString('es-AR')} para poder finalizar el pedido.`);
-      return;
-    }
 
     if (!hasMinQtyItem) {
       alert(`Para acceder al precio mayorista necesitás llevar 3 unidades de un mismo artículo (no aplica a medias ni productos en pack). Agregá ${unitsNeededForMinQty} unidad${unitsNeededForMinQty === 1 ? '' : 'es'} más de "${closestMinQtyItem?.product?.name || 'algún producto'}", u otro, para continuar.`);
@@ -791,52 +783,6 @@ Adjunto mi comprobante para coordinar el despacho. ¡Muchas gracias!`;
             </div>
           ) : (
             <>
-              {/* MINIMUM PURCHASE $50.000 PROGRESS BANNER */}
-              <div style={{
-                backgroundColor: isMinPurchaseReached ? '#ECFDF5' : '#FEF3C7',
-                border: `1px solid ${isMinPurchaseReached ? '#6EE7B7' : '#FDE68A'}`,
-                borderRadius: '10px',
-                padding: '12px 14px',
-                marginBottom: '16px'
-              }}>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px' }}>
-                  <span style={{ 
-                    fontSize: '0.82rem', 
-                    fontWeight: 800, 
-                    color: isMinPurchaseReached ? '#047857' : '#B45309',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '5px'
-                  }}>
-                    {isMinPurchaseReached ? (
-                      <>🎉 ¡MÍNIMO DE COMPRA MAYORISTA ALCANZADO!</>
-                    ) : (
-                      <><Sparkles size={15} /> Mínimo de compra mayorista: $50.000</>
-                    )}
-                  </span>
-                  <span style={{ fontSize: '0.75rem', fontWeight: 700, color: isMinPurchaseReached ? '#047857' : '#92400E' }}>
-                    {progressPercent}%
-                  </span>
-                </div>
-
-                {/* Progress bar */}
-                <div style={{ width: '100%', height: '7px', backgroundColor: isMinPurchaseReached ? '#A7F3D0' : '#FDE68A', borderRadius: '4px', overflow: 'hidden' }}>
-                  <div style={{ 
-                    width: `${progressPercent}%`, 
-                    height: '100%', 
-                    backgroundColor: isMinPurchaseReached ? '#059669' : '#D97706',
-                    borderRadius: '4px',
-                    transition: 'width 0.3s ease'
-                  }} />
-                </div>
-
-                {!isMinPurchaseReached && (
-                  <p style={{ fontSize: '0.75rem', color: '#92400E', marginTop: '6px', margin: 0, fontWeight: 600 }}>
-                    Te faltan <strong>${amountNeeded.toLocaleString('es-AR')}</strong> para alcanzar el mínimo de $50.000 para poder finalizar el pedido.
-                  </p>
-                )}
-              </div>
-
               {/* MINIMO DE 3 UNIDADES DE UN ARTICULO (no aplica a medias / packs "3 x $") */}
               {!hasMinQtyItem && (
                 <div style={{
@@ -1091,7 +1037,7 @@ Adjunto mi comprobante para coordinar el despacho. ¡Muchas gracias!`;
               )}
               <div className="total-summary-row" style={{ marginTop: '4px', paddingTop: '4px' }}>
                 <span style={{ fontSize: '1.05rem', fontWeight: 800 }}>Total Mayorista:</span>
-                <span style={{ fontSize: '1.25rem', fontWeight: 900, color: isMinPurchaseReached ? '#059669' : '#D97706' }}>
+                <span style={{ fontSize: '1.25rem', fontWeight: 900, color: hasMinQtyItem ? '#059669' : '#D97706' }}>
                   {voucher && (
                     <span style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-muted)', textDecoration: 'line-through', marginRight: '6px' }}>
                       ${cartSubtotal.toLocaleString('es-AR')}
@@ -1100,12 +1046,7 @@ Adjunto mi comprobante para coordinar el despacho. ¡Muchas gracias!`;
                   ${finalTotal.toLocaleString('es-AR')}
                 </span>
               </div>
-              {!isMinPurchaseReached && (
-                <div style={{ fontSize: '0.78rem', color: '#DC2626', fontWeight: 700, marginTop: '4px', textAlign: 'center' }}>
-                  ⚠️ Mínimo de compra $50.000 (te faltan ${amountNeeded.toLocaleString('es-AR')})
-                </div>
-              )}
-              {isMinPurchaseReached && !hasMinQtyItem && (
+              {!hasMinQtyItem && (
                 <div style={{ fontSize: '0.78rem', color: '#DC2626', fontWeight: 700, marginTop: '4px', textAlign: 'center' }}>
                   ⚠️ Necesitás 3 unidades de un mismo artículo (faltan {unitsNeededForMinQty})
                 </div>
@@ -1126,9 +1067,7 @@ Adjunto mi comprobante para coordinar el despacho. ¡Muchas gracias!`;
                 ? 'Generando pedido...'
                 : !hasMinQtyItem
                   ? `Necesitás 3 unidades de un artículo (faltan ${unitsNeededForMinQty})`
-                  : !isMinPurchaseReached
-                    ? `Mínimo $50.000 (Faltan $${amountNeeded.toLocaleString('es-AR')})`
-                    : 'Generar Pedido & Subir Comprobante'}
+                  : 'Generar Pedido & Subir Comprobante'}
             </button>
           </div>
         )}

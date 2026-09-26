@@ -210,7 +210,7 @@ export default async function ProductPage({ params }) {
               {priceRange.hasRange && (
                 <p className="price-hint">El precio varía según el talle elegido (hasta ${Number(priceRange.max).toLocaleString('es-AR')}).</p>
               )}
-              <p className="price-hint">Mínimo de compra: $50.000 en pedidos por la web.</p>
+              <p className="price-hint">Compra mayorista: tu primer artículo x3 unidades y el resto por unidad.</p>
             </div>
 
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px', marginTop: '18px' }}>

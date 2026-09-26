@@ -350,9 +350,12 @@ export default function Home() {
   // navegador, y React tiraba "Hydration failed" en el <h3> del carousel.
   const featuredOffer = products.find((p) => p.is_featured && p.is_active !== false) || null;
   const offers = products.filter((p) => p.is_offer && p.is_active !== false && p.id !== featuredOffer?.id);
-  const topSeller = [...products]
-    .filter((p) => p.is_active !== false)
-    .sort((a, b) => (b.sales_count || 0) - (a.sales_count || 0))[0];
+  // Nuevos ingresos para el carrusel del hero: los marcados "Nuevo Ingreso"
+  // con stock y foto, del codigo mas alto (lo ultimo cargado) para abajo.
+  const newArrivals = products
+    .filter((p) => p.is_new && p.is_active !== false && (p.stock ?? 1) > 0 && p.image_url)
+    .sort((a, b) => (parseInt(b.code, 10) || 0) - (parseInt(a.code, 10) || 0))
+    .slice(0, 6);
 
   // Mismo top 5 que ya usa el admin en Metricas ("Mayor Rotacion"), para que
   // el sello "Mas Vendido" en la grilla coincida con ese ranking.
@@ -376,7 +379,8 @@ export default function Home() {
       : getProductPrice(item.product, item.product.selectedSize);
     return sum + (p * item.quantity);
   }, 0);
-  const isWholesaleQualified = cartSubtotal >= 50000;
+  // Ya no hay monto minimo: todas las compras web son a precio mayorista.
+  const isWholesaleQualified = true;
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', minHeight: '100vh' }}>
@@ -432,8 +436,7 @@ export default function Home() {
       <HeroSection
         offers={offers}
         featuredOffer={featuredOffer}
-        topSeller={topSeller}
-        onAddToCart={handleAddToCart}
+        newArrivals={newArrivals}
         onOpenDetail={setDetailProduct}
         onExploreCatalog={() => {
           setCatalogOpen(true);

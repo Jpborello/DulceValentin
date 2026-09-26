@@ -8,7 +8,7 @@ const FAQ_ITEMS = [
   {
     question: '¿Cuál es el mínimo de compra mayorista?',
     answer:
-      'En pedidos hechos por la web, el mínimo es de $50.000 en total — podés combinarlo entre todos los productos que quieras. Comprando en persona en el local no hay mínimo. Además, para acceder al precio mayorista, al menos un artículo del pedido tiene que llevar 3 unidades o más (salvo medias y productos en pack, que están exceptuados).'
+      'No hay un monto mínimo. Para comprar al precio mayorista, tu primer artículo tiene que ser de 3 unidades o más y después podés sumar el resto de los productos por unidad. Las medias y los productos que se venden en pack están exceptuados. Comprando en persona en el local no hay mínimo.'
   },
   {
     question: '¿Hacen envíos a todo el país?',

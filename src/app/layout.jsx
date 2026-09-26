@@ -1,21 +1,20 @@
 import './globals.css';
 import Script from 'next/script';
-import { Outfit, Plus_Jakarta_Sans, EB_Garamond } from 'next/font/google';
+import { DM_Sans, DM_Serif_Display } from 'next/font/google';
 
-const outfit = Outfit({
-  subsets: ['latin'],
-  variable: '--font-heading-next',
-  display: 'swap'
-});
-
-const plusJakartaSans = Plus_Jakarta_Sans({
+// Tipografia de marca: DM Serif Display para titulares grandes (H1, titulos
+// de seccion, nombres de categoria) y DM Sans para todo lo demas (textos,
+// botones y titulos chicos de interfaz del carrito, admin, etc.).
+const dmSans = DM_Sans({
   subsets: ['latin'],
   variable: '--font-body-next',
   display: 'swap'
 });
 
-const ebGaramond = EB_Garamond({
+const dmSerifDisplay = DM_Serif_Display({
   subsets: ['latin'],
+  weight: '400',
+  style: ['normal', 'italic'],
   variable: '--font-display-next',
   display: 'swap'
 });
@@ -35,14 +34,17 @@ export const viewport = {
 export const metadata = {
   metadataBase: new URL(SITE_URL),
   title: {
-    default: 'Dulce Valentín — Indumentaria, Calzado y Complementos Mayorista en Rosario',
+    default: 'Dulce Valentín — Mayorista de ropa, calzado y lencería en Rosario',
     template: '%s | Dulce Valentín'
   },
   description:
-    'Venta mayorista de indumentaria, calzado y complementos. Envíos a todo el país.', // TODO: completar zona, condiciones de compra minima y retiro en local
+    'Dulce Valentín es mayorista de ropa, calzado, lencería y artículos para bebés en Rosario (Av. Pres. Perón 5349). Venta por mayor con retiro en el local y envíos a todo el país.',
   keywords: [
+    'mayorista de ropa Rosario',
     'indumentaria mayorista',
     'calzado mayorista',
+    'lencería por mayor',
+    'ropa de bebé por mayor',
     'mayorista de ropa Argentina',
     'buzos por mayor',
     'camperas por mayor',
@@ -66,9 +68,9 @@ export const metadata = {
     locale: 'es_AR',
     url: SITE_URL,
     siteName: 'Dulce Valentín',
-    title: 'Dulce Valentín — Indumentaria, Calzado y Complementos Mayorista',
+    title: 'Dulce Valentín — Mayorista de ropa, calzado y lencería en Rosario',
     description:
-      'Catálogo mayorista de Dulce Valentín. Envíos a todo el país y retiro en local.', // TODO: completar
+      'Venta por mayor de indumentaria, calzado, lencería y artículos para bebés. Local en Rosario y envíos a todo el país.',
     images: [
       {
         url: '/logo.png',
@@ -80,9 +82,9 @@ export const metadata = {
   },
   twitter: {
     card: 'summary_large_image',
-    title: 'Dulce Valentín — Indumentaria, Calzado y Complementos Mayorista',
+    title: 'Dulce Valentín — Mayorista de ropa, calzado y lencería en Rosario',
     description:
-      'Catálogo mayorista de Dulce Valentín. Envíos a todo el país y retiro en local.', // TODO: completar
+      'Venta por mayor de indumentaria, calzado, lencería y artículos para bebés. Local en Rosario y envíos a todo el país.',
     images: ['/logo.png']
   }
 };
@@ -133,7 +135,7 @@ const localBusinessJsonLd = {
 
 export default function RootLayout({ children }) {
   return (
-    <html lang="es" suppressHydrationWarning className={`${outfit.variable} ${plusJakartaSans.variable} ${ebGaramond.variable}`}>
+    <html lang="es" suppressHydrationWarning className={`${dmSans.variable} ${dmSerifDisplay.variable}`}>
       <head>
         {/* Aplica el tema guardado ANTES de pintar la pagina, para que no se
             vea un flash de tema claro y despues salte a oscuro. */}

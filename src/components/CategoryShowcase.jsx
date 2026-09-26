@@ -1,18 +1,11 @@
 'use client';
 
 import Link from 'next/link';
-import { Footprints, Shirt, Heart, Baby, ArrowRight } from 'lucide-react';
+import { ArrowRight } from 'lucide-react';
 import {
   HOME_CATEGORY_GROUPS,
   SECONDARY_CATEGORY_IDS
 } from '@/lib/catalogData';
-
-const GROUP_ICONS = {
-  calzado: Footprints,
-  indumentaria: Shirt,
-  lenceria: Heart,
-  bebes: Baby
-};
 
 const normStr = (str) =>
   (str || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().trim();
@@ -91,54 +84,41 @@ export default function CategoryShowcase({
       <div className="cat-showcase-header">
         <div>
           <h2 id="cat-showcase-title" className="cat-showcase-title">
-            Categorías
+            Categorías por mayor
           </h2>
           <p className="cat-showcase-subtitle">
-            Elegí una categoría para explorar todas las prendas disponibles
+            Elegí un rubro para ver todos los productos disponibles
           </p>
         </div>
       </div>
 
-      <div className="cat-showcase-grid">
+      <div className="dvc-grid">
         {HOME_CATEGORY_GROUPS.map((group) => {
-          const Icon = GROUP_ICONS[group.id] || Shirt;
           const count = countForGroup(group);
 
           return (
-            <Link key={group.id} href={`/categoria/${group.id}`} className="cat-card">
-              {group.image && (
-                <div className="cat-card-bg-wrap">
+            <Link key={group.id} href={`/categoria/${group.id}`} className="dvc-card">
+              <div className="dvc-media">
+                {group.image && (
                   <img
                     src={group.image}
-                    alt={group.name}
-                    className="cat-card-bg-img"
+                    alt={`${group.name} por mayor`}
+                    className="dvc-img"
                     loading="lazy"
                   />
-                  <div className="cat-card-scrim" />
-                </div>
-              )}
-
-              <div className="cat-card-top">
-                <span className="cat-card-icon">
-                  <Icon size={20} strokeWidth={1.8} />
-                </span>
+                )}
                 {count > 0 && (
-                  <span className="cat-card-badge">
-                    {count} {count === 1 ? 'prenda' : 'prendas'}
+                  <span className="dvc-count">
+                    {count} {count === 1 ? 'producto' : 'productos'}
                   </span>
                 )}
               </div>
-
-              <div className="cat-card-body">
-                <span className="cat-card-name">{group.name}</span>
-                <span className="cat-card-tagline">{group.tagline}</span>
-              </div>
-
-              <div className="cat-card-foot">
-                <span className="cat-card-action">
-                  Ver productos
+              <div className="dvc-body">
+                <h3 className="dvc-name">{group.name}</h3>
+                <p className="dvc-tagline">{group.tagline}</p>
+                <span className="dvc-action">
+                  Ver productos <ArrowRight size={15} aria-hidden="true" />
                 </span>
-                <ArrowRight size={16} className="cat-card-chevron" />
               </div>
             </Link>
           );

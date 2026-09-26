@@ -1168,7 +1168,6 @@ class DataStore {
     // total sin bajar de $0.
     const discountApplied = Math.min(cartTotal, Math.max(0, clientDetails.voucherAmount || 0));
     const total = cartTotal - discountApplied;
-    const isWholesaleQualified = total >= 50000;
 
     // Telefono SIEMPRE normalizado (solo digitos, ultimos 10) antes de
     // guardarlo o usarlo para identificar al cliente: "011 15-5512-3456",
@@ -1332,7 +1331,7 @@ class DataStore {
       id: 'cm-' + Date.now(),
       type: 'income',
       amount: total,
-      concept: `Venta ${isWholesaleQualified ? 'Mayorista' : 'Minorista'} ${order.id} (${clientDetails.name})`,
+      concept: `Venta Mayorista ${order.id} (${clientDetails.name})`,
       date: new Date().toISOString()
     });
 

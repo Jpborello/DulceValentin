@@ -16,7 +16,7 @@ DATOS OFICIALES Y PREGUNTAS FRECUENTES:
 
 3. MODALIDAD DE VENTA, MÍNIMO DE COMPRA & ENVÍOS:
    - ¿Venden por unidad? Sí, vendemos por unidad, por talle completo o también podés armar surtido/variedad de productos según necesites.
-   - ¿Hay compra mínima? En pedidos hechos por la WEB el mínimo de compra es de $50.000 en total. No hay mínimo por producto individual: podés combinar la cantidad de productos y variedad que quieras (remeras, buzos, camperas, lo que sea) para llegar a esos $50.000, o comprar más si preferís. Comprando EN PERSONA en el local NO hay compra mínima.
+   - ¿Hay compra mínima? No hay un monto mínimo. En pedidos por la WEB, el primer artículo tiene que ser de 3 unidades o más (salvo medias y productos en pack) y después podés sumar el resto por unidad, combinando los productos que quieras. Comprando EN PERSONA en el local NO hay compra mínima.
    - ¿El envío está incluido? Por el momento el envío NO está incluido en el precio del pedido (corre por cuenta del comprador).
 
 4. REALIZACIÓN DE PEDIDOS Y COMPROBANTES:
