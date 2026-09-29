@@ -734,6 +734,9 @@ class DataStore {
     // habia guardado (hasta que se entraba desde otro dispositivo/navegador
     // y se veia el valor viejo). Afecta a TODO lo que pasa por updateProduct:
     // precios, stock, ofertas/destacados/nuevo, talles y colores, imagenes.
+    // Devuelve { ok, error } para que quien llama pueda avisar si la base
+    // rechazo el cambio (los llamados viejos lo ignoran y siguen igual).
+    let result = { ok: true, error: null };
     if (supabase) {
       try {
         const { data, error } = await supabase
@@ -744,6 +747,10 @@ class DataStore {
 
         if (error) {
           console.warn('Supabase updateProduct error:', error);
+          result = { ok: false, error };
+        } else if (!Array.isArray(data) || data.length === 0) {
+          // RLS o sesion vencida: el UPDATE no toco ninguna fila.
+          result = { ok: false, error: new Error('No se actualizó ninguna fila (¿sesión vencida?)') };
         } else if (Array.isArray(data) && data.length > 0) {
           const freshFromDb = data[0];
           const normalized = {
@@ -758,8 +765,10 @@ class DataStore {
         }
       } catch (err) {
         console.warn('Supabase updateProduct error:', err);
+        result = { ok: false, error: err };
       }
     }
+    return result;
   }
 
   updateStock(id, newStock) {

@@ -1,13 +1,13 @@
 'use client';
 
-import { useState } from 'react';
-import { Save, Layers, Settings2, X, Plus, ZoomIn } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { Save, Layers, Settings2, X, Plus, ZoomIn, Pencil, Loader2, AlertCircle } from 'lucide-react';
 import { getProductColors } from '@/lib/catalogData';
 import { getProductImages, getThumbUrl } from '@/lib/dataStore';
 import ImageLightbox from '@/components/admin/ImageLightbox';
 import SafeImg from '@/components/admin/SafeImg';
 
-export default function StockTab({ products, searchFilter, setSearchFilter, onUpdateStock, onUpdateSizesColors, onToggleActive }) {
+export default function StockTab({ products, searchFilter, setSearchFilter, onUpdateStock, onUpdateSizesColors, onToggleActive, onUpdateDetails }) {
   // Local state for stock per size per product
   const [sizeStockState, setSizeStockState] = useState({});
   const [managingProduct, setManagingProduct] = useState(null);
@@ -15,6 +15,7 @@ export default function StockTab({ products, searchFilter, setSearchFilter, onUp
   // Producto cuya foto se esta viendo ampliada (la miniatura de la tabla es
   // chica y en una notebook no se distingue el articulo).
   const [zoomProduct, setZoomProduct] = useState(null);
+  const [editingProduct, setEditingProduct] = useState(null);
 
   const criticalCount = products.filter(p => p.stock > 0 && p.stock <= 5).length;
   const outOfStockCount = products.filter(p => p.stock <= 0).length;
@@ -178,7 +179,20 @@ export default function StockTab({ products, searchFilter, setSearchFilter, onUp
                   })()}
                 </td>
                 <td style={{ fontWeight: 700 }}>
-                  <div>{p.name}</div>
+                  <div className="stock-name-row">
+                    <span>{p.name}</span>
+                    {onUpdateDetails && (
+                      <button
+                        type="button"
+                        className="stock-edit-btn"
+                        onClick={() => setEditingProduct(p)}
+                        aria-label={`Editar nombre y descripción de ${p.name}`}
+                        title="Editar nombre y descripción"
+                      >
+                        <Pencil size={14} aria-hidden="true" />
+                      </button>
+                    )}
+                  </div>
                   {p.code && <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontWeight: 600 }}>Cód: {p.code}</span>}
                 </td>
                 <td>
@@ -297,6 +311,14 @@ export default function StockTab({ products, searchFilter, setSearchFilter, onUp
         />
       )}
 
+      {editingProduct && (
+        <EditDetailsModal
+          product={editingProduct}
+          onClose={() => setEditingProduct(null)}
+          onSave={onUpdateDetails}
+        />
+      )}
+
       {managingProduct && (
         <SizeColorManagerModal
           product={managingProduct}
@@ -304,6 +326,138 @@ export default function StockTab({ products, searchFilter, setSearchFilter, onUp
           onSave={onUpdateSizesColors}
         />
       )}
+    </div>
+  );
+}
+
+const NAME_MAX = 120;
+const DESC_MAX = 1500;
+
+// Modal para corregir el nombre y la descripcion de un producto. El link del
+// producto no se rompe al cambiar el nombre: la pagina se busca por el id
+// (ver src/lib/productSlug.js).
+function EditDetailsModal({ product, onClose, onSave }) {
+  const [name, setName] = useState(product.name || '');
+  const [description, setDescription] = useState(product.description || '');
+  const [isSaving, setIsSaving] = useState(false);
+  const [error, setError] = useState('');
+
+  const trimmedName = name.trim();
+  const trimmedDesc = description.trim();
+  const changed = trimmedName !== (product.name || '').trim() || trimmedDesc !== (product.description || '').trim();
+  const canSave = trimmedName.length >= 2 && changed && !isSaving;
+
+  useEffect(() => {
+    const onKey = (e) => { if (e.key === 'Escape' && !isSaving) onClose(); };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [onClose, isSaving]);
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    if (!canSave) return;
+    setIsSaving(true);
+    setError('');
+    const result = await onSave(product.id, { name: trimmedName, description: trimmedDesc });
+    setIsSaving(false);
+    if (result && result.ok === false) {
+      setError('No se pudo guardar. Revisá la conexión o volvé a iniciar sesión e intentá de nuevo.');
+      return;
+    }
+    onClose();
+  };
+
+  const photo = getProductImages(product).find((u) => u && u !== '/logo.png');
+
+  return (
+    <div className="modal-backdrop active" onClick={() => !isSaving && onClose()}>
+      <div
+        className="modal-box"
+        style={{ maxWidth: '560px' }}
+        onClick={(e) => e.stopPropagation()}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="edit-details-title"
+      >
+        <button type="button" onClick={onClose} className="qty-btn" style={{ position: 'absolute', top: '14px', right: '14px' }} aria-label="Cerrar" disabled={isSaving}>
+          <X size={18} />
+        </button>
+
+        <h3 id="edit-details-title" style={{ fontSize: '1.15rem', fontWeight: 800, marginBottom: '14px' }}>
+          <Pencil size={17} style={{ display: 'inline', marginRight: '6px', verticalAlign: '-3px' }} aria-hidden="true" />
+          Editar producto
+        </h3>
+
+        <div className="edit-details-product">
+          {photo && (
+            <SafeImg src={getThumbUrl(photo) || photo} fallbacks={[photo, '/logo.png']} alt="" className="edit-details-photo" />
+          )}
+          <div style={{ minWidth: 0 }}>
+            {product.code && <div style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)' }}>Cód: {product.code}</div>}
+            <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+              {product.category}{product.subcategory ? ` · ${product.subcategory}` : ''}
+            </div>
+          </div>
+        </div>
+
+        <form onSubmit={handleSubmit}>
+          <div style={{ marginBottom: '16px' }}>
+            <label className="form-label" htmlFor="edit-product-name">Nombre del producto</label>
+            <input
+              id="edit-product-name"
+              type="text"
+              value={name}
+              onChange={(e) => setName(e.target.value.slice(0, NAME_MAX))}
+              className="form-input"
+              style={{ width: '100%', padding: '10px 12px', fontSize: '0.95rem', fontWeight: 600 }}
+              maxLength={NAME_MAX}
+              autoFocus
+              required
+            />
+            <div className="edit-details-hint">
+              <span>Es el título que ven los clientes en la web y en el catálogo.</span>
+              <span>{name.length}/{NAME_MAX}</span>
+            </div>
+          </div>
+
+          <div style={{ marginBottom: '18px' }}>
+            <label className="form-label" htmlFor="edit-product-desc">Descripción</label>
+            <textarea
+              id="edit-product-desc"
+              value={description}
+              onChange={(e) => setDescription(e.target.value.slice(0, DESC_MAX))}
+              className="form-input"
+              rows={6}
+              style={{ width: '100%', padding: '10px 12px', fontSize: '0.9rem', lineHeight: 1.5, resize: 'vertical', fontFamily: 'inherit' }}
+              maxLength={DESC_MAX}
+              placeholder="Material, talles, colores, cantidad por pack, etc."
+            />
+            <div className="edit-details-hint">
+              <span>Se muestra en la ficha del producto y la usa el bot para responder.</span>
+              <span>{description.length}/{DESC_MAX}</span>
+            </div>
+          </div>
+
+          {error && (
+            <p role="alert" style={{ display: 'flex', alignItems: 'center', gap: '6px', margin: '0 0 14px', fontSize: '0.85rem', fontWeight: 700, color: '#B91C1C' }}>
+              <AlertCircle size={15} aria-hidden="true" /> {error}
+            </p>
+          )}
+
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
+            <button type="button" onClick={onClose} className="btn-secondary" disabled={isSaving}>Cancelar</button>
+            <button
+              type="submit"
+              className="btn-primary"
+              disabled={!canSave}
+              style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', opacity: canSave ? 1 : 0.55 }}
+            >
+              {isSaving ? <Loader2 size={15} className="spin" aria-hidden="true" /> : <Save size={15} aria-hidden="true" />}
+              {isSaving ? 'Guardando...' : 'Guardar cambios'}
+            </button>
+          </div>
+        </form>
+      </div>
     </div>
   );
 }

@@ -337,6 +337,14 @@ export default function AdminPage() {
     showSuccessNotice('Stock actualizado correctamente.');
   };
 
+  // Editar nombre y descripcion desde Control de Stock. Devuelve el
+  // resultado para que el modal muestre el error si no se pudo guardar.
+  const handleUpdateDetails = async (id, { name, description }) => {
+    const result = await dataStore.updateProduct(id, { name, description });
+    if (result?.ok) showSuccessNotice('Nombre y descripción actualizados.');
+    return result;
+  };
+
   const handleUpdateSizesColors = async (id, { sizes, stock_per_size, colors }) => {
     await dataStore.updateProduct(id, { sizes, stock_per_size, colors });
     showSuccessNotice('Talles y colores actualizados correctamente.');
@@ -831,6 +839,7 @@ export default function AdminPage() {
           onUpdateStock={handleStockUpdate}
           onUpdateSizesColors={handleUpdateSizesColors}
           onToggleActive={handleToggleActive}
+          onUpdateDetails={handleUpdateDetails}
         />
       )}
 
