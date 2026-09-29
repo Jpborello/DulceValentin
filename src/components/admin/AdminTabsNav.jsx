@@ -5,11 +5,7 @@ import { BarChart3, Package, DollarSign, Image as ImageIcon, Layers, Users, Spar
 export default function AdminTabsNav({ activeTab, onTabChange }) {
   const tabs = [
     { id: 'metrics', label: 'Métricas & Arqueo de Caja', icon: BarChart3 },
-    // Pestana "WhatsApp CRM & IA" desactivada: falta cargar la service role
-    // key real de Supabase en .env.local y sin ella /api/admin/whatsapp
-    // tira 500 todo el tiempo. Para reactivar, descomentar aca Y volver
-    // WHATSAPP_ENABLED a true en src/app/admin/page.jsx.
-    // { id: 'whatsapp', label: '💬 WhatsApp CRM & IA', icon: MessageSquare },
+    { id: 'whatsapp', label: '💬 WhatsApp CRM & IA', icon: MessageSquare },
     { id: 'settings', label: '💳 Alias de Transferencia', icon: CreditCard },
     { id: 'newProduct', label: '➕ Nuevo Producto', icon: PlusCircle },
     { id: 'stock', label: 'Control de Stock', icon: Package },

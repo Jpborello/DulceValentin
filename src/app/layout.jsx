@@ -1,5 +1,6 @@
 import './globals.css';
 import Script from 'next/script';
+import PwaRegister from '@/components/PwaRegister';
 import { DM_Sans, DM_Serif_Display } from 'next/font/google';
 
 // Tipografia de marca: DM Serif Display para titulares grandes (H1, titulos
@@ -28,7 +29,9 @@ const SITE_URL = 'https://www.dulcevalentin.com.ar';
 export const viewport = {
   width: 'device-width',
   initialScale: 1,
-  maximumScale: 5
+  maximumScale: 5,
+  // Color de la barra del celular cuando la web esta instalada como app.
+  themeColor: '#EC6FA6'
 };
 
 export const metadata = {
@@ -52,6 +55,21 @@ export const metadata = {
     'Dulce Valentín'
   ],
   authors: [{ name: 'Dulce Valentín' }],
+  applicationName: 'Dulce Valentín',
+  // PWA: manifest de la tienda (public/manifest.webmanifest). El panel admin
+  // lo reemplaza por el suyo en src/app/admin/layout.jsx. Los iconos suman
+  // "Agregar a inicio" en iPhone y que abra a pantalla completa.
+  manifest: '/manifest.webmanifest',
+  icons: {
+    icon: [{ url: '/icons/favicon-64.png', sizes: '64x64', type: 'image/png' }],
+    apple: [{ url: '/icons/apple-touch-icon.png', sizes: '180x180' }]
+  },
+  appleWebApp: {
+    capable: true,
+    title: 'Dulce Valentín',
+    statusBarStyle: 'default'
+  },
+  formatDetection: { telephone: false },
   alternates: {
     canonical: '/'
   },
@@ -187,6 +205,7 @@ export default function RootLayout({ children }) {
         {/* End Meta Pixel Code */}
 
         {children}
+        <PwaRegister />
       </body>
     </html>
   );

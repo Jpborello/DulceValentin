@@ -1,54 +1,145 @@
 'use client';
 
-import { useState } from 'react';
-import { UploadCloud, Loader2, CheckCircle2, AlertCircle, Star, Trash2, ArrowLeft, ArrowRight, Image as ImageIcon } from 'lucide-react';
+import { useMemo, useState } from 'react';
+import {
+  UploadCloud, Loader2, CheckCircle2, AlertCircle, Star, Trash2, ArrowLeft, ArrowRight,
+  Image as ImageIcon, Search, Link2, Maximize2, ImageOff
+} from 'lucide-react';
 import { supabase } from '@/lib/supabaseClient';
 import { compressImageWithThumb } from '@/lib/compressImage';
-import { getProductImages } from '@/lib/dataStore';
+import { getProductImages, getThumbUrl } from '@/lib/dataStore';
+import ImageLightbox from '@/components/admin/ImageLightbox';
+import SafeImg from '@/components/admin/SafeImg';
 
+const normStr = (str) =>
+  (str || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().trim();
+
+const realImagesOf = (product) =>
+  getProductImages(product).filter((u) => u && u !== '/logo.png');
+
+const FILTERS = [
+  { id: 'all', label: 'Todos' },
+  { id: 'none', label: 'Sin fotos' },
+  { id: 'one', label: '1 foto' },
+  { id: 'many', label: 'Varias fotos' }
+];
+
+/**
+ * Gestión de imágenes: grilla de tarjetas (varias por fila) en vez de una
+ * fila ancha por producto. Cada tarjeta muestra la foto elegida en grande,
+ * la tira de todas sus fotos y las acciones sobre la foto seleccionada.
+ * Arriba hay buscador y filtros para encontrar rápido los productos sin foto.
+ */
 export default function ImagesTab({ products, onUpdateImage }) {
+  const [query, setQuery] = useState('');
+  const [filter, setFilter] = useState('all');
+
+  const counts = useMemo(() => {
+    const c = { all: products.length, none: 0, one: 0, many: 0 };
+    products.forEach((p) => {
+      const n = realImagesOf(p).length;
+      if (n === 0) c.none += 1;
+      else if (n === 1) c.one += 1;
+      else c.many += 1;
+    });
+    return c;
+  }, [products]);
+
+  const visible = useMemo(() => {
+    const q = normStr(query);
+    return products.filter((p) => {
+      if (q && !normStr(`${p.name} ${p.code || ''} ${p.category || ''} ${p.subcategory || ''}`).includes(q)) return false;
+      const n = realImagesOf(p).length;
+      if (filter === 'none') return n === 0;
+      if (filter === 'one') return n === 1;
+      if (filter === 'many') return n > 1;
+      return true;
+    });
+  }, [products, query, filter]);
+
   return (
     <div>
-      <div style={{ marginBottom: '20px' }}>
-        <h2 style={{ fontSize: '1.4rem', fontWeight: 800, color: 'var(--text-main)', display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <ImageIcon size={22} style={{ color: 'var(--accent-gold)' }} /> Gestión de Imágenes de Productos
-        </h2>
-        <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', margin: 0 }}>
-          Cada producto puede tener múltiples fotos. Podés subir varias imágenes juntas (se convierten a <strong>.webp</strong> automáticamente), reordenarlas o elegir cuál es la foto principal de portada.
-        </p>
+      <div className="imgm-head">
+        <div>
+          <h2 className="imgm-title">
+            <ImageIcon size={22} style={{ color: 'var(--accent-gold)' }} aria-hidden="true" /> Gestión de Imágenes de Productos
+          </h2>
+          <p className="imgm-sub">
+            Subí varias fotos juntas o arrastralas sobre la tarjeta (se convierten a <strong>.webp</strong> solas).
+            Tocá una miniatura para elegirla y usá los botones para hacerla portada, moverla o borrarla.
+          </p>
+        </div>
       </div>
 
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '18px' }}>
-        {products.map((p) => (
-          <ProductImageRow key={p.id} product={p} onUpdateImage={onUpdateImage} />
-        ))}
+      <div className="imgm-toolbar">
+        <label className="imgm-search">
+          <Search size={16} aria-hidden="true" />
+          <input
+            type="search"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Buscar por nombre, código o categoría"
+            aria-label="Buscar producto"
+          />
+        </label>
+        <div className="imgm-filters" role="group" aria-label="Filtrar por cantidad de fotos">
+          {FILTERS.map((f) => (
+            <button
+              key={f.id}
+              type="button"
+              className={`imgm-chip ${filter === f.id ? 'is-active' : ''} ${f.id === 'none' && counts.none > 0 ? 'is-warn' : ''}`}
+              onClick={() => setFilter(f.id)}
+              aria-pressed={filter === f.id}
+            >
+              {f.label} <span className="imgm-chip-count">{counts[f.id]}</span>
+            </button>
+          ))}
+        </div>
       </div>
+
+      {visible.length === 0 ? (
+        <div className="imgm-empty">No hay productos que coincidan con la búsqueda.</div>
+      ) : (
+        <div className="imgm-grid">
+          {visible.map((p) => (
+            <ProductImageCard key={p.id} product={p} onUpdateImage={onUpdateImage} />
+          ))}
+        </div>
+      )}
     </div>
   );
 }
 
-function ProductImageRow({ product, onUpdateImage }) {
-  const currentImages = getProductImages(product).filter((u) => u && u !== '/logo.png');
-  const [images, setImages] = useState(currentImages.length > 0 ? currentImages : (product.image_url && product.image_url !== '/logo.png' ? [product.image_url] : []));
+function ProductImageCard({ product, onUpdateImage }) {
+  const initial = realImagesOf(product);
+  const [images, setImages] = useState(initial);
+  const [selected, setSelected] = useState(0);
   const [urlInput, setUrlInput] = useState('');
+  const [showUrl, setShowUrl] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   const [uploadStatus, setUploadStatus] = useState('');
   const [successNotice, setSuccessNotice] = useState('');
   const [errorMsg, setErrorMsg] = useState('');
+  const [isDragging, setIsDragging] = useState(false);
+  const [lightboxIndex, setLightboxIndex] = useState(null);
 
-  const syncImages = (newImagesList, notice) => {
+  const inputId = `upload-more-${product.id}`;
+  const sel = Math.min(selected, Math.max(images.length - 1, 0));
+
+  const syncImages = (newImagesList, notice, newSelected = sel) => {
     setImages(newImagesList);
+    setSelected(Math.min(Math.max(newSelected, 0), Math.max(newImagesList.length - 1, 0)));
     onUpdateImage(product.id, newImagesList);
+    setErrorMsg('');
     if (notice) {
       setSuccessNotice(notice);
       setTimeout(() => setSuccessNotice(''), 3000);
     }
   };
 
-  const handleFileSelect = async (e) => {
-    const files = Array.from(e.target.files || []);
-    e.target.value = '';
-    if (files.length === 0 || !supabase) return;
+  const uploadFiles = async (fileList) => {
+    const files = Array.from(fileList || []).filter((f) => f.type.startsWith('image/'));
+    if (files.length === 0 || !supabase || isUploading) return;
 
     setIsUploading(true);
     setErrorMsg('');
@@ -58,26 +149,19 @@ function ProductImageRow({ product, onUpdateImage }) {
     try {
       const newUrls = [];
       for (let i = 0; i < files.length; i++) {
-        const file = files[i];
-        setUploadStatus(`Comprimiendo y subiendo ${i + 1} de ${files.length}...`);
-        
-        const { full, thumb } = await compressImageWithThumb(file);
+        setUploadStatus(`Subiendo ${i + 1} de ${files.length}...`);
+        const { full, thumb } = await compressImageWithThumb(files[i]);
         const filePath = `admin-uploads/${product.id || 'prod'}-${Date.now()}-${i}.webp`;
         const { error: uploadErr } = await supabase.storage.from('Productos').upload(filePath, full.blob, {
           upsert: true,
           contentType: 'image/webp',
-          // Las fotos de producto no cambian una vez subidas (cada subida usa
-          // un nombre de archivo nuevo), asi que el navegador las puede cachear
-          // un año entero sin volver a pedirlas -- esto es lo que Lighthouse
-          // pide en "Usar tiempos de vida de cache eficientes".
+          // Cada subida usa un nombre nuevo, asi que el navegador la puede
+          // cachear un año (lo que pide Lighthouse).
           cacheControl: '31536000'
         });
         if (uploadErr) throw uploadErr;
 
-        // Miniatura para la grilla: mismo nombre + "-thumb" (convencion que
-        // usa getThumbUrl para encontrarla desde el lado del sitio). Si esta
-        // subida puntual falla no se corta el alta de la foto -- la tarjeta
-        // igual muestra la foto completa como respaldo.
+        // Miniatura con el mismo nombre + "-thumb" (convencion de getThumbUrl).
         if (thumb?.blob) {
           const thumbPath = filePath.replace(/\.webp$/, '-thumb.webp');
           await supabase.storage.from('Productos').upload(thumbPath, thumb.blob, {
@@ -88,13 +172,15 @@ function ProductImageRow({ product, onUpdateImage }) {
         }
 
         const { data: urlData } = supabase.storage.from('Productos').getPublicUrl(filePath);
-        if (urlData?.publicUrl) {
-          newUrls.push(urlData.publicUrl);
-        }
+        if (urlData?.publicUrl) newUrls.push(urlData.publicUrl);
       }
 
       const updated = [...images, ...newUrls];
-      syncImages(updated, `${newUrls.length} foto${newUrls.length > 1 ? 's' : ''} subida${newUrls.length > 1 ? 's' : ''} en formato WebP`);
+      syncImages(
+        updated,
+        `${newUrls.length} foto${newUrls.length > 1 ? 's' : ''} subida${newUrls.length > 1 ? 's' : ''}`,
+        images.length
+      );
     } catch (err) {
       setErrorMsg('No se pudieron subir las fotos: ' + (err.message || 'error desconocido'));
     } finally {
@@ -103,261 +189,189 @@ function ProductImageRow({ product, onUpdateImage }) {
     }
   };
 
+  const handleFileSelect = (e) => {
+    const files = e.target.files;
+    uploadFiles(files);
+    e.target.value = '';
+  };
+
+  const handleDrop = (e) => {
+    e.preventDefault();
+    setIsDragging(false);
+    uploadFiles(e.dataTransfer?.files);
+  };
+
   const handleAddManualUrl = () => {
     const trimmed = urlInput.trim();
     if (!trimmed) return;
+    if (!/^https?:\/\//i.test(trimmed)) {
+      setErrorMsg('La URL tiene que empezar con http:// o https://');
+      return;
+    }
     if (images.includes(trimmed)) {
       setErrorMsg('Esa URL ya está en la lista de este producto.');
       return;
     }
-    const updated = [...images, trimmed];
     setUrlInput('');
-    syncImages(updated, 'Imagen agregada a la lista');
+    setShowUrl(false);
+    syncImages([...images, trimmed], 'Imagen agregada', images.length);
   };
 
-  const handleRemoveImage = (indexToRemove) => {
-    const updated = images.filter((_, idx) => idx !== indexToRemove);
-    syncImages(updated, 'Foto eliminada');
+  const handleRemove = () => {
+    if (images.length === 0) return;
+    if (!window.confirm('¿Quitar esta foto del producto?')) return;
+    syncImages(images.filter((_, idx) => idx !== sel), 'Foto eliminada', sel - 1);
   };
 
-  const handleSetCover = (indexToCover) => {
-    if (indexToCover === 0) return;
+  const handleSetCover = () => {
+    if (sel === 0) return;
     const copy = [...images];
-    const [item] = copy.splice(indexToCover, 1);
-    const updated = [item, ...copy];
-    syncImages(updated, 'Nueva foto de portada establecida');
+    const [item] = copy.splice(sel, 1);
+    syncImages([item, ...copy], 'Nueva portada', 0);
   };
 
-  const handleMove = (fromIndex, toIndex) => {
-    if (toIndex < 0 || toIndex >= images.length) return;
+  const handleMove = (dir) => {
+    const to = sel + dir;
+    if (to < 0 || to >= images.length) return;
     const copy = [...images];
-    const [moved] = copy.splice(fromIndex, 1);
-    copy.splice(toIndex, 0, moved);
-    syncImages(copy, 'Orden actualizado');
+    const [moved] = copy.splice(sel, 1);
+    copy.splice(to, 0, moved);
+    syncImages(copy, 'Orden actualizado', to);
   };
+
+  const preview = images[sel];
 
   return (
-    <div style={{
-      backgroundColor: 'var(--bg-card)',
-      border: '1px solid var(--border-color)',
-      borderRadius: '12px',
-      padding: '18px 20px',
-      display: 'flex',
-      flexDirection: 'column',
-      gap: '14px'
-    }}>
-      {/* Header del producto */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '10px' }}>
-        <div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            {product.code && (
-              <span style={{ fontSize: '0.75rem', fontWeight: 800, backgroundColor: 'var(--bg-surface-elevated)', border: '1px solid var(--border-color)', padding: '2px 7px', borderRadius: '4px' }}>
-                {product.code}
-              </span>
-            )}
-            <h4 style={{ fontWeight: 800, fontSize: '1.05rem', margin: 0, color: 'var(--text-main)' }}>{product.name}</h4>
-          </div>
-          <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', margin: '4px 0 0 0' }}>
-            {product.category} {product.subcategory ? `• ${product.subcategory}` : ''} — {images.length} {images.length === 1 ? 'foto' : 'fotos'}
-          </p>
+    <article
+      className={`imgm-card ${isDragging ? 'is-dragging' : ''} ${images.length === 0 ? 'is-empty' : ''}`}
+      onDragOver={(e) => { e.preventDefault(); if (!isDragging) setIsDragging(true); }}
+      onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget)) setIsDragging(false); }}
+      onDrop={handleDrop}
+    >
+      <header className="imgm-card-head">
+        <div className="imgm-card-meta">
+          {product.code && <span className="imgm-code">{product.code}</span>}
+          <span className="imgm-count">{images.length} {images.length === 1 ? 'foto' : 'fotos'}</span>
         </div>
+        <h3 className="imgm-name" title={product.name}>{product.name}</h3>
+        <p className="imgm-cat">{product.category}{product.subcategory ? ` · ${product.subcategory}` : ''}</p>
+      </header>
 
-        {/* Acciones de subida */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-          <label
-            htmlFor={`upload-more-${product.id}`}
-            className="btn-primary"
-            style={{
-              padding: '7px 14px',
-              fontSize: '0.82rem',
-              cursor: isUploading ? 'wait' : 'pointer',
-              opacity: isUploading ? 0.7 : 1,
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: '6px'
-            }}
-          >
-            {isUploading ? <Loader2 size={14} className="spin" /> : <UploadCloud size={14} />}
-            {isUploading ? (uploadStatus || 'Subiendo...') : '+ Subir Fotos (WebP)'}
-          </label>
-          <input
-            id={`upload-more-${product.id}`}
-            type="file"
-            accept="image/*"
-            multiple
-            onChange={handleFileSelect}
-            disabled={isUploading}
-            style={{ display: 'none' }}
+      {preview ? (
+        <button
+          type="button"
+          className="imgm-preview"
+          onClick={() => setLightboxIndex(sel)}
+          aria-label={`Ampliar foto ${sel + 1} de ${product.name}`}
+        >
+          <SafeImg
+            src={getThumbUrl(preview) || preview}
+            fallbacks={[preview, '/logo.png']}
+            alt=""
+            loading="lazy"
           />
-
-          <div style={{ display: 'flex', gap: '4px' }}>
-            <input
-              type="text"
-              placeholder="O pegar URL..."
-              value={urlInput}
-              onChange={(e) => setUrlInput(e.target.value)}
-              onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); handleAddManualUrl(); } }}
-              className="form-input"
-              style={{ fontSize: '0.8rem', padding: '6px 8px', width: '160px' }}
-            />
-            <button
-              type="button"
-              onClick={handleAddManualUrl}
-              className="btn-secondary"
-              style={{ fontSize: '0.78rem', padding: '6px 10px' }}
-            >
-              +
-            </button>
-          </div>
-        </div>
-      </div>
-
-      {/* Avisos */}
-      {successNotice && (
-        <p style={{ fontSize: '0.8rem', color: '#059669', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '6px', margin: 0 }}>
-          <CheckCircle2 size={14} /> {successNotice}
-        </p>
-      )}
-      {errorMsg && (
-        <p style={{ fontSize: '0.8rem', color: '#DC2626', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '6px', margin: 0 }}>
-          <AlertCircle size={14} /> {errorMsg}
-        </p>
-      )}
-
-      {/* Carrusel/tira de fotos actuales */}
-      {images.length > 0 ? (
-        <div style={{
-          display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fill, minmax(130px, 1fr))',
-          gap: '12px',
-          padding: '10px',
-          backgroundColor: 'var(--bg-surface-elevated)',
-          borderRadius: '10px',
-          border: '1px solid var(--border-color)'
-        }}>
-          {images.map((url, idx) => {
-            const isCover = idx === 0;
-            return (
-              <div
-                key={`${url}-${idx}`}
-                style={{
-                  position: 'relative',
-                  borderRadius: '8px',
-                  overflow: 'hidden',
-                  border: isCover ? '2px solid var(--accent-gold)' : '1px solid var(--border-color)',
-                  backgroundColor: 'var(--bg-card)',
-                  boxShadow: isCover ? '0 0 0 1px var(--accent-gold)' : 'none',
-                  display: 'flex',
-                  flexDirection: 'column'
-                }}
-              >
-                <div style={{ position: 'relative', width: '100%', height: '110px' }}>
-                  <img
-                    src={url}
-                    alt={`Foto ${idx + 1}`}
-                    style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-                    onError={(e) => { e.target.src = '/logo.png'; }}
-                  />
-                  {isCover && (
-                    <div style={{
-                      position: 'absolute',
-                      top: '5px',
-                      left: '5px',
-                      backgroundColor: 'var(--accent-gold)',
-                      color: '#000',
-                      padding: '2px 6px',
-                      borderRadius: '4px',
-                      fontSize: '0.68rem',
-                      fontWeight: 900,
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '3px',
-                      boxShadow: '0 2px 4px rgba(0,0,0,0.2)'
-                    }}>
-                      <Star size={10} fill="#000" /> Portada
-                    </div>
-                  )}
-                  <button
-                    type="button"
-                    onClick={() => handleRemoveImage(idx)}
-                    title="Eliminar foto"
-                    style={{
-                      position: 'absolute',
-                      top: '5px',
-                      right: '5px',
-                      width: '24px',
-                      height: '24px',
-                      borderRadius: '50%',
-                      border: 'none',
-                      backgroundColor: 'rgba(220, 38, 38, 0.85)',
-                      color: '#FFF',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      cursor: 'pointer'
-                    }}
-                  >
-                    <Trash2 size={12} />
-                  </button>
-                </div>
-
-                <div style={{ padding: '6px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '4px', backgroundColor: 'var(--bg-card)' }}>
-                  {!isCover ? (
-                    <button
-                      type="button"
-                      onClick={() => handleSetCover(idx)}
-                      className="btn-secondary"
-                      style={{ fontSize: '0.68rem', padding: '3px 6px', flex: 1, justifyContent: 'center', gap: '3px' }}
-                      title="Fijar como foto principal de portada"
-                    >
-                      <Star size={10} /> Portada
-                    </button>
-                  ) : (
-                    <span style={{ fontSize: '0.68rem', fontWeight: 700, color: 'var(--accent-gold-hover)', padding: '3px 6px' }}>
-                      Principal
-                    </span>
-                  )}
-
-                  <div style={{ display: 'flex', gap: '2px' }}>
-                    {idx > 0 && (
-                      <button
-                        type="button"
-                        onClick={() => handleMove(idx, idx - 1)}
-                        title="Mover a la izquierda"
-                        style={{ background: 'none', border: '1px solid var(--border-color)', borderRadius: '4px', padding: '2px 4px', cursor: 'pointer', display: 'flex', color: 'var(--text-main)' }}
-                      >
-                        <ArrowLeft size={11} />
-                      </button>
-                    )}
-                    {idx < images.length - 1 && (
-                      <button
-                        type="button"
-                        onClick={() => handleMove(idx, idx + 1)}
-                        title="Mover a la derecha"
-                        style={{ background: 'none', border: '1px solid var(--border-color)', borderRadius: '4px', padding: '2px 4px', cursor: 'pointer', display: 'flex', color: 'var(--text-main)' }}
-                      >
-                        <ArrowRight size={11} />
-                      </button>
-                    )}
-                  </div>
-                </div>
-              </div>
-            );
-          })}
-        </div>
+          {sel === 0 && <span className="imgm-cover-badge"><Star size={11} fill="currentColor" aria-hidden="true" /> Portada</span>}
+          <span className="imgm-zoom" aria-hidden="true"><Maximize2 size={15} /></span>
+        </button>
       ) : (
-        <div style={{
-          padding: '16px',
-          textAlign: 'center',
-          backgroundColor: 'var(--bg-surface-elevated)',
-          borderRadius: '8px',
-          border: '1px dashed var(--border-color)',
-          color: 'var(--text-muted)',
-          fontSize: '0.82rem'
-        }}>
-          Sin fotos cargadas. Hacé click en "+ Subir Fotos" para agregar imágenes a este artículo.
+        <label htmlFor={inputId} className="imgm-preview imgm-preview--empty">
+          <ImageOff size={30} aria-hidden="true" />
+          <span>Sin fotos</span>
+          <small>Arrastrá fotos acá o tocá para subir</small>
+        </label>
+      )}
+
+      {images.length > 0 && (
+        <div className="imgm-strip" role="listbox" aria-label="Fotos del producto">
+          {images.map((url, idx) => (
+            <button
+              key={`${url}-${idx}`}
+              type="button"
+              role="option"
+              aria-selected={idx === sel}
+              className={`imgm-thumb ${idx === sel ? 'is-selected' : ''}`}
+              onClick={() => setSelected(idx)}
+              onDoubleClick={() => setLightboxIndex(idx)}
+              title={idx === 0 ? 'Portada' : `Foto ${idx + 1}`}
+            >
+              <SafeImg
+                src={getThumbUrl(url) || url}
+                fallbacks={[url, '/logo.png']}
+                alt={`Foto ${idx + 1}`}
+                loading="lazy"
+              />
+              {idx === 0 && <span className="imgm-thumb-star" aria-hidden="true"><Star size={9} fill="currentColor" /></span>}
+            </button>
+          ))}
         </div>
       )}
-    </div>
+
+      {images.length > 0 && (
+        <div className="imgm-actions" aria-label="Acciones sobre la foto seleccionada">
+          <button type="button" className="imgm-act" onClick={handleSetCover} disabled={sel === 0} title="Hacer portada">
+            <Star size={14} aria-hidden="true" /> <span>Portada</span>
+          </button>
+          <button type="button" className="imgm-act imgm-act--icon" onClick={() => handleMove(-1)} disabled={sel === 0} aria-label="Mover a la izquierda" title="Mover a la izquierda">
+            <ArrowLeft size={14} aria-hidden="true" />
+          </button>
+          <button type="button" className="imgm-act imgm-act--icon" onClick={() => handleMove(1)} disabled={sel >= images.length - 1} aria-label="Mover a la derecha" title="Mover a la derecha">
+            <ArrowRight size={14} aria-hidden="true" />
+          </button>
+          <button type="button" className="imgm-act imgm-act--icon imgm-act--danger" onClick={handleRemove} aria-label="Eliminar foto seleccionada" title="Eliminar foto">
+            <Trash2 size={14} aria-hidden="true" />
+          </button>
+        </div>
+      )}
+
+      {(successNotice || errorMsg) && (
+        <p className={`imgm-notice ${errorMsg ? 'is-error' : ''}`} role="status">
+          {errorMsg ? <AlertCircle size={13} aria-hidden="true" /> : <CheckCircle2 size={13} aria-hidden="true" />}
+          {errorMsg || successNotice}
+        </p>
+      )}
+
+      <footer className="imgm-foot">
+        <label htmlFor={inputId} className={`imgm-upload ${isUploading ? 'is-busy' : ''}`}>
+          {isUploading ? <Loader2 size={15} className="spin" aria-hidden="true" /> : <UploadCloud size={15} aria-hidden="true" />}
+          {isUploading ? (uploadStatus || 'Subiendo...') : 'Subir fotos'}
+        </label>
+        <input id={inputId} type="file" accept="image/*" multiple onChange={handleFileSelect} disabled={isUploading} hidden />
+        <button
+          type="button"
+          className={`imgm-act imgm-act--icon ${showUrl ? 'is-on' : ''}`}
+          onClick={() => setShowUrl((v) => !v)}
+          aria-label="Agregar foto desde una URL"
+          aria-expanded={showUrl}
+          title="Agregar desde URL"
+        >
+          <Link2 size={15} aria-hidden="true" />
+        </button>
+      </footer>
+
+      {showUrl && (
+        <div className="imgm-url">
+          <input
+            type="url"
+            placeholder="https://..."
+            value={urlInput}
+            onChange={(e) => setUrlInput(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); handleAddManualUrl(); } }}
+            aria-label="URL de la imagen"
+          />
+          <button type="button" className="imgm-act" onClick={handleAddManualUrl}>Agregar</button>
+        </div>
+      )}
+
+      {isDragging && <div className="imgm-drop" aria-hidden="true"><UploadCloud size={28} /> Soltá las fotos para subirlas</div>}
+
+      {lightboxIndex !== null && (
+        <ImageLightbox
+          images={images}
+          startIndex={lightboxIndex}
+          title={product.name}
+          onClose={() => setLightboxIndex(null)}
+        />
+      )}
+    </article>
   );
 }

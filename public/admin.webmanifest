@@ -1,0 +1,17 @@
+{
+  "id": "/admin",
+  "name": "Dulce Valentín — Panel Admin",
+  "short_name": "DV Admin",
+  "description": "Panel de administración de Dulce Valentín: pedidos, stock, precios y chats.",
+  "lang": "es-AR",
+  "start_url": "/admin",
+  "scope": "/admin",
+  "display": "standalone",
+  "background_color": "#FFFFFF",
+  "theme_color": "#3A1F2E",
+  "icons": [
+    { "src": "/icons/admin-icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/icons/admin-icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/icons/admin-icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

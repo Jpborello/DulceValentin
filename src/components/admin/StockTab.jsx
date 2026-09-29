@@ -1,14 +1,20 @@
 'use client';
 
 import { useState } from 'react';
-import { Save, Layers, Settings2, X, Plus } from 'lucide-react';
+import { Save, Layers, Settings2, X, Plus, ZoomIn } from 'lucide-react';
 import { getProductColors } from '@/lib/catalogData';
+import { getProductImages, getThumbUrl } from '@/lib/dataStore';
+import ImageLightbox from '@/components/admin/ImageLightbox';
+import SafeImg from '@/components/admin/SafeImg';
 
 export default function StockTab({ products, searchFilter, setSearchFilter, onUpdateStock, onUpdateSizesColors, onToggleActive }) {
   // Local state for stock per size per product
   const [sizeStockState, setSizeStockState] = useState({});
   const [managingProduct, setManagingProduct] = useState(null);
   const [stockFilter, setStockFilter] = useState('all'); // 'all', 'critical', 'out_of_stock'
+  // Producto cuya foto se esta viendo ampliada (la miniatura de la tabla es
+  // chica y en una notebook no se distingue el articulo).
+  const [zoomProduct, setZoomProduct] = useState(null);
 
   const criticalCount = products.filter(p => p.stock > 0 && p.stock <= 5).length;
   const outOfStockCount = products.filter(p => p.stock <= 0).length;
@@ -148,12 +154,28 @@ export default function StockTab({ products, searchFilter, setSearchFilter, onUp
             return (
               <tr key={p.id} style={{ opacity: isActive ? 1 : 0.55 }}>
                 <td>
-                  <img
-                    src={p.image_url}
-                    alt=""
-                    style={{ width: '44px', height: '44px', borderRadius: '6px', objectFit: 'cover', border: '1px solid var(--border-color)' }}
-                    onError={(e) => { e.target.src = '/logo.png'; }}
-                  />
+                  {(() => {
+                    const photos = getProductImages(p).filter((u) => u && u !== '/logo.png');
+                    return (
+                      <button
+                        type="button"
+                        className="stock-thumb"
+                        onClick={() => photos.length > 0 && setZoomProduct(p)}
+                        disabled={photos.length === 0}
+                        aria-label={photos.length > 0 ? `Ampliar foto de ${p.name}` : `${p.name} no tiene foto`}
+                        title={photos.length > 0 ? 'Ver foto grande' : 'Sin foto'}
+                      >
+                        <SafeImg
+                          src={photos[0] ? (getThumbUrl(photos[0]) || photos[0]) : '/logo.png'}
+                          fallbacks={[photos[0], '/logo.png']}
+                          alt=""
+                          loading="lazy"
+                        />
+                        {photos.length > 0 && <span className="stock-thumb-zoom" aria-hidden="true"><ZoomIn size={20} /></span>}
+                        {photos.length > 1 && <span className="stock-thumb-count" aria-hidden="true">{photos.length}</span>}
+                      </button>
+                    );
+                  })()}
                 </td>
                 <td style={{ fontWeight: 700 }}>
                   <div>{p.name}</div>
@@ -266,6 +288,14 @@ export default function StockTab({ products, searchFilter, setSearchFilter, onUp
           })}
         </tbody>
       </table>
+
+      {zoomProduct && (
+        <ImageLightbox
+          images={getProductImages(zoomProduct).filter((u) => u && u !== '/logo.png')}
+          title={`${zoomProduct.name}${zoomProduct.code ? ` · Cód. ${zoomProduct.code}` : ''}`}
+          onClose={() => setZoomProduct(null)}
+        />
+      )}
 
       {managingProduct && (
         <SizeColorManagerModal

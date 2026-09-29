@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#EC6FA6">
+<title>Sin conexión — Dulce Valentín</title>
+<style>
+  :root { color-scheme: light; }
+  body { margin: 0; min-height: 100vh; display: flex; align-items: center; justify-content: center;
+         font-family: system-ui, -apple-system, "Segoe UI", sans-serif; background: #FFF8FA; color: #3A1F2E; }
+  main { max-width: 360px; padding: 32px 24px; text-align: center; }
+  img { width: 96px; height: 96px; border-radius: 50%; }
+  h1 { font-family: Georgia, serif; font-weight: 400; font-size: 1.8rem; margin: 20px 0 8px; }
+  p { margin: 0 0 24px; line-height: 1.55; color: #6A4A5A; }
+  button { min-height: 48px; padding: 0 28px; border: none; border-radius: 999px; background: #A8175A;
+           color: #fff; font-size: 1rem; font-weight: 600; cursor: pointer; }
+  button:focus-visible { outline: 3px solid #3A1F2E; outline-offset: 3px; }
+</style>
+</head>
+<body>
+<main>
+  <img src="/icons/icon-192.png" alt="Dulce Valentín">
+  <h1>Estás sin conexión</h1>
+  <p>No pudimos cargar la página. Revisá tu internet y volvé a intentar; tu carrito queda guardado.</p>
+  <button type="button" onclick="location.reload()">Reintentar</button>
+</main>
+</body>
+</html>

@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { supabase } from '@/lib/supabaseClient';
 import { renderMessageWithLinks } from '@/lib/chatLinks';
+import { adminFetch } from '@/lib/adminFetch';
 import {
   MessageSquare,
   Send,
@@ -121,7 +122,7 @@ export default function WhatsAppTab() {
   const fetchChats = async (isBackground = false) => {
     if (!isBackground) setIsLoadingChats(true);
     try {
-      const res = await fetch('/api/admin/whatsapp');
+      const res = await adminFetch('/api/admin/whatsapp');
       const data = await res.json();
       if (data.success && Array.isArray(data.chats)) {
         const newUnreadTotal = data.chats.reduce((sum, c) => sum + (c.unread_count || 0), 0);
@@ -146,7 +147,7 @@ export default function WhatsAppTab() {
     if (!phone) return;
     if (!isBackground) setIsLoadingMessages(true);
     try {
-      const res = await fetch(`/api/admin/whatsapp?phone=${encodeURIComponent(phone)}`);
+      const res = await adminFetch(`/api/admin/whatsapp?phone=${encodeURIComponent(phone)}`);
       const data = await res.json();
       if (data.success && Array.isArray(data.messages)) {
         if (data.messages.length > 0) {
@@ -159,7 +160,7 @@ export default function WhatsAppTab() {
         setMessages(data.messages);
       }
       // Mark as read
-      await fetch('/api/admin/whatsapp', {
+      await adminFetch('/api/admin/whatsapp', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action: 'markRead', phone })
@@ -202,7 +203,7 @@ DATOS OFICIALES Y PREGUNTAS FRECUENTES:
 
   const fetchSettings = async () => {
     try {
-      const res = await fetch('/api/admin/whatsapp?type=settings');
+      const res = await adminFetch('/api/admin/whatsapp?type=settings');
       const data = await res.json();
       if (data.success && data.settings) {
         setOpenrouterKey(data.settings.openrouter_key || '');
@@ -240,7 +241,7 @@ DATOS OFICIALES Y PREGUNTAS FRECUENTES:
     setMessages(prev => [...prev, tempMsg]);
 
     try {
-      const res = await fetch('/api/admin/whatsapp', {
+      const res = await adminFetch('/api/admin/whatsapp', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action: 'sendMessage', phone: selectedPhone, content: textToSend })
@@ -270,7 +271,7 @@ DATOS OFICIALES Y PREGUNTAS FRECUENTES:
       const { data: urlData } = supabase.storage.from('Productos').getPublicUrl(filePath);
       const imageUrl = urlData.publicUrl;
 
-      const res = await fetch('/api/admin/whatsapp', {
+      const res = await adminFetch('/api/admin/whatsapp', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action: 'sendImage', phone: selectedPhone, imageUrl, caption: inputText.trim() })
@@ -295,7 +296,7 @@ DATOS OFICIALES Y PREGUNTAS FRECUENTES:
       return;
     }
     try {
-      const res = await fetch('/api/admin/whatsapp', {
+      const res = await adminFetch('/api/admin/whatsapp', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action: 'deleteChat', phone: chat.phone })
@@ -318,7 +319,7 @@ DATOS OFICIALES Y PREGUNTAS FRECUENTES:
     const newStatus = !currentStatus;
     setChats(prev => prev.map(c => c.phone === phone ? { ...c, bot_enabled: newStatus } : c));
     try {
-      await fetch('/api/admin/whatsapp', {
+      await adminFetch('/api/admin/whatsapp', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action: 'toggleBot', phone, bot_enabled: newStatus })
@@ -332,7 +333,7 @@ DATOS OFICIALES Y PREGUNTAS FRECUENTES:
     e.preventDefault();
     setSaveSuccessMsg('');
     try {
-      const res = await fetch('/api/admin/whatsapp', {
+      const res = await adminFetch('/api/admin/whatsapp', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

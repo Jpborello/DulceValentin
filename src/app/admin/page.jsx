@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { Lock, ShieldCheck, ArrowLeft, KeyRound, Loader2, CreditCard } from 'lucide-react';
 import { supabase } from '@/lib/supabaseClient';
 import { dataStore } from '@/lib/dataStore';
+import { adminFetch } from '@/lib/adminFetch';
 import AdminHeader from '@/components/admin/AdminHeader';
 import AdminTabsNav from '@/components/admin/AdminTabsNav';
 import MetricsTab from '@/components/admin/MetricsTab';
@@ -19,13 +20,10 @@ import ClientsTab from '@/components/admin/ClientsTab';
 import RaffleTab from '@/components/admin/RaffleTab';
 import WhatsAppTab from '@/components/admin/WhatsAppTab';
 
-// Desactivado a pedido: /api/admin/whatsapp usa SUPABASE_SERVICE_ROLE_KEY,
-// que en .env.local todavia esta sin completar ("COMPLETAR_falta_la_secret_key..."),
-// asi que cada llamada explota con 500. Hasta que se cargue la service role
-// key real, se apaga toda la pestana y el polling/notificaciones de WhatsApp
-// para que no siga generando errores en el server. Para reactivar: volver
-// esto a "true" (y completar la key en .env.local).
-const WHATSAPP_ENABLED = false;
+// Pestana "WhatsApp CRM & IA" (bandeja del chat web + bot). Necesita
+// SUPABASE_SERVICE_ROLE_KEY cargada en el servidor (.env.local y Vercel):
+// sin ella /api/admin/whatsapp responde 503 y la pestana queda vacia.
+const WHATSAPP_ENABLED = true;
 
 export default function AdminPage() {
   // Admin Authentication State with Supabase Auth
@@ -128,7 +126,7 @@ export default function AdminPage() {
     let prevUnreadTotal = null;
     const unreadPollInterval = setInterval(async () => {
       try {
-        const res = await fetch('/api/admin/whatsapp');
+        const res = await adminFetch('/api/admin/whatsapp');
         const data = await res.json();
         if (!data.success || !Array.isArray(data.chats)) return;
         const total = data.chats.reduce((sum, c) => sum + (c.unread_count || 0), 0);

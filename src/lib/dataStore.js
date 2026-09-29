@@ -1270,7 +1270,20 @@ class DataStore {
 
       if (orderErr) {
         console.warn('Order insert warning:', orderErr);
-      } else if (raffleTicketsCount > 0) {
+      } else {
+        // Aviso por Telegram (lo manda el servidor, que vuelve a leer el
+        // pedido de la base). Si falla no frena la compra del cliente.
+        try {
+          fetch('/api/notify-order', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ orderId: order.id }),
+            keepalive: true
+          }).catch(() => {});
+        } catch (e) {}
+      }
+
+      if (!orderErr && raffleTicketsCount > 0) {
         try {
           const { data: ticketNums, error: ticketErr } = await supabase.rpc('assign_raffle_tickets', {
             p_order_id: order.id,

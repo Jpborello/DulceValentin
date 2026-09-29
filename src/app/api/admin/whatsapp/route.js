@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
+import { requireAdmin } from '@/lib/adminAuth';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://revrbrrzlnweuxwhpgei.supabase.co';
 const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -9,6 +10,9 @@ const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 const supabaseAdmin = serviceRoleKey ? createClient(supabaseUrl, serviceRoleKey) : null;
 
 export async function GET(req) {
+  const denied = await requireAdmin(req, supabaseAdmin);
+  if (denied) return denied;
+
   try {
     const { searchParams } = new URL(req.url);
     const phone = searchParams.get('phone');
@@ -60,6 +64,9 @@ export async function GET(req) {
 }
 
 export async function POST(req) {
+  const denied = await requireAdmin(req, supabaseAdmin);
+  if (denied) return denied;
+
   try {
     const body = await req.json();
     const { action } = body;
