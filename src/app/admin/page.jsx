@@ -50,6 +50,12 @@ export default function AdminPage() {
   const [alias2Input, setAlias2Input] = useState('');
   const [holderInput, setHolderInput] = useState('');
   const [cuitInput, setCuitInput] = useState('');
+  // true mientras el admin esta editando los datos de transferencia y todavia
+  // no guardo. Sin esto, cada refresco de fondo del panel (el polling de
+  // pedidos cada 15 s, el realtime, etc.) volvia a cargar los valores de la
+  // base en los campos y borraba lo que se estaba escribiendo.
+  const transferDirtyRef = useRef(false);
+  const [isSavingTransfer, setIsSavingTransfer] = useState(false);
   
   // Mercado Pago Transfers State
   const [mpTransfers, setMpTransfers] = useState([]);
@@ -248,11 +254,13 @@ export default function AdminPage() {
       setTickets(dataStore.getAllRaffleTickets());
       setMetrics(dataStore.getMetrics());
 
-      const details = dataStore.getTransferDetails();
-      setAlias1Input(details.alias1);
-      setAlias2Input(details.alias2);
-      setHolderInput(details.holder);
-      setCuitInput(details.cuit);
+      if (!transferDirtyRef.current) {
+        const details = dataStore.getTransferDetails();
+        setAlias1Input(details.alias1);
+        setAlias2Input(details.alias2);
+        setHolderInput(details.holder);
+        setCuitInput(details.cuit);
+      }
     };
 
     updateState();
@@ -307,15 +315,23 @@ export default function AdminPage() {
     setTimeout(() => setEditSuccessMsg(''), 4000);
   };
 
-  const handleSaveAlias = (e) => {
+  const handleSaveAlias = async (e) => {
     e.preventDefault();
-    dataStore.setTransferDetails({
+    if (isSavingTransfer) return;
+    setIsSavingTransfer(true);
+    const { ok } = await dataStore.setTransferDetails({
       alias1: alias1Input,
       alias2: alias2Input,
       holder: holderInput,
       cuit: cuitInput
     });
-    showSuccessNotice('¡Datos de transferencia bancaria actualizados exitosamente!');
+    setIsSavingTransfer(false);
+    if (ok) {
+      transferDirtyRef.current = false;
+      showSuccessNotice('¡Datos de transferencia bancaria actualizados exitosamente!');
+    } else {
+      showSuccessNotice('⚠️ No se pudieron guardar los datos de transferencia. Revisá la conexión e intentá de nuevo.');
+    }
   };
 
   const handleStockUpdate = (id, newStock) => {
@@ -653,7 +669,7 @@ export default function AdminPage() {
                 <input 
                   type="text" 
                   value={alias1Input} 
-                  onChange={(e) => setAlias1Input(e.target.value.toLowerCase())}
+                  onChange={(e) => { transferDirtyRef.current = true; setAlias1Input(e.target.value.toLowerCase()); }}
                   placeholder="alias.dulcevalentin.completar" 
                   className="form-input"
                   style={{
@@ -676,7 +692,7 @@ export default function AdminPage() {
                 <input 
                   type="text" 
                   value={alias2Input} 
-                  onChange={(e) => setAlias2Input(e.target.value.toLowerCase())}
+                  onChange={(e) => { transferDirtyRef.current = true; setAlias2Input(e.target.value.toLowerCase()); }}
                   placeholder="alias.dulcevalentin.completar" 
                   className="form-input"
                   style={{
@@ -700,8 +716,8 @@ export default function AdminPage() {
                 <input 
                   type="text" 
                   value={holderInput} 
-                  onChange={(e) => setHolderInput(e.target.value)}
-                  placeholder="María Leandra Bernardi" 
+                  onChange={(e) => { transferDirtyRef.current = true; setHolderInput(e.target.value); }}
+                  placeholder="Nombre y apellido del titular" 
                   className="form-input"
                   style={{
                     fontSize: '0.95rem',
@@ -721,8 +737,8 @@ export default function AdminPage() {
                 <input 
                   type="text" 
                   value={cuitInput} 
-                  onChange={(e) => setCuitInput(e.target.value)}
-                  placeholder="27-30938323-6" 
+                  onChange={(e) => { transferDirtyRef.current = true; setCuitInput(e.target.value); }}
+                  placeholder="XX-XXXXXXXX-X" 
                   className="form-input"
                   style={{
                     fontSize: '0.95rem',
@@ -737,8 +753,8 @@ export default function AdminPage() {
             </div>
 
             <div style={{ display: 'flex', gap: '12px', alignItems: 'center', flexWrap: 'wrap' }}>
-              <button type="submit" className="btn-hero-primary" style={{ padding: '12px 24px', borderRadius: '10px', fontWeight: 800 }}>
-                ✓ Guardar y Publicar Datos de Transferencia
+              <button type="submit" disabled={isSavingTransfer} className="btn-hero-primary" style={{ padding: '12px 24px', borderRadius: '10px', fontWeight: 800, opacity: isSavingTransfer ? 0.7 : 1 }}>
+                {isSavingTransfer ? 'Guardando...' : '✓ Guardar y Publicar Datos de Transferencia'}
               </button>
 
               <span style={{ fontSize: '0.82rem', color: 'var(--text-muted)', fontWeight: 600 }}>
@@ -769,7 +785,7 @@ export default function AdminPage() {
                 💳 Datos para Transferencia (Mercado Pago)
               </div>
               <div style={{ fontSize: '0.8rem', color: '#1E3A8A', margin: '6px 0 10px 0', fontWeight: 600 }}>
-                <strong>Titular:</strong> {holderInput || 'María Leandra Bernardi'} | <strong>CUIT:</strong> {cuitInput || '27-30938323-6'}
+                <strong>Titular:</strong> {holderInput || '[completar]'} | <strong>CUIT:</strong> {cuitInput || '[completar]'}
               </div>
               <div style={{
                 display: 'inline-flex',

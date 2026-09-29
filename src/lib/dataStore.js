@@ -66,6 +66,20 @@ class DataStore {
     this.transferHolder = '[Titular de la cuenta — COMPLETAR]';
     this.transferCuit = '[CUIT — COMPLETAR]';
     this.transferAlias = 'alias.dulcevalentin.completar';
+    // Copia local de los ultimos datos de transferencia conocidos, solo para
+    // mostrar algo mientras carga la base. La fuente de verdad es Supabase
+    // (filas _config_* de categories): fetchCategoriesFromSupabase la pisa.
+    if (typeof window !== 'undefined') {
+      try {
+        const cached = JSON.parse(localStorage.getItem('dulcevalentin_transfer_details') || 'null');
+        if (cached) {
+          if (cached.alias1) this.transferAlias1 = cached.alias1;
+          if (cached.alias2) this.transferAlias2 = cached.alias2;
+          if (cached.holder) this.transferHolder = cached.holder;
+          if (cached.cuit) this.transferCuit = cached.cuit;
+        }
+      } catch (e) {}
+    }
     this.listeners = [];
     
     this.loadProductsFromLocalStorage();
@@ -345,32 +359,22 @@ class DataStore {
     }
   }
 
+  // Antes se leia primero el localStorage del navegador y recien despues lo
+  // de la base: si el alias se cambiaba desde otro dispositivo, este
+  // navegador seguia mostrando (y volvia a guardar) el valor viejo. Ahora
+  // manda siempre lo que vino de Supabase.
   getTransferDetails() {
-    if (typeof window !== 'undefined') {
-      try {
-        const stored = localStorage.getItem('dulcevalentin_transfer_details');
-        if (stored) {
-          const parsed = JSON.parse(stored);
-          if (parsed && (parsed.alias1 || parsed.alias2)) {
-            return {
-              alias1: parsed.alias1 || this.transferAlias1 || 'alias.dulcevalentin.completar',
-              alias2: parsed.alias2 || this.transferAlias2 || 'alias.dulcevalentin.completar',
-              holder: parsed.holder || this.transferHolder || 'María Leandra Bernardi',
-              cuit: parsed.cuit || this.transferCuit || '27-30938323-6'
-            };
-          }
-        }
-      } catch (e) {}
-    }
     return {
-      alias1: this.transferAlias1 || 'alias.dulcevalentin.completar',
-      alias2: this.transferAlias2 || 'alias.dulcevalentin.completar',
-      holder: this.transferHolder || 'María Leandra Bernardi',
-      cuit: this.transferCuit || '27-30938323-6'
+      alias1: this.transferAlias1 || '',
+      alias2: this.transferAlias2 || '',
+      holder: this.transferHolder || '',
+      cuit: this.transferCuit || ''
     };
   }
 
-  setTransferDetails({ alias1, alias2, holder, cuit }) {
+  // Devuelve { ok, error } para que el panel avise si no se pudo guardar,
+  // en vez de mostrar "guardado" aunque la base lo haya rechazado.
+  async setTransferDetails({ alias1, alias2, holder, cuit }) {
     const current = this.getTransferDetails();
     const updated = {
       alias1: alias1 !== undefined ? (alias1 || '').trim().toLowerCase() : current.alias1,
@@ -385,19 +389,29 @@ class DataStore {
     this.transferCuit = updated.cuit;
 
     if (typeof window !== 'undefined') {
-      localStorage.setItem('dulcevalentin_transfer_details', JSON.stringify(updated));
+      try {
+        localStorage.setItem('dulcevalentin_transfer_details', JSON.stringify(updated));
+      } catch (e) {}
     }
 
+    let result = { ok: true, error: null };
     if (supabase) {
-      supabase.from('categories').upsert([
-        { id: '_config_alias1', name: updated.alias1, subcategories: [] },
-        { id: '_config_alias2', name: updated.alias2, subcategories: [] },
-        { id: '_config_holder', name: updated.holder, subcategories: [] },
-        { id: '_config_cuit', name: updated.cuit, subcategories: [] }
-      ]).then(() => {}).catch(() => {});
+      try {
+        const { error } = await supabase.from('categories').upsert([
+          { id: '_config_alias1', name: updated.alias1, subcategories: [] },
+          { id: '_config_alias2', name: updated.alias2, subcategories: [] },
+          { id: '_config_holder', name: updated.holder, subcategories: [] },
+          { id: '_config_cuit', name: updated.cuit, subcategories: [] }
+        ]);
+        if (error) result = { ok: false, error };
+      } catch (err) {
+        result = { ok: false, error: err };
+      }
+      if (!result.ok) console.warn('Error guardando datos de transferencia:', result.error);
     }
 
     this.notify();
+    return result;
   }
 
   getTransferAlias() {
