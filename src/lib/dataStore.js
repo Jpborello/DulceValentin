@@ -10,15 +10,36 @@ import {
 export const INITIAL_PRODUCTS = CATALOG_PRODUCTS;
 export const CATEGORIES = CATALOG_CATEGORIES;
 
+// Helper para aplanar arrays anidados (si existieran) y quitar duplicados y valores vacios
+export function flattenImageUrls(val) {
+  if (!val) return [];
+  const result = [];
+  function rec(item) {
+    if (Array.isArray(item)) {
+      item.forEach(rec);
+    } else if (typeof item === 'string' && item.trim()) {
+      result.push(item.trim());
+    }
+  }
+  rec(val);
+  return Array.from(new Set(result));
+}
+
 // Helper para obtener siempre un array de URLs de imagenes valido para cualquier producto
 export function getProductImages(product) {
   if (!product) return ['/logo.png'];
-  if (Array.isArray(product.image_urls) && product.image_urls.length > 0) {
-    const valid = product.image_urls.filter(Boolean);
+  if (product.image_urls) {
+    const valid = flattenImageUrls(product.image_urls).filter(u => u && u !== '/logo.png');
     if (valid.length > 0) return valid;
   }
   if (product.image_url) {
-    return [product.image_url];
+    if (Array.isArray(product.image_url)) {
+      const valid = flattenImageUrls(product.image_url).filter(u => u && u !== '/logo.png');
+      if (valid.length > 0) return valid;
+    } else if (typeof product.image_url === 'string' && product.image_url.trim()) {
+      const trimmed = product.image_url.trim();
+      if (trimmed !== '/logo.png') return [trimmed];
+    }
   }
   return ['/logo.png'];
 }
@@ -100,12 +121,13 @@ class DataStore {
     try {
       const overrides = {};
       this.products.forEach(p => {
+        const cleanUrls = flattenImageUrls(p.image_urls);
         overrides[p.id] = {
           price: p.price,
           wholesale_price: p.wholesale_price,
           stock: p.stock,
-          image_url: p.image_url,
-          image_urls: p.image_urls,
+          image_url: p.image_url || (cleanUrls[0] || null),
+          image_urls: cleanUrls,
           is_offer: p.is_offer,
           colors: p.colors
         };
@@ -125,7 +147,14 @@ class DataStore {
         if (overrides && typeof overrides === 'object') {
           this.products = this.products.map(p => {
             if (overrides[p.id]) {
-              return { ...p, ...overrides[p.id] };
+              const ov = overrides[p.id];
+              const flatUrls = flattenImageUrls(ov.image_urls || p.image_urls);
+              return {
+                ...p,
+                ...ov,
+                image_urls: flatUrls,
+                image_url: ov.image_url || (flatUrls[0] || null)
+              };
             }
             return p;
           });
@@ -274,9 +303,9 @@ class DataStore {
           wholesale_price: Number(dbP.wholesale_price),
           stock: Number(dbP.stock),
           sales_count: dbP.sales_count ?? 0,
-          image_urls: Array.isArray(dbP.image_urls) && dbP.image_urls.length > 0
-            ? dbP.image_urls.filter(Boolean)
-            : (dbP.image_url ? [dbP.image_url] : (localP.image_url ? [localP.image_url] : []))
+          image_urls: flattenImageUrls(dbP.image_urls).length > 0
+            ? flattenImageUrls(dbP.image_urls)
+            : (dbP.image_url ? flattenImageUrls(dbP.image_url) : (localP.image_url ? flattenImageUrls(localP.image_url) : []))
         };
       });
 
@@ -289,9 +318,9 @@ class DataStore {
           wholesale_price: Number(p.wholesale_price),
           stock: Number(p.stock),
           sales_count: p.sales_count ?? 0,
-          image_urls: Array.isArray(p.image_urls) && p.image_urls.length > 0
-            ? p.image_urls.filter(Boolean)
-            : (p.image_url ? [p.image_url] : [])
+          image_urls: flattenImageUrls(p.image_urls).length > 0
+            ? flattenImageUrls(p.image_urls)
+            : (p.image_url ? flattenImageUrls(p.image_url) : [])
         }));
 
       this.products = [...merged, ...extraFromDb];
@@ -697,19 +726,27 @@ class DataStore {
     delete dbUpdates.code;
 
     // Sincronizar image_urls y image_url (portada)
-    if (updates.image_urls && Array.isArray(updates.image_urls)) {
-      const validUrls = updates.image_urls.filter(Boolean);
-      updatedP.image_urls = validUrls;
-      dbUpdates.image_urls = validUrls;
-      if (validUrls.length > 0) {
-        updatedP.image_url = validUrls[0];
-        dbUpdates.image_url = validUrls[0];
-      }
-    } else if (updates.image_url && !updates.image_urls) {
-      const currentList = Array.isArray(existingP?.image_urls) ? [...existingP.image_urls] : [];
-      if (!currentList.includes(updates.image_url)) {
-        updatedP.image_urls = [updates.image_url, ...currentList.filter(Boolean)];
-        dbUpdates.image_urls = updatedP.image_urls;
+    const hasIncomingArray = updates.image_urls !== undefined || Array.isArray(updates.image_url);
+    if (hasIncomingArray) {
+      const incoming = updates.image_urls !== undefined ? updates.image_urls : updates.image_url;
+      const cleanUrls = flattenImageUrls(incoming).filter(u => u && u !== '/logo.png');
+      updatedP.image_urls = cleanUrls;
+      dbUpdates.image_urls = cleanUrls;
+      const cover = cleanUrls[0] || null;
+      updatedP.image_url = cover;
+      dbUpdates.image_url = cover;
+    } else if (updates.image_url !== undefined && typeof updates.image_url === 'string') {
+      const single = updates.image_url.trim();
+      if (!single || single === '/logo.png') {
+        updatedP.image_url = null;
+        dbUpdates.image_url = null;
+      } else {
+        const currentList = Array.isArray(existingP?.image_urls) ? flattenImageUrls(existingP.image_urls) : [];
+        const nextList = [single, ...currentList.filter(u => u !== single)];
+        updatedP.image_url = single;
+        dbUpdates.image_url = single;
+        updatedP.image_urls = nextList;
+        dbUpdates.image_urls = nextList;
       }
     }
 

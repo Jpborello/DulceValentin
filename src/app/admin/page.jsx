@@ -437,9 +437,16 @@ export default function AdminPage() {
     showSuccessNotice(`${newProducts.length} productos importados masivamente, cada uno con su código único.`);
   };
 
-  const handleImageUpdate = (id, newImageUrl) => {
-    dataStore.updateProduct(id, { image_url: newImageUrl });
-    showSuccessNotice('Imagen del producto actualizada.');
+  const handleImageUpdate = (id, newImages) => {
+    if (Array.isArray(newImages)) {
+      dataStore.updateProduct(id, {
+        image_urls: newImages,
+        image_url: newImages[0] || null
+      });
+    } else {
+      dataStore.updateProduct(id, { image_url: newImages });
+    }
+    showSuccessNotice('Imágenes del producto actualizadas.');
   };
 
   const normalizeSearch = (str) =>

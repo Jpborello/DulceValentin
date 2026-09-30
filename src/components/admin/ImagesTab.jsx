@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   UploadCloud, Loader2, CheckCircle2, AlertCircle, Star, Trash2, ArrowLeft, ArrowRight,
   Image as ImageIcon, Search, Link2, Maximize2, ImageOff
@@ -113,6 +113,11 @@ export default function ImagesTab({ products, onUpdateImage }) {
 function ProductImageCard({ product, onUpdateImage }) {
   const initial = realImagesOf(product);
   const [images, setImages] = useState(initial);
+
+  useEffect(() => {
+    setImages(realImagesOf(product));
+  }, [product.image_urls, product.image_url]);
+
   const [selected, setSelected] = useState(0);
   const [urlInput, setUrlInput] = useState('');
   const [showUrl, setShowUrl] = useState(false);
