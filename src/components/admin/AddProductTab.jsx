@@ -32,6 +32,7 @@ export default function AddProductTab({ categories, onCreateProduct }) {
 
   // Para prenda de talle único (cuando sizes está vacío)
   const [singleColors, setSingleColors] = useState([]);
+  const [singleColorStock, setSingleColorStock] = useState({});
   const [singleColorInput, setSingleColorInput] = useState('');
 
   const [isUploadingImg, setIsUploadingImg] = useState(false);
@@ -58,13 +59,18 @@ export default function AddProductTab({ categories, onCreateProduct }) {
     if (!trimmed || sizes.includes(trimmed)) return;
     const initialStock = Math.max(1, parseInt(newSizeStock, 10) || 5);
     const initialColors = defaultCategoryColors.length > 0 ? [...defaultCategoryColors] : ['Surtido'];
+    const initialColorStock = {};
+    initialColors.forEach((c) => {
+      initialColorStock[c] = initialStock;
+    });
 
     setSizes((prev) => [...prev, trimmed]);
     setSizeConfigs((prev) => ({
       ...prev,
       [trimmed]: {
-        stock: initialStock,
-        colors: initialColors
+        colors: initialColors,
+        color_stock: initialColorStock,
+        bulkStock: String(initialStock)
       }
     }));
     setNewSizeName('');
@@ -80,28 +86,58 @@ export default function AddProductTab({ categories, onCreateProduct }) {
     });
   };
 
-  const handleUpdateStockForSize = (size, val) => {
+  const handleUpdateColorStock = (size, color, val) => {
     const num = Math.max(0, parseInt(val, 10) || 0);
-    setSizeConfigs((prev) => ({
-      ...prev,
-      [size]: {
-        ...(prev[size] || { colors: [] }),
-        stock: num
-      }
-    }));
-  };
-
-  const handleAddColorToSize = (size, colorToAdd) => {
-    const trimmed = (colorToAdd || '').trim();
-    if (!trimmed) return;
     setSizeConfigs((prev) => {
-      const current = prev[size] || { stock: 5, colors: [] };
-      if (current.colors.includes(trimmed)) return prev;
+      const current = prev[size] || { colors: [], color_stock: {} };
       return {
         ...prev,
         [size]: {
           ...current,
-          colors: [...current.colors, trimmed]
+          color_stock: {
+            ...(current.color_stock || {}),
+            [color]: num
+          }
+        }
+      };
+    });
+  };
+
+  const handleApplyBulkStockToSize = (size, stockVal) => {
+    const num = Math.max(0, parseInt(stockVal, 10) || 0);
+    setSizeConfigs((prev) => {
+      const current = prev[size] || { colors: [], color_stock: {} };
+      const updatedColorStock = {};
+      (current.colors || []).forEach((c) => {
+        updatedColorStock[c] = num;
+      });
+      return {
+        ...prev,
+        [size]: {
+          ...current,
+          color_stock: updatedColorStock,
+          bulkStock: String(num)
+        }
+      };
+    });
+  };
+
+  const handleAddColorToSize = (size, colorToAdd, defaultVal = 5) => {
+    const trimmed = (colorToAdd || '').trim();
+    if (!trimmed) return;
+    setSizeConfigs((prev) => {
+      const current = prev[size] || { colors: [], color_stock: {}, bulkStock: '5' };
+      if (current.colors.includes(trimmed)) return prev;
+      const initialStock = Math.max(0, parseInt(current.bulkStock, 10) || defaultVal);
+      return {
+        ...prev,
+        [size]: {
+          ...current,
+          colors: [...current.colors, trimmed],
+          color_stock: {
+            ...(current.color_stock || {}),
+            [trimmed]: initialStock
+          }
         }
       };
     });
@@ -109,36 +145,53 @@ export default function AddProductTab({ categories, onCreateProduct }) {
 
   const handleRemoveColorFromSize = (size, colorToRemove) => {
     setSizeConfigs((prev) => {
-      const current = prev[size] || { stock: 5, colors: [] };
+      const current = prev[size] || { colors: [], color_stock: {} };
+      const updatedColors = current.colors.filter((c) => c !== colorToRemove);
+      const updatedColorStock = { ...(current.color_stock || {}) };
+      delete updatedColorStock[colorToRemove];
       return {
         ...prev,
         [size]: {
           ...current,
-          colors: current.colors.filter((c) => c !== colorToRemove)
+          colors: updatedColors,
+          color_stock: updatedColorStock
         }
       };
     });
   };
 
   // Manejo de colores para talle único
-  const handleAddSingleColor = (colorToAdd) => {
+  const handleAddSingleColor = (colorToAdd, defaultVal = 5) => {
     const trimmed = (colorToAdd || '').trim();
     if (!trimmed || singleColors.includes(trimmed)) return;
     setSingleColors((prev) => [...prev, trimmed]);
+    setSingleColorStock((prev) => ({ ...prev, [trimmed]: defaultVal }));
   };
 
   const handleRemoveSingleColor = (colorToRemove) => {
     setSingleColors((prev) => prev.filter((c) => c !== colorToRemove));
+    setSingleColorStock((prev) => {
+      const copy = { ...prev };
+      delete copy[colorToRemove];
+      return copy;
+    });
+  };
+
+  const handleUpdateSingleColorStock = (color, val) => {
+    const num = Math.max(0, parseInt(val, 10) || 0);
+    setSingleColorStock((prev) => ({ ...prev, [color]: num }));
   };
 
   // Cálculo de stock total
   const calculatedTotalStock = sizes.length > 0
     ? sizes.reduce((acc, s) => {
-        const cfg = sizeConfigs[s] || { stock: 0, colors: [] };
-        const count = cfg.colors.length > 0 ? cfg.colors.length : 1;
-        return acc + (cfg.stock * count);
+        const cfg = sizeConfigs[s] || { colors: [], color_stock: {} };
+        const subtotal = (cfg.colors || []).reduce((sum, c) => sum + (parseInt(cfg.color_stock?.[c], 10) || 0), 0);
+        return acc + subtotal;
       }, 0)
-    : Math.max(0, parseInt(form.stock, 10) || 0);
+    : (singleColors.length > 0
+        ? singleColors.reduce((sum, c) => sum + (parseInt(singleColorStock[c], 10) || 0), 0)
+        : Math.max(0, parseInt(form.stock, 10) || 0));
 
   // Subida en lote de multiples fotos convirtiendo a .webp
   const handleFileSelect = async (e) => {
@@ -238,6 +291,7 @@ export default function AddProductTab({ categories, onCreateProduct }) {
     setNewSizeStock('5');
     setCustomColorInputs({});
     setSingleColors([]);
+    setSingleColorStock({});
     setSingleColorInput('');
   };
 
@@ -259,19 +313,35 @@ export default function AddProductTab({ categories, onCreateProduct }) {
 
     if (sizes.length > 0) {
       sizes.forEach((s) => {
-        const cfg = sizeConfigs[s] || { stock: 5, colors: [] };
+        const cfg = sizeConfigs[s] || { colors: [], color_stock: {} };
         const cleanColors = Array.from(new Set((cfg.colors || []).filter(Boolean)));
-        const stockVal = Math.max(0, parseInt(cfg.stock, 10) || 0);
+        const finalColorStock = {};
+        let sizeTotalStock = 0;
+
+        cleanColors.forEach((c) => {
+          const val = Math.max(0, parseInt(cfg.color_stock?.[c], 10) || 0);
+          finalColorStock[c] = val;
+          sizeTotalStock += val;
+          allUniqueColors.add(c);
+        });
+
         cleanStockPerSize[s] = {
-          stock: stockVal,
-          colors: cleanColors.length > 0 ? cleanColors : ['Surtido']
+          stock: sizeTotalStock,
+          colors: cleanColors.length > 0 ? cleanColors : ['Surtido'],
+          color_stock: finalColorStock
         };
-        cleanColors.forEach((c) => allUniqueColors.add(c));
-        finalCalculatedStock += (cleanColors.length > 0 ? stockVal * cleanColors.length : stockVal);
+
+        finalCalculatedStock += sizeTotalStock;
       });
     } else {
-      finalCalculatedStock = Math.max(0, parseInt(form.stock, 10) || 0);
-      singleColors.forEach((c) => allUniqueColors.add(c));
+      if (singleColors.length > 0) {
+        singleColors.forEach((c) => {
+          finalCalculatedStock += Math.max(0, parseInt(singleColorStock[c], 10) || 0);
+          allUniqueColors.add(c);
+        });
+      } else {
+        finalCalculatedStock = Math.max(0, parseInt(form.stock, 10) || 0);
+      }
     }
 
     const finalColorsList = Array.from(allUniqueColors);
@@ -430,9 +500,9 @@ export default function AddProductTab({ categories, onCreateProduct }) {
           {sizes.length > 0 ? (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginBottom: '14px' }}>
               {sizes.map((s) => {
-                const cfg = sizeConfigs[s] || { stock: 5, colors: [] };
+                const cfg = sizeConfigs[s] || { colors: [], color_stock: {}, bulkStock: '5' };
                 const numColors = cfg.colors.length;
-                const subtotal = numColors > 0 ? numColors * cfg.stock : cfg.stock;
+                const subtotal = (cfg.colors || []).reduce((sum, c) => sum + (parseInt(cfg.color_stock?.[c], 10) || 0), 0);
                 const customInputVal = customColorInputs[s] || '';
 
                 return (
@@ -463,18 +533,32 @@ export default function AddProductTab({ categories, onCreateProduct }) {
                         </span>
                       </div>
 
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                        <label style={{ fontSize: '0.78rem', fontWeight: 700, color: 'var(--text-main)' }}>
-                          Stock por cada color:
-                        </label>
+                      {/* Herramienta de stock masivo y eliminar talle */}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <span style={{ fontSize: '0.74rem', color: 'var(--text-muted)' }}>Fijar a todos:</span>
                         <input
                           type="number"
                           min="0"
-                          value={cfg.stock}
-                          onChange={(e) => handleUpdateStockForSize(s, e.target.value)}
+                          value={cfg.bulkStock || '5'}
+                          onChange={(e) => {
+                            const v = e.target.value;
+                            setSizeConfigs((prev) => ({
+                              ...prev,
+                              [s]: { ...(prev[s] || {}), bulkStock: v }
+                            }));
+                          }}
                           className="form-input"
-                          style={{ width: '65px', padding: '4px 6px', fontSize: '0.82rem', fontWeight: 800, textAlign: 'center' }}
+                          style={{ width: '48px', padding: '3px 4px', fontSize: '0.78rem', textAlign: 'center' }}
                         />
+                        <button
+                          type="button"
+                          onClick={() => handleApplyBulkStockToSize(s, cfg.bulkStock || '5')}
+                          className="btn-secondary"
+                          style={{ padding: '3px 8px', fontSize: '0.72rem' }}
+                          title="Aplica este stock a todos los colores de este talle"
+                        >
+                          Aplicar
+                        </button>
                         <button
                           type="button"
                           onClick={() => handleRemoveSize(s)}
@@ -485,8 +569,9 @@ export default function AddProductTab({ categories, onCreateProduct }) {
                             color: '#DC2626',
                             borderRadius: '6px',
                             cursor: 'pointer',
-                            padding: '5px 7px',
-                            display: 'flex'
+                            padding: '4px 6px',
+                            display: 'flex',
+                            marginLeft: '4px'
                           }}
                         >
                           <Trash2 size={13} />
@@ -494,31 +579,49 @@ export default function AddProductTab({ categories, onCreateProduct }) {
                       </div>
                     </div>
 
-                    {/* Chips de colores de este talle */}
+                    {/* Chips con stock individual por color */}
                     <div style={{ marginBottom: '8px' }}>
-                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '5px' }}>
+                      <label style={{ display: 'block', fontSize: '0.74rem', fontWeight: 700, color: 'var(--text-muted)', marginBottom: '5px' }}>
+                        Colores y Stock de cada uno en Talle {s}:
+                      </label>
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
                         {numColors === 0 ? (
                           <span style={{ fontSize: '0.76rem', color: '#DC2626', fontStyle: 'italic' }}>
                             ⚠️ Sin colores en este talle. Agregá uno abajo.
                           </span>
                         ) : (
                           cfg.colors.map((c) => (
-                            <span
+                            <div
                               key={c}
                               style={{
                                 display: 'inline-flex',
                                 alignItems: 'center',
-                                gap: '5px',
+                                gap: '6px',
                                 padding: '3px 8px',
-                                borderRadius: '14px',
+                                borderRadius: '8px',
                                 backgroundColor: 'var(--bg-card)',
                                 border: '1px solid var(--border-color)',
-                                fontSize: '0.76rem',
-                                fontWeight: 700
+                                boxShadow: '0 1px 2px rgba(0,0,0,0.03)'
                               }}
                             >
                               <Palette size={11} style={{ color: 'var(--accent-gold)' }} />
-                              {c}
+                              <span style={{ fontSize: '0.78rem', fontWeight: 800 }}>{c}</span>
+                              <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>Stock:</span>
+                              <input
+                                type="number"
+                                min="0"
+                                value={cfg.color_stock?.[c] ?? 0}
+                                onChange={(e) => handleUpdateColorStock(s, c, e.target.value)}
+                                className="form-input"
+                                style={{
+                                  width: '48px',
+                                  padding: '2px 4px',
+                                  fontSize: '0.8rem',
+                                  fontWeight: 800,
+                                  textAlign: 'center',
+                                  borderRadius: '4px'
+                                }}
+                              />
                               <button
                                 type="button"
                                 onClick={() => handleRemoveColorFromSize(s, c)}
@@ -527,7 +630,7 @@ export default function AddProductTab({ categories, onCreateProduct }) {
                               >
                                 <X size={11} />
                               </button>
-                            </span>
+                            </div>
                           ))
                         )}
                       </div>
@@ -588,9 +691,11 @@ export default function AddProductTab({ categories, onCreateProduct }) {
                     </div>
 
                     {/* Subtotal del talle */}
-                    <div style={{ marginTop: '6px', paddingTop: '6px', borderTop: '1px dashed var(--border-color)', fontSize: '0.74rem', color: '#059669', fontWeight: 700, display: 'flex', justifyContent: 'space-between' }}>
+                    <div style={{ marginTop: '6px', paddingTop: '6px', borderTop: '1px dashed var(--border-color)', fontSize: '0.74rem', color: '#059669', fontWeight: 700, display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap', gap: '4px' }}>
                       <span>Subtotal Talle {s}:</span>
-                      <span>{numColors} col. × {cfg.stock} un. = <strong>{subtotal} prendas</strong></span>
+                      <span>
+                        <strong>{subtotal} prendas</strong> ({cfg.colors.map(c => `${c}: ${cfg.color_stock?.[c] ?? 0}`).join(', ')})
+                      </span>
                     </div>
                   </div>
                 );
@@ -612,28 +717,36 @@ export default function AddProductTab({ categories, onCreateProduct }) {
                 </span>
               </div>
 
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '5px', marginBottom: '8px' }}>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginBottom: '8px' }}>
                 {singleColors.length === 0 ? (
                   <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)', fontStyle: 'italic' }}>
                     Sin colores específicos (se asignarán los colores típicos de la categoría)
                   </span>
                 ) : (
                   singleColors.map((c) => (
-                    <span
+                    <div
                       key={c}
                       style={{
                         display: 'inline-flex',
                         alignItems: 'center',
                         gap: '5px',
                         padding: '3px 8px',
-                        borderRadius: '14px',
+                        borderRadius: '8px',
                         backgroundColor: 'var(--bg-card)',
-                        border: '1px solid var(--border-color)',
-                        fontSize: '0.76rem',
-                        fontWeight: 700
+                        border: '1px solid var(--border-color)'
                       }}
                     >
-                      {c}
+                      <Palette size={11} style={{ color: 'var(--accent-gold)' }} />
+                      <span style={{ fontSize: '0.78rem', fontWeight: 800 }}>{c}</span>
+                      <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>Stock:</span>
+                      <input
+                        type="number"
+                        min="0"
+                        value={singleColorStock[c] ?? 0}
+                        onChange={(e) => handleUpdateSingleColorStock(c, e.target.value)}
+                        className="form-input"
+                        style={{ width: '48px', padding: '2px 4px', fontSize: '0.78rem', fontWeight: 800, textAlign: 'center' }}
+                      />
                       <button
                         type="button"
                         onClick={() => handleRemoveSingleColor(c)}
@@ -642,7 +755,7 @@ export default function AddProductTab({ categories, onCreateProduct }) {
                       >
                         <X size={11} />
                       </button>
-                    </span>
+                    </div>
                   ))
                 )}
               </div>

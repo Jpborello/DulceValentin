@@ -353,10 +353,20 @@ export default function ProductDetailModal({ product, isOpen, onClose, onAddToCa
                 <span className="product-detail-size-label" style={{ display: 'inline-flex', alignItems: 'center', gap: '5px' }}>
                   <Palette size={14} style={{ color: 'var(--accent-gold)' }} />
                   Color: {selectedColor ? <strong>{selectedColor}</strong> : 'Seleccionar'}
+                  {selectedColor && (
+                    <span style={{ fontSize: '0.78rem', color: currentVariantStock > 0 ? '#059669' : '#DC2626', marginLeft: '6px', fontWeight: 600 }}>
+                      ({currentVariantStock > 0 ? `${currentVariantStock} disp.` : 'Sin stock'})
+                    </span>
+                  )}
                 </span>
                 <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginTop: '6px' }}>
                   {availableColors.map((color) => {
                     const isSelected = selectedColor === color;
+                    const stockForThisColor = selectedSize
+                      ? getProductStockForSizeColor(product, selectedSize, color)
+                      : Number(product.stock) || 0;
+                    const isOut = stockForThisColor <= 0;
+
                     return (
                       <button
                         key={color}
@@ -371,9 +381,12 @@ export default function ProductDetailModal({ product, isOpen, onClose, onAddToCa
                           transition: 'all 0.2s ease',
                           border: isSelected ? '2px solid var(--text-main)' : '1px solid var(--border-color)',
                           backgroundColor: isSelected ? 'var(--text-main)' : 'var(--bg-surface-elevated)',
-                          color: isSelected ? 'var(--bg-page)' : 'var(--text-main)',
-                          boxShadow: isSelected ? '0 2px 8px rgba(15,23,42,0.25)' : 'none'
+                          color: isSelected ? 'var(--bg-page)' : (isOut ? 'var(--text-muted)' : 'var(--text-main)'),
+                          opacity: isOut ? 0.65 : 1,
+                          boxShadow: isSelected ? '0 2px 8px rgba(15,23,42,0.25)' : 'none',
+                          textDecoration: isOut ? 'line-through' : 'none'
                         }}
+                        title={isOut ? `${color} (Sin stock)` : `${color} (${stockForThisColor} disp.)`}
                       >
                         {color}
                       </button>
@@ -398,15 +411,15 @@ export default function ProductDetailModal({ product, isOpen, onClose, onAddToCa
             <button
               onClick={handleAdd}
               className="btn-add-cart"
-              disabled={product.stock <= 0}
-              style={{ marginTop: '16px' }}
+              disabled={currentVariantStock <= 0}
+              style={{ marginTop: '16px', opacity: currentVariantStock <= 0 ? 0.55 : 1 }}
             >
               <ShoppingCart size={16} />
-              {product.stock > 0
+              {currentVariantStock > 0
                 ? (selectedSize || selectedColor 
                     ? `Agregar (${[selectedSize ? `Talle ${selectedSize}` : null, selectedColor ? `Color ${selectedColor}` : null].filter(Boolean).join(' • ')})` 
                     : 'Agregar al Carrito') 
-                : 'Sin Stock'}
+                : (selectedSize || selectedColor ? 'Sin stock en esta opción' : 'Sin Stock')}
             </button>
           </div>
         </div>

@@ -252,19 +252,42 @@ export const POPULAR_COLORS = [
  * Compatible tanto con el formato nuevo { stock, colors } como con el formato numérico heredado.
  */
 export const getSizeDetails = (product, size) => {
-  if (!product || !size) return { stock: 0, colors: [], totalStock: 0 };
+  if (!product || !size) return { stock: 0, colors: [], totalStock: 0, color_stock: {} };
   const raw = product.stock_per_size?.[size];
   if (raw && typeof raw === 'object' && !Array.isArray(raw)) {
-    const stock = Math.max(0, parseInt(raw.stock ?? raw.quantity, 10) || 0);
+    const fallbackStock = Math.max(0, parseInt(raw.stock ?? raw.quantity, 10) || 0);
     const colors = Array.isArray(raw.colors) && raw.colors.length > 0
       ? raw.colors
       : getProductColors(product);
-    const totalStock = colors.length > 0 ? stock * colors.length : stock;
-    return { stock, colors, totalStock };
+
+    // Mapeo granular de stock por color: { 'Negro': 4, 'Blanco': 2 }
+    const color_stock = {};
+    if (raw.color_stock && typeof raw.color_stock === 'object') {
+      colors.forEach((c) => {
+        color_stock[c] = raw.color_stock[c] !== undefined
+          ? Math.max(0, parseInt(raw.color_stock[c], 10) || 0)
+          : fallbackStock;
+      });
+    } else {
+      colors.forEach((c) => {
+        color_stock[c] = fallbackStock;
+      });
+    }
+
+    const hasSpecificColors = colors.length > 0;
+    const totalStock = hasSpecificColors
+      ? colors.reduce((acc, c) => acc + (color_stock[c] ?? 0), 0)
+      : fallbackStock;
+
+    return { stock: fallbackStock, colors, totalStock, color_stock };
   }
   const stock = typeof raw === 'number' ? raw : (parseInt(raw, 10) || 0);
   const colors = getProductColors(product);
-  return { stock, colors, totalStock: stock };
+  const color_stock = {};
+  colors.forEach((c) => {
+    color_stock[c] = stock;
+  });
+  return { stock, colors, totalStock: stock, color_stock };
 };
 
 /**
@@ -289,6 +312,9 @@ export const getProductStockForSizeColor = (product, size, color) => {
   if (size) {
     const details = getSizeDetails(product, size);
     if (color && details.colors.length > 0 && !details.colors.includes(color)) return 0;
+    if (color && details.color_stock && details.color_stock[color] !== undefined) {
+      return details.color_stock[color];
+    }
     return details.stock;
   }
   return Number(product.stock) || 0;
