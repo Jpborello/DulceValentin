@@ -345,9 +345,11 @@ export default function AdminPage() {
     return result;
   };
 
-  const handleUpdateSizesColors = async (id, { sizes, stock_per_size, colors }) => {
-    await dataStore.updateProduct(id, { sizes, stock_per_size, colors });
-    showSuccessNotice('Talles y colores actualizados correctamente.');
+  const handleUpdateSizesColors = async (id, { sizes, stock_per_size, colors, stock }) => {
+    const updates = { sizes, stock_per_size, colors };
+    if (stock !== undefined && stock !== null) updates.stock = Number(stock);
+    await dataStore.updateProduct(id, updates);
+    showSuccessNotice('Talles, colores y stock actualizados correctamente.');
   };
 
   const handleToggleActive = async (id, currentIsActive) => {

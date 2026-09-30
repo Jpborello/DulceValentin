@@ -243,6 +243,57 @@ export const getProductColors = (product) => {
   return ['Negro', 'Blanco', 'Gris', 'Surtido'];
 };
 
+export const POPULAR_COLORS = [
+  'Negro', 'Blanco', 'Gris', 'Azul', 'Rojo', 'Verde', 'Amarillo', 'Rosa', 'Beige', 'Marrón', 'Lila', 'Bordo', 'Surtido'
+];
+
+/**
+ * Obtiene los detalles de stock y colores para un talle específico de un producto.
+ * Compatible tanto con el formato nuevo { stock, colors } como con el formato numérico heredado.
+ */
+export const getSizeDetails = (product, size) => {
+  if (!product || !size) return { stock: 0, colors: [], totalStock: 0 };
+  const raw = product.stock_per_size?.[size];
+  if (raw && typeof raw === 'object' && !Array.isArray(raw)) {
+    const stock = Math.max(0, parseInt(raw.stock ?? raw.quantity, 10) || 0);
+    const colors = Array.isArray(raw.colors) && raw.colors.length > 0
+      ? raw.colors
+      : getProductColors(product);
+    const totalStock = colors.length > 0 ? stock * colors.length : stock;
+    return { stock, colors, totalStock };
+  }
+  const stock = typeof raw === 'number' ? raw : (parseInt(raw, 10) || 0);
+  const colors = getProductColors(product);
+  return { stock, colors, totalStock: stock };
+};
+
+/**
+ * Devuelve los colores disponibles para un talle dado (o los generales del producto si no hay talles o no tiene colores propios)
+ */
+export const getProductColorsForSize = (product, size) => {
+  if (!product) return ['Surtido'];
+  if (size && product.stock_per_size?.[size]) {
+    const raw = product.stock_per_size[size];
+    if (raw && typeof raw === 'object' && Array.isArray(raw.colors) && raw.colors.length > 0) {
+      return raw.colors;
+    }
+  }
+  return getProductColors(product);
+};
+
+/**
+ * Devuelve el stock disponible para una combinación específica de talle y color.
+ */
+export const getProductStockForSizeColor = (product, size, color) => {
+  if (!product) return 0;
+  if (size) {
+    const details = getSizeDetails(product, size);
+    if (color && details.colors.length > 0 && !details.colors.includes(color)) return 0;
+    return details.stock;
+  }
+  return Number(product.stock) || 0;
+};
+
 const ADULT_SIZES = ['S', 'M', 'L', 'XL', 'XXL'];
 const KIDS_SIZES = ['2', '4', '6', '8', '10', '12', '14', '16'];
 

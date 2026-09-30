@@ -59,13 +59,21 @@ export function getThumbUrl(fullUrl) {
   return fullUrl.replace(/\.webp$/, '-thumb.webp');
 }
 
-// Reexportados desde productPricing.js (sin dependencias) para no romper a
-// nadie que ya los importaba desde aca. Las paginas de servidor
-// (categoria/producto) importan directo de productPricing.js para no
-// arrastrar el singleton de mas abajo (dispara un fetch a Supabase al
-// instanciarse, algo que no queremos en un Server Component).
 import { getProductPrice, getProductPriceRange } from './productPricing';
-export { getProductPrice, getProductPriceRange };
+import {
+  getSizeDetails,
+  getProductColorsForSize,
+  getProductStockForSizeColor,
+  POPULAR_COLORS
+} from './catalogData';
+export {
+  getProductPrice,
+  getProductPriceRange,
+  getSizeDetails,
+  getProductColorsForSize,
+  getProductStockForSizeColor,
+  POPULAR_COLORS
+};
 
 // In-Memory / LocalStorage State Manager with Supabase Mirror
 class DataStore {
@@ -129,7 +137,9 @@ class DataStore {
           image_url: p.image_url || (cleanUrls[0] || null),
           image_urls: cleanUrls,
           is_offer: p.is_offer,
-          colors: p.colors
+          colors: p.colors,
+          sizes: p.sizes,
+          stock_per_size: p.stock_per_size
         };
       });
       localStorage.setItem('dulcevalentin_products_overrides', JSON.stringify(overrides));
@@ -153,7 +163,9 @@ class DataStore {
                 ...p,
                 ...ov,
                 image_urls: flatUrls,
-                image_url: ov.image_url || (flatUrls[0] || null)
+                image_url: ov.image_url || (flatUrls[0] || null),
+                sizes: ov.sizes ?? p.sizes,
+                stock_per_size: ov.stock_per_size ?? p.stock_per_size
               };
             }
             return p;
@@ -1149,11 +1161,14 @@ class DataStore {
     const colors = Array.isArray(data.colors) ? data.colors.map((c) => c.trim()).filter(Boolean) : [];
     const stock = parseInt(data.stock, 10) || 0;
 
-    // Reparte el mismo stock total entre todos los talles habilitados, asi
-    // StockTab (que muestra stock por talle) arranca con numeros consistentes
-    // en vez de en blanco.
     const stock_per_size = {};
-    sizes.forEach((s) => { stock_per_size[s] = stock; });
+    const stockPerColor = Math.max(1, colors.length > 0 ? Math.floor(stock / colors.length) : stock);
+    sizes.forEach((s) => {
+      stock_per_size[s] = {
+        stock: stockPerColor,
+        colors: colors.length > 0 ? [...colors] : ['Surtido']
+      };
+    });
 
     // Multiples imagenes: toma image_urls si viene un array, y si solo viene image_url arma el array
     const rawUrls = Array.isArray(data.image_urls) ? data.image_urls.filter(Boolean) : [];

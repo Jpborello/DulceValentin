@@ -4,7 +4,7 @@ import { useState, useEffect, useRef } from 'react';
 import Image from 'next/image';
 import { X, ShoppingCart, Tag, Palette, Share2, Check, ChevronLeft, ChevronRight, Camera } from 'lucide-react';
 import useCloseOnBack from '@/lib/useCloseOnBack';
-import { getProductColors } from '@/lib/catalogData';
+import { getProductColors, getProductColorsForSize, getProductStockForSizeColor } from '@/lib/catalogData';
 import { shareProduct } from '@/lib/shareProduct';
 import { getProductImages, getProductPrice } from '@/lib/dataStore';
 
@@ -40,14 +40,15 @@ export default function ProductDetailModal({ product, isOpen, onClose, onAddToCa
     }
   });
 
-  const availableColors = getProductColors(product);
+  const availableColors = getProductColorsForSize(product, selectedSize);
 
   useEffect(() => {
     if (product) {
       const hasSizes = Array.isArray(product.sizes) && product.sizes.length > 0;
-      setSelectedSize(hasSizes ? product.sizes[0] : null);
+      const initialSize = hasSizes ? product.sizes[0] : null;
+      setSelectedSize(initialSize);
       
-      const colors = getProductColors(product);
+      const colors = getProductColorsForSize(product, initialSize);
       setSelectedColor(colors && colors.length > 0 ? colors[0] : null);
 
       setActiveImgIndex(0);
@@ -55,10 +56,21 @@ export default function ProductDetailModal({ product, isOpen, onClose, onAddToCa
     }
   }, [product]);
 
+  const handleSelectSize = (size) => {
+    setSelectedSize(size);
+    const colorsForSize = getProductColorsForSize(product, size);
+    if (!colorsForSize.includes(selectedColor)) {
+      setSelectedColor(colorsForSize[0] || null);
+    }
+  };
+
   if (!isOpen || !product) return null;
 
   const hasSizes = Array.isArray(product.sizes) && product.sizes.length > 0;
-  const isStockOk = product.stock > 10;
+  const currentVariantStock = selectedSize
+    ? getProductStockForSizeColor(product, selectedSize, selectedColor)
+    : Number(product.stock) || 0;
+  const isStockOk = currentVariantStock > 5;
 
   const handlePrevImg = (e) => {
     e?.stopPropagation();
@@ -307,8 +319,10 @@ export default function ProductDetailModal({ product, isOpen, onClose, onAddToCa
             <div className="product-stock-status" style={{ marginTop: '6px' }}>
               <span className={`stock-dot ${isStockOk ? 'stock-in' : 'stock-low'}`}></span>
               <span>
-                {product.stock > 0
-                  ? (isStockOk ? `Stock disponible (${product.stock} un.)` : `Últimas ${product.stock} unidades`)
+                {currentVariantStock > 0
+                  ? (isStockOk
+                      ? `Stock disponible (${currentVariantStock} un.${selectedSize ? ` en talle ${selectedSize}` : ''})`
+                      : `Últimas ${currentVariantStock} unidades${selectedSize ? ` en talle ${selectedSize}` : ''}`)
                   : 'Sin stock por el momento'}
               </span>
             </div>
@@ -323,7 +337,7 @@ export default function ProductDetailModal({ product, isOpen, onClose, onAddToCa
                     <button
                       key={size}
                       type="button"
-                      onClick={() => setSelectedSize(size)}
+                      onClick={() => handleSelectSize(size)}
                       className={`size-pill ${selectedSize === size ? 'active' : ''}`}
                     >
                       {size}
