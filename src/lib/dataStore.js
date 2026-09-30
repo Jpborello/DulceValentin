@@ -1161,14 +1161,18 @@ class DataStore {
     const colors = Array.isArray(data.colors) ? data.colors.map((c) => c.trim()).filter(Boolean) : [];
     const stock = parseInt(data.stock, 10) || 0;
 
-    const stock_per_size = {};
-    const stockPerColor = Math.max(1, colors.length > 0 ? Math.floor(stock / colors.length) : stock);
-    sizes.forEach((s) => {
-      stock_per_size[s] = {
-        stock: stockPerColor,
-        colors: colors.length > 0 ? [...colors] : ['Surtido']
-      };
-    });
+    let stock_per_size = {};
+    if (data.stock_per_size && typeof data.stock_per_size === 'object' && Object.keys(data.stock_per_size).length > 0) {
+      stock_per_size = data.stock_per_size;
+    } else {
+      const stockPerColor = Math.max(1, colors.length > 0 ? Math.floor(stock / colors.length) : stock);
+      sizes.forEach((s) => {
+        stock_per_size[s] = {
+          stock: stockPerColor,
+          colors: colors.length > 0 ? [...colors] : ['Surtido']
+        };
+      });
+    }
 
     // Multiples imagenes: toma image_urls si viene un array, y si solo viene image_url arma el array
     const rawUrls = Array.isArray(data.image_urls) ? data.image_urls.filter(Boolean) : [];
