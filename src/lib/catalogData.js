@@ -8,7 +8,8 @@ export const CATALOG_CATEGORIES = [
     name: 'Hombres',
     // Una subcategoria por prenda (antes "Remeras y Shorts" / "Remeras y
     // Chombas" mezclaban dos prendas distintas bajo el mismo filtro).
-    subcategories: ['Remeras', 'Chombas', 'Shorts', 'Pantalones', 'Camperas', 'Buzos', 'Camisas', 'Conjuntos', 'Ropa Interior']
+    // 'Ropa Interior' y 'Medias' se mudaron a Lenceria (ver RETIRED_SUBCATEGORIES).
+    subcategories: ['Remeras', 'Chombas', 'Shorts', 'Pantalones', 'Camperas', 'Buzos', 'Camisas', 'Conjuntos']
   },
   {
     id: 'Mujeres',
@@ -16,7 +17,8 @@ export const CATALOG_CATEGORIES = [
     // 'Ropa Intima' se mudo a la categoria Lenceria (ver RETIRED_SUBCATEGORIES).
     // Misma logica que Hombres: una subcategoria por prenda (antes "Buzos y
     // abrigos" y "Pantalones y Calzas" mezclaban dos prendas cada una).
-    subcategories: ['Remeras', 'Camperas', 'Buzos', 'Abrigos', 'Pantalones', 'Calzas', 'Medias', 'Otros Productos']
+    // 'Medias' tambien se mudo a Lenceria: Indumentaria muestra solo ropa.
+    subcategories: ['Remeras', 'Camperas', 'Buzos', 'Abrigos', 'Pantalones', 'Calzas', 'Otros Productos']
   },
   { 
     id: 'Infantil', 
@@ -42,7 +44,10 @@ export const CATALOG_CATEGORIES = [
   {
     id: 'Lencería',
     name: 'Lencería',
-    subcategories: ['Conjuntos', 'Corpiños', 'Bombachas', 'Bodies', 'Camisones y Batas', 'Portaligas']
+    // Lenceria junta TODA la ropa interior y las medias (pedido de los duenos:
+    // en Indumentaria va todo menos lenceria). 'Infantil' = bombachas de nena,
+    // boxer y slip de nene, conjuntitos de nena.
+    subcategories: ['Conjuntos', 'Corpiños', 'Bombachas', 'Boxer', 'Medias', 'Infantil', 'Bodies', 'Camisones y Batas', 'Portaligas']
   },
   {
     id: 'Bebés',
@@ -72,7 +77,9 @@ export const CATALOG_CATEGORIES = [
 // getCategories() las filtra aunque sigan viniendo de Supabase (el merge de
 // categorias nunca borra, solo suma, asi que hace falta la exclusion explicita).
 export const RETIRED_SUBCATEGORIES = {
-  'Mujeres': ['Ropa Intima', 'Ropa Íntima']
+  'Mujeres': ['Ropa Intima', 'Ropa Íntima', 'Medias'],
+  // Ropa interior y medias de hombre ahora viven en Lenceria (Boxer / Medias).
+  'Hombres': ['Ropa Interior', 'Medias']
 };
 
 // Subcategorias renombradas. Se muestran con el nombre nuevo y los productos
@@ -140,7 +147,7 @@ export const HOME_CATEGORY_GROUPS = [
   {
     id: 'lenceria',
     name: 'Lencería',
-    tagline: 'Lencería femenina',
+    tagline: 'Ropa interior, medias y lencería',
     image: '/categorias/lenceria.webp',
     items: [
       { label: 'Lencería', category: 'Lencería', expand: true },
@@ -195,7 +202,10 @@ export const DEFAULT_CATEGORY_COLORS = {
     'Bombachas': ['Negro', 'Blanco', 'Nude', 'Surtido'],
     'Bodies': ['Negro', 'Blanco', 'Rojo', 'Surtido'],
     'Camisones y Batas': ['Negro', 'Rosa', 'Blanco', 'Surtido'],
-    'Portaligas': ['Negro', 'Rojo', 'Surtido']
+    'Portaligas': ['Negro', 'Rojo', 'Surtido'],
+    'Boxer': ['Surtido', 'Negro', 'Blanco', 'Gris'],
+    'Medias': ['Surtido', 'Blanco', 'Negro'],
+    'Infantil': ['Surtido', 'Rosa', 'Celeste', 'Blanco']
   },
   'Infantil': {
     'Indumentaria Infantil': ['Rosa', 'Celeste', 'Amarillo', 'Blanco', 'Azul', 'Rojo', 'Lila', 'Surtido']

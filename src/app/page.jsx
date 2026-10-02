@@ -261,11 +261,15 @@ export default function Home() {
   // "Nuevo Ingreso" (is_new, admin lo tilda desde PricesTab) se muestran
   // primero dentro del listado resultante, sin alterar el orden relativo
   // del resto (sort estable).
-  const filteredProducts = products.filter((product) => {
-    let matchesCategory = selectedCategory === 'all';
+  // Logica de "este producto entra en esta categoria / subcategoria". Se usa
+  // para filtrar el catalogo y tambien para no mostrar chips de subcategoria
+  // que no tienen productos (ej. Infantil en Indumentaria, desde que la ropa
+  // interior infantil se mudo a Lenceria).
+  const matchesCategoryFor = (product, categorySel) => {
+    let matchesCategory = categorySel === 'all';
     
     if (!matchesCategory) {
-      const selCatLower = normalizeStr(selectedCategory);
+      const selCatLower = normalizeStr(categorySel);
       const prodCatLower = normalizeStr(product.category);
       const prodSubLower = normalizeStr(product.subcategory);
 
@@ -289,10 +293,13 @@ export default function Home() {
         );
       }
     }
+    return matchesCategory;
+  };
 
-    let matchesSubcategory = !selectedSubcategory;
-    if (!matchesSubcategory && selectedSubcategory) {
-      const selSubLower = normalizeStr(selectedSubcategory);
+  const matchesSubcategoryFor = (product, subSel) => {
+    let matchesSubcategory = !subSel;
+    if (!matchesSubcategory && subSel) {
+      const selSubLower = normalizeStr(subSel);
       const prodSubLower = normalizeStr(product.subcategory);
       const prodCatLower = normalizeStr(product.category);
 
@@ -306,6 +313,17 @@ export default function Home() {
         matchesSubcategory = prodSubLower === selSubLower || prodSubLower.includes(selSubLower);
       }
     }
+    return matchesSubcategory;
+  };
+
+  const subcategoryHasProducts = (sub) =>
+    products.some(
+      (p) => p.is_active !== false && matchesCategoryFor(p, selectedCategory) && matchesSubcategoryFor(p, sub)
+    );
+
+  const filteredProducts = products.filter((product) => {
+    const matchesCategory = matchesCategoryFor(product, selectedCategory);
+    const matchesSubcategory = matchesSubcategoryFor(product, selectedSubcategory);
 
     const matchesSearch = flexibleProductMatch(product, searchQuery);
 
@@ -506,6 +524,7 @@ export default function Home() {
             setSearchQuery={setSearchQuery}
             hasSearch={hasSearch}
             totalCount={filteredProducts.length}
+            subcategoryHasProducts={subcategoryHasProducts}
           />
 
           {/* Chips de Filtros Rápidos */}

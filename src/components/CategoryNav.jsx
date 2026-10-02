@@ -17,10 +17,10 @@ const NAV_GROUPS = [
 const GROUP_SUBCATEGORIES = {
   'Calzado': ['Hombre', 'Mujer', 'Infantil'],
   'Indumentaria': ['Hombre', 'Mujer', 'Infantil', 'Remeras', 'Camperas', 'Buzos', 'Pantalones', 'Shorts', 'Chombas'],
-  'Hombres': ['Remeras', 'Chombas', 'Shorts', 'Pantalones', 'Camperas', 'Buzos', 'Camisas', 'Conjuntos', 'Ropa Interior'],
-  'Mujeres': ['Remeras', 'Camperas', 'Buzos', 'Abrigos', 'Pantalones', 'Calzas', 'Medias'],
+  'Hombres': ['Remeras', 'Chombas', 'Shorts', 'Pantalones', 'Camperas', 'Buzos', 'Camisas', 'Conjuntos'],
+  'Mujeres': ['Remeras', 'Camperas', 'Buzos', 'Abrigos', 'Pantalones', 'Calzas'],
   'Infantil': ['Indumentaria Infantil'],
-  'Lencería': ['Conjuntos', 'Corpiños', 'Bombachas', 'Bodies', 'Camisones y Batas', 'Portaligas', 'Ropa Íntima'],
+  'Lencería': ['Conjuntos', 'Corpiños', 'Bombachas', 'Boxer', 'Medias', 'Infantil', 'Bodies', 'Camisones y Batas', 'Portaligas', 'Ropa Íntima'],
   'Bebés': ['Ajuar y Sets', 'Bodys', 'Enteritos', 'Ranitas y Pantalones', 'Accesorios', 'Blanquería y Cuidado', 'Bolsos Maternales'],
   'Blanquería': ['Sabanas'],
   'Perfumería': ['Perfumes y Cremas'],
@@ -39,7 +39,10 @@ export default function CategoryNav({
   searchQuery = '',
   setSearchQuery,
   hasSearch = false,
-  totalCount = null
+  totalCount = null,
+  // Opcional: (sub) => boolean. Si viene, se ocultan los chips de
+  // subcategoria sin productos (salvo el que este seleccionado).
+  subcategoryHasProducts = null
 }) {
   const isFiltered = Boolean(selectedCategory) && selectedCategory !== 'all';
 
@@ -54,11 +57,17 @@ export default function CategoryNav({
       : 'Catálogo de Productos';
 
   // Obtener subcategorías correspondientes a la categoría seleccionada
-  const activeSubcategories =
+  const allActiveSubcategories =
     GROUP_SUBCATEGORIES[selectedCategory] ||
     GROUP_SUBCATEGORIES[activeCategoryObj?.name] ||
     activeCategoryObj?.subcategories ||
     [];
+
+  const activeSubcategories = typeof subcategoryHasProducts === 'function'
+    ? allActiveSubcategories.filter(
+        (sub) => normStr(sub) === normStr(selectedSubcategory) || subcategoryHasProducts(sub)
+      )
+    : allActiveSubcategories;
 
   const clearCategory = () => {
     onSelectCategory('all');

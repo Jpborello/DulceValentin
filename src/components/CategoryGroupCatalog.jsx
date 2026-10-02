@@ -43,7 +43,31 @@ export default function CategoryGroupCatalog({ tiers = [], initialProducts = [],
 
   const activeTier = tiers.find((t) => normalizeText(t.id) === normalizeText(selectedTierId)) || (singleTier ? tiers[0] : null);
 
-  const subcategoryOptions = activeTier?.subcategories || [];
+  // Que subcategorias tienen productos de verdad, por categoria. Sirve para no
+  // ofrecer chips vacios: por ejemplo, cuando la ropa interior infantil se
+  // mudo a Lenceria, el tier "Infantil" de Indumentaria quedo sin productos y
+  // mostrarlo solo llevaba a un listado en blanco.
+  const subsByCategory = useMemo(() => {
+    const map = new Map();
+    initialProducts.forEach((p) => {
+      const cat = normalizeText(p.category);
+      if (!map.has(cat)) map.set(cat, new Set());
+      map.get(cat).add(normalizeText(p.subcategory));
+    });
+    return map;
+  }, [initialProducts]);
+
+  const visibleTiers = singleTier ? tiers : tiers.filter((t) => subsByCategory.has(normalizeText(t.id)));
+
+  const subcategoryOptions = (activeTier?.subcategories || []).filter((sub) => {
+    const key = normalizeText(sub);
+    if (key === normalizeText(selectedSubcategory)) return true;
+    if (singleTier) {
+      for (const subs of subsByCategory.values()) if (subs.has(key)) return true;
+      return false;
+    }
+    return Boolean(subsByCategory.get(normalizeText(activeTier.id))?.has(key));
+  });
 
   const handleSelectTier = (tierId) => {
     setSelectedTierId(tierId);
@@ -104,7 +128,7 @@ export default function CategoryGroupCatalog({ tiers = [], initialProducts = [],
           >
             Todas
           </button>
-          {tiers.map((tier) => (
+          {visibleTiers.map((tier) => (
             <button
               key={tier.id}
               type="button"
