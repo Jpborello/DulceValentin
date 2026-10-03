@@ -59,6 +59,7 @@ export default function AdminPage() {
   const [mpTransfers, setMpTransfers] = useState([]);
   const [mpConfigured, setMpConfigured] = useState(false);
   const [mpLoading, setMpLoading] = useState(false);
+  const [categoryImages, setCategoryImages] = useState(() => dataStore.getCategoryImages());
 
   // Notificaciones del navegador para mensajes nuevos de clientes (WhatsApp/chat
   // web), sin importar en que pestana del admin este parado. La pestana de
@@ -251,6 +252,7 @@ export default function AdminPage() {
       setClients(dataStore.getClientsWithStats());
       setTickets(dataStore.getAllRaffleTickets());
       setMetrics(dataStore.getMetrics());
+      setCategoryImages(dataStore.getCategoryImages());
 
       if (!transferDirtyRef.current) {
         const details = dataStore.getTransferDetails();
@@ -404,6 +406,16 @@ export default function AdminPage() {
     showSuccessNotice(exempt ? 'Producto exceptuado del mínimo de 3 unidades.' : 'Producto vuelve a exigir el mínimo de 3 unidades.');
   };
 
+  const handleSetHeroBadge = async (id, badgeText) => {
+    await dataStore.setProductHeroBadge(id, badgeText);
+    showSuccessNotice(`✓ Etiqueta "${badgeText}" aplicada al producto.`);
+  };
+
+  const handleRemoveHeroBadge = async (id) => {
+    await dataStore.removeProductHeroBadge(id);
+    showSuccessNotice('Producto quitado de las promociones del carrusel.');
+  };
+
   const handleAddCategory = (name, subcategories) => {
     dataStore.addCategory(name, subcategories);
     showSuccessNotice(`Categoría "${name}" agregada con éxito.`);
@@ -430,6 +442,16 @@ export default function AdminPage() {
     return created;
   };
 
+  const handleDeleteProduct = async (id, productName) => {
+    const res = await dataStore.deleteProduct(id);
+    if (res && res.ok === false) {
+      alert('Error al eliminar producto: ' + (res.error?.message || 'Error desconocido'));
+      return false;
+    }
+    showSuccessNotice(`Producto "${productName || id}" eliminado correctamente.`);
+    return true;
+  };
+
   const handleBulkImport = (newProducts) => {
     // dataStore.bulkInsertProducts es el que arma el codigo unico automatico
     // (correlativo, 0001, 0002...) para cada producto que no traiga uno
@@ -449,6 +471,11 @@ export default function AdminPage() {
       dataStore.updateProduct(id, { image_url: newImages });
     }
     showSuccessNotice('Imágenes del producto actualizadas.');
+  };
+
+  const handleUpdateCategoryImage = async (groupId, imageUrl) => {
+    await dataStore.updateCategoryImage(groupId, imageUrl);
+    showSuccessNotice(`Imagen de portada para ${groupId} actualizada.`);
   };
 
   const normalizeSearch = (str) =>
@@ -843,12 +870,15 @@ export default function AdminPage() {
       {activeTab === 'stock' && (
         <StockTab 
           products={filteredProducts}
+          categories={categories}
           searchFilter={searchFilter}
           setSearchFilter={setSearchFilter}
           onUpdateStock={handleStockUpdate}
           onUpdateSizesColors={handleUpdateSizesColors}
           onToggleActive={handleToggleActive}
           onUpdateDetails={handleUpdateDetails}
+          onCreateProduct={handleCreateProduct}
+          onDeleteProduct={handleDeleteProduct}
         />
       )}
 
@@ -856,6 +886,7 @@ export default function AdminPage() {
         <PricesTab 
           products={filteredProducts}
           allProductsCount={products.length}
+          allProducts={products}
           searchFilter={searchFilter}
           setSearchFilter={setSearchFilter}
           onUpdatePrice={handlePriceUpdate}
@@ -866,6 +897,8 @@ export default function AdminPage() {
           onUnsetFeatured={handleUnsetFeatured}
           onUpdatePricePerSize={handleUpdatePricePerSize}
           onToggleExemptMin3={handleToggleExemptMin3}
+          onSetHeroBadge={handleSetHeroBadge}
+          onRemoveHeroBadge={handleRemoveHeroBadge}
         />
       )}
 
@@ -896,6 +929,8 @@ export default function AdminPage() {
         <ImagesTab 
           products={filteredProducts}
           onUpdateImage={handleImageUpdate}
+          categoryImages={categoryImages}
+          onUpdateCategoryImage={handleUpdateCategoryImage}
         />
       )}
 

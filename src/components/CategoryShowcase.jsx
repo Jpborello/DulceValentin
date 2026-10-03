@@ -25,6 +25,7 @@ const normStr = (str) =>
 export default function CategoryShowcase({
   categories = [],
   products = [],
+  categoryImages = {},
   selectedCategory,
   onSelect
 }) {
@@ -95,13 +96,14 @@ export default function CategoryShowcase({
       <div className="dvc-grid">
         {HOME_CATEGORY_GROUPS.map((group) => {
           const count = countForGroup(group);
+          const catImg = categoryImages[group.id] || group.image;
 
           return (
             <Link key={group.id} href={`/categoria/${group.id}`} className="dvc-card">
               <div className="dvc-media">
-                {group.image && (
+                {catImg && (
                   <img
-                    src={group.image}
+                    src={catImg}
                     alt={`${group.name} por mayor`}
                     className="dvc-img"
                     loading="lazy"

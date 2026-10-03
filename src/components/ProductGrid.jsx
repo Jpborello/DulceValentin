@@ -295,8 +295,24 @@ function ProductGridCard({ product, onOpenDetail, onQuickAdd, onShare, isCopiedS
           )}
 
           <div className="card-badges-topleft">
-            {product.is_new && <span className="card-badge-new">🆕 Nuevo</span>}
-            {product.is_offer && <span className="card-badge-offer">Oferta</span>}
+            {product.badge_text ? (
+              <span
+                className="card-badge-offer"
+                style={{
+                  background: 'linear-gradient(135deg, #DC2626 0%, #E11D48 100%)',
+                  color: '#FFFFFF',
+                  fontWeight: 800,
+                  boxShadow: '0 2px 8px rgba(225, 29, 72, 0.4)'
+                }}
+              >
+                {product.badge_text}
+              </span>
+            ) : (
+              <>
+                {product.is_new && <span className="card-badge-new">🆕 Nuevo</span>}
+                {product.is_offer && <span className="card-badge-offer">Oferta</span>}
+              </>
+            )}
             {isTopSeller && <span className="card-badge-bestseller">🔥 Más Vendido</span>}
           </div>
 

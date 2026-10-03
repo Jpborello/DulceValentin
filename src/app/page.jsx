@@ -33,6 +33,7 @@ export default function Home() {
   const [selectedSubcategory, setSelectedSubcategory] = useState(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [quickFilter, setQuickFilter] = useState('all');
+  const [categoryImages, setCategoryImages] = useState(() => dataStore.getCategoryImages());
   const [selectedSizeFilter, setSelectedSizeFilter] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
   const [catalogOpen, setCatalogOpen] = useState(false);
@@ -56,6 +57,7 @@ export default function Home() {
       setProducts(prods);
       setCategories(dataStore.getCategories());
       setCurrentUser(dataStore.currentUser);
+      setCategoryImages(dataStore.getCategoryImages());
       if (prods && prods.length > 0) {
         setIsLoading(false);
       }
@@ -367,13 +369,14 @@ export default function Home() {
   // un producto destacado/oferta distinto al que ya tenia cacheado el
   // navegador, y React tiraba "Hydration failed" en el <h3> del carousel.
   const featuredOffer = products.find((p) => p.is_featured && p.is_active !== false) || null;
+  const promoProducts = products.filter((p) => p.badge_text && p.is_active !== false && p.id !== featuredOffer?.id);
   const offers = products.filter((p) => p.is_offer && p.is_active !== false && p.id !== featuredOffer?.id);
   // Nuevos ingresos para el carrusel del hero: los marcados "Nuevo Ingreso"
   // con stock y foto, del codigo mas alto (lo ultimo cargado) para abajo.
   const newArrivals = products
     .filter((p) => p.is_new && p.is_active !== false && (p.stock ?? 1) > 0 && p.image_url)
     .sort((a, b) => (parseInt(b.code, 10) || 0) - (parseInt(a.code, 10) || 0))
-    .slice(0, 6);
+    .slice(0, 10);
 
   // Mismo top 5 que ya usa el admin en Metricas ("Mayor Rotacion"), para que
   // el sello "Mas Vendido" en la grilla coincida con ese ranking.
@@ -455,6 +458,7 @@ export default function Home() {
         offers={offers}
         featuredOffer={featuredOffer}
         newArrivals={newArrivals}
+        promoProducts={promoProducts}
         onOpenDetail={setDetailProduct}
         onExploreCatalog={() => {
           setCatalogOpen(true);
@@ -486,6 +490,7 @@ export default function Home() {
       <CategoryShowcase
         categories={categories}
         products={products}
+        categoryImages={categoryImages}
         selectedCategory={selectedCategory}
         selectedSubcategory={selectedSubcategory}
         onSelect={(category, subcategory) => {

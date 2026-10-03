@@ -1,16 +1,20 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { Save, Layers, Settings2, X, Plus, ZoomIn, Pencil, Loader2, AlertCircle, Palette, Trash2, Check } from 'lucide-react';
+import { Save, Layers, Settings2, X, Plus, ZoomIn, Pencil, Loader2, AlertCircle, Palette, Trash2, Check, Copy } from 'lucide-react';
 import { getProductColors, getSizeDetails, getProductColorsForSize, POPULAR_COLORS } from '@/lib/catalogData';
 import { getProductImages, getThumbUrl } from '@/lib/dataStore';
 import ImageLightbox from '@/components/admin/ImageLightbox';
 import SafeImg from '@/components/admin/SafeImg';
+import DuplicateProductModal from '@/components/admin/DuplicateProductModal';
 
-export default function StockTab({ products, searchFilter, setSearchFilter, onUpdateStock, onUpdateSizesColors, onToggleActive, onUpdateDetails }) {
+export default function StockTab({ products, categories = [], searchFilter, setSearchFilter, onUpdateStock, onUpdateSizesColors, onToggleActive, onUpdateDetails, onCreateProduct, onDeleteProduct }) {
   // Local state for stock per size per product
   const [sizeStockState, setSizeStockState] = useState({});
   const [managingProduct, setManagingProduct] = useState(null);
+  const [duplicatingProduct, setDuplicatingProduct] = useState(null);
+  const [deletingProduct, setDeletingProduct] = useState(null);
+  const [isDeleting, setIsDeleting] = useState(false);
   const [stockFilter, setStockFilter] = useState('all'); // 'all', 'critical', 'out_of_stock'
   // Producto cuya foto se esta viendo ampliada (la miniatura de la tabla es
   // chica y en una notebook no se distingue el articulo).
@@ -143,7 +147,7 @@ export default function StockTab({ products, searchFilter, setSearchFilter, onUp
             <th>Talles Disponibles</th>
             <th>Stock Total</th>
             <th>Modificar Stock</th>
-            <th>Talles y Colores</th>
+            <th>Opciones (Talles, Colores y Duplicar)</th>
           </tr>
         </thead>
         <tbody>
@@ -304,15 +308,58 @@ export default function StockTab({ products, searchFilter, setSearchFilter, onUp
                   </div>
                 </td>
 
-                {/* Gestionar talles y colores */}
+                {/* Gestionar talles y colores & Duplicar */}
                 <td>
-                  <button
-                    onClick={() => setManagingProduct(p)}
-                    className="btn-secondary"
-                    style={{ padding: '6px 12px', fontSize: '0.78rem', display: 'inline-flex', alignItems: 'center', gap: '6px' }}
-                  >
-                    <Settings2 size={14} /> Gestionar
-                  </button>
+                  <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+                    <button
+                      onClick={() => setManagingProduct(p)}
+                      className="btn-secondary"
+                      style={{ padding: '6px 10px', fontSize: '0.78rem', display: 'inline-flex', alignItems: 'center', gap: '5px' }}
+                      title="Gestionar existencias de talles y colores"
+                    >
+                      <Settings2 size={13} /> Talles/Colores
+                    </button>
+                    {onCreateProduct && (
+                      <button
+                        onClick={() => setDuplicatingProduct(p)}
+                        className="btn-secondary"
+                        style={{
+                          padding: '6px 10px',
+                          fontSize: '0.78rem',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '5px',
+                          backgroundColor: '#EFF6FF',
+                          color: '#1D4ED8',
+                          borderColor: '#BFDBFE',
+                          fontWeight: 700
+                        }}
+                        title="Duplicar este producto con un nuevo código para crear una variante"
+                      >
+                        <Copy size={13} /> Duplicar
+                      </button>
+                    )}
+                    {onDeleteProduct && (
+                      <button
+                        onClick={() => setDeletingProduct(p)}
+                        className="btn-secondary"
+                        style={{
+                          padding: '6px 9px',
+                          fontSize: '0.78rem',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '4px',
+                          backgroundColor: '#FEF2F2',
+                          color: '#DC2626',
+                          borderColor: '#FECACA',
+                          fontWeight: 700
+                        }}
+                        title={`Eliminar ${p.name}`}
+                      >
+                        <Trash2 size={13} /> Borrar
+                      </button>
+                    )}
+                  </div>
                 </td>
               </tr>
             );
@@ -342,6 +389,164 @@ export default function StockTab({ products, searchFilter, setSearchFilter, onUp
           onClose={() => setManagingProduct(null)}
           onSave={onUpdateSizesColors}
         />
+      )}
+
+      {duplicatingProduct && (
+        <DuplicateProductModal
+          product={duplicatingProduct}
+          categories={categories}
+          onClose={() => setDuplicatingProduct(null)}
+          onCreateProduct={onCreateProduct}
+        />
+      )}
+
+      {/* Modal de confirmación para eliminar producto */}
+      {deletingProduct && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: 'rgba(0, 0, 0, 0.65)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 1000,
+          padding: '20px',
+          backdropFilter: 'blur(3px)'
+        }}>
+          <div style={{
+            backgroundColor: 'var(--bg-card)',
+            borderRadius: '16px',
+            width: '100%',
+            maxWidth: '480px',
+            border: '1px solid var(--border-color)',
+            boxShadow: '0 20px 40px rgba(0, 0, 0, 0.25)',
+            padding: '24px',
+            position: 'relative'
+          }}>
+            <button
+              type="button"
+              onClick={() => !isDeleting && setDeletingProduct(null)}
+              style={{
+                position: 'absolute',
+                top: '16px',
+                right: '16px',
+                background: 'none',
+                border: 'none',
+                color: 'var(--text-muted)',
+                cursor: 'pointer',
+                padding: '4px'
+              }}
+              disabled={isDeleting}
+            >
+              <X size={18} />
+            </button>
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '16px' }}>
+              <div style={{
+                width: '44px',
+                height: '44px',
+                borderRadius: '50%',
+                backgroundColor: '#FEE2E2',
+                color: '#DC2626',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                flexShrink: 0
+              }}>
+                <Trash2 size={22} />
+              </div>
+              <div>
+                <h3 style={{ fontSize: '1.2rem', fontWeight: 800, margin: 0, color: '#991B1B' }}>
+                  ¿Eliminar este producto?
+                </h3>
+                <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                  Acción irreversible
+                </span>
+              </div>
+            </div>
+
+            <div style={{
+              backgroundColor: 'var(--bg-surface-elevated)',
+              border: '1px solid var(--border-color)',
+              borderRadius: '10px',
+              padding: '12px 14px',
+              marginBottom: '16px',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '12px'
+            }}>
+              {(() => {
+                const photos = getProductImages(deletingProduct).filter((u) => u && u !== '/logo.png');
+                return photos[0] ? (
+                  <SafeImg
+                    src={getThumbUrl(photos[0]) || photos[0]}
+                    fallbacks={[photos[0], '/logo.png']}
+                    alt=""
+                    style={{ width: '50px', height: '50px', objectFit: 'cover', borderRadius: '6px', border: '1px solid var(--border-color)' }}
+                  />
+                ) : null;
+              })()}
+              <div style={{ minWidth: 0, flex: 1 }}>
+                <div style={{ fontWeight: 800, fontSize: '0.95rem', color: 'var(--text-main)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                  {deletingProduct.name}
+                </div>
+                <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
+                  {deletingProduct.code ? `Cód: ${deletingProduct.code} · ` : ''}{deletingProduct.category}
+                </div>
+                <div style={{ fontSize: '0.78rem', color: deletingProduct.stock > 0 ? '#059669' : '#DC2626', fontWeight: 700 }}>
+                  Stock actual: {deletingProduct.stock} unidades
+                </div>
+              </div>
+            </div>
+
+            <p style={{ fontSize: '0.85rem', color: 'var(--text-main)', margin: '0 0 20px 0', lineHeight: 1.45 }}>
+              ¿Estás seguro de que querés borrar permanentemente <strong>"{deletingProduct.name}"</strong>? Ya no se mostrará en el catálogo ni en el panel de control.
+            </p>
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
+              <button
+                type="button"
+                onClick={() => setDeletingProduct(null)}
+                className="btn-secondary"
+                disabled={isDeleting}
+                style={{ padding: '8px 16px', fontSize: '0.85rem' }}
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={async () => {
+                  setIsDeleting(true);
+                  try {
+                    await onDeleteProduct(deletingProduct.id, deletingProduct.name);
+                    setDeletingProduct(null);
+                  } finally {
+                    setIsDeleting(false);
+                  }
+                }}
+                disabled={isDeleting}
+                className="btn-primary"
+                style={{
+                  padding: '8px 18px',
+                  fontSize: '0.85rem',
+                  fontWeight: 800,
+                  backgroundColor: '#DC2626',
+                  borderColor: '#DC2626',
+                  color: '#FFF',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '6px'
+                }}
+              >
+                {isDeleting ? <Loader2 size={15} className="spin" /> : <Trash2 size={15} />}
+                {isDeleting ? 'Eliminando...' : 'Sí, Eliminar Producto'}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

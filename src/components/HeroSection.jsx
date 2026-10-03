@@ -14,8 +14,8 @@ const WHATSAPP_URL = `https://wa.me/${COMPANY_INFO.phone.replace(/\D/g, '')}?tex
 const HERO_IMG = '/hero/local-dulce-valentin-1376.webp';
 const HERO_IMG_SMALL = '/hero/local-dulce-valentin-800.webp';
 
-// Tope de productos en la tira: suficientes para recorrer sin que se haga eterna.
-const MAX_ITEMS = 12;
+// Tope de productos en la tira: 6 imagenes de muestra para rotar con fluidez.
+const MAX_ITEMS = 6;
 
 const ITEM_KINDS = {
   destacado: 'Destacado',
@@ -40,12 +40,14 @@ export default function HeroSection({
   offers = [],
   featuredOffer = null,
   newArrivals = [],
+  promoProducts = [],
   onOpenDetail,
   onExploreCatalog
 }) {
   const trackRef = useRef(null);
   const [canPrev, setCanPrev] = useState(false);
   const [canNext, setCanNext] = useState(false);
+  const [isPaused, setIsPaused] = useState(false);
 
   const items = [];
   const pushItem = (product, kind) => {
@@ -54,6 +56,9 @@ export default function HeroSection({
     items.push({ ...product, kind });
   };
   pushItem(featuredOffer, 'destacado');
+  (Array.isArray(promoProducts) ? promoProducts : []).forEach((p) =>
+    pushItem(p, p.badge_text === 'Nuevo ingreso' ? 'nuevo' : 'liquidacion')
+  );
   (Array.isArray(offers) ? offers : []).forEach((p) => pushItem(p, 'liquidacion'));
   (Array.isArray(newArrivals) ? newArrivals : []).forEach((p) => pushItem(p, 'nuevo'));
 
@@ -76,11 +81,39 @@ export default function HeroSection({
     };
   }, [updateArrows, items.length]);
 
+  // Rotación automática: va pasando los productos cada 3.5 segundos suavemente
+  useEffect(() => {
+    if (items.length <= 1 || isPaused) return;
+
+    const interval = setInterval(() => {
+      const el = trackRef.current;
+      if (!el) return;
+
+      const reduce = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+      if (reduce) return;
+
+      const isAtEnd = el.scrollLeft + el.clientWidth >= el.scrollWidth - 15;
+      if (isAtEnd) {
+        el.scrollTo({ left: 0, behavior: 'smooth' });
+      } else {
+        const firstItem = el.querySelector('.dvn-item');
+        const gap = 18;
+        const step = firstItem ? firstItem.getBoundingClientRect().width + gap : el.clientWidth * 0.7;
+        el.scrollBy({ left: step, behavior: 'smooth' });
+      }
+    }, 3500);
+
+    return () => clearInterval(interval);
+  }, [items.length, isPaused]);
+
   const scrollByPage = (direction) => {
     const el = trackRef.current;
     if (!el) return;
     const reduce = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
-    el.scrollBy({ left: direction * el.clientWidth * 0.9, behavior: reduce ? 'auto' : 'smooth' });
+    const firstItem = el.querySelector('.dvn-item');
+    const gap = 18;
+    const step = firstItem ? firstItem.getBoundingClientRect().width + gap : el.clientWidth * 0.8;
+    el.scrollBy({ left: direction * step, behavior: reduce ? 'auto' : 'smooth' });
   };
 
   return (
@@ -124,7 +157,14 @@ export default function HeroSection({
       </section>
 
       {items.length > 0 && (
-        <section className="dvn" aria-labelledby="dvn-title">
+        <section
+          className="dvn"
+          aria-labelledby="dvn-title"
+          onMouseEnter={() => setIsPaused(true)}
+          onMouseLeave={() => setIsPaused(false)}
+          onTouchStart={() => setIsPaused(true)}
+          onTouchEnd={() => setIsPaused(false)}
+        >
           <div className="dvn-head">
             <h2 id="dvn-title" className="dvn-title">Liquidaciones y nuevos ingresos</h2>
             <div className="dvn-arrows">
@@ -175,7 +215,15 @@ export default function HeroSection({
                         }
                       }}
                     />
-                    <span className={`dvn-badge dvn-badge--${item.kind}`}>{ITEM_KINDS[item.kind]}</span>
+                    <span
+                      className={`dvn-badge ${
+                        item.badge_text && item.badge_text !== 'Nuevo ingreso'
+                          ? 'dvn-badge--promo'
+                          : `dvn-badge--${item.kind}`
+                      }`}
+                    >
+                      {item.badge_text || ITEM_KINDS[item.kind]}
+                    </span>
                   </span>
                   <span className="dvn-body">
                     {item.category && <span className="dvn-cat">{item.category}</span>}

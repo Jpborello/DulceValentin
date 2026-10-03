@@ -30,9 +30,72 @@ const FILTERS = [
  * la tira de todas sus fotos y las acciones sobre la foto seleccionada.
  * Arriba hay buscador y filtros para encontrar rápido los productos sin foto.
  */
-export default function ImagesTab({ products, onUpdateImage }) {
+const MAIN_CATEGORIES = [
+  { id: 'calzado', name: 'Calzado', defaultImg: '/categorias/calzado.webp', desc: 'Zapatillas y calzado familiar' },
+  { id: 'indumentaria', name: 'Indumentaria', defaultImg: '/categorias/indumentaria.webp', desc: 'Hombre, Mujer e Infantil' },
+  { id: 'lenceria', name: 'Lencería', defaultImg: '/categorias/lenceria.webp', desc: 'Ropa interior, medias y lencería' },
+  { id: 'bebes', name: 'Bebés', defaultImg: '/categorias/bebes.webp', desc: 'Recién nacidos y primera infancia' }
+];
+
+export default function ImagesTab({ products, onUpdateImage, categoryImages = {}, onUpdateCategoryImage }) {
   const [query, setQuery] = useState('');
   const [filter, setFilter] = useState('all');
+  const [activeCategoryUpload, setActiveCategoryUpload] = useState(null);
+  const [categoryUrlInputs, setCategoryUrlInputs] = useState({});
+  const [categoryStatusMsg, setCategoryStatusMsg] = useState({});
+
+  const handleCategoryFileUpload = async (groupId, file) => {
+    if (!file || !onUpdateCategoryImage || !supabase) return;
+    setActiveCategoryUpload(groupId);
+    setCategoryStatusMsg((prev) => ({ ...prev, [groupId]: 'Comprimiendo y subiendo foto...' }));
+
+    try {
+      const { full } = await compressImageWithThumb(file);
+      const filePath = `admin-uploads/categoria-${groupId}-${Date.now()}.webp`;
+
+      const { error: uploadErr } = await supabase.storage.from('Productos').upload(filePath, full.blob, {
+        upsert: true,
+        contentType: 'image/webp',
+        cacheControl: '31536000'
+      });
+      if (uploadErr) throw uploadErr;
+
+      const { data: urlData } = supabase.storage.from('Productos').getPublicUrl(filePath);
+      if (urlData?.publicUrl) {
+        await onUpdateCategoryImage(groupId, urlData.publicUrl);
+        setCategoryStatusMsg((prev) => ({ ...prev, [groupId]: '✓ ¡Imagen actualizada!' }));
+        setTimeout(() => setCategoryStatusMsg((prev) => ({ ...prev, [groupId]: '' })), 3000);
+      }
+    } catch (err) {
+      setCategoryStatusMsg((prev) => ({ ...prev, [groupId]: 'Error: ' + (err.message || 'desconocido') }));
+    } finally {
+      setActiveCategoryUpload(null);
+    }
+  };
+
+  const handleCategoryUrlSave = async (groupId) => {
+    const url = (categoryUrlInputs[groupId] || '').trim();
+    if (!url || !onUpdateCategoryImage) return;
+    setActiveCategoryUpload(groupId);
+    try {
+      await onUpdateCategoryImage(groupId, url);
+      setCategoryUrlInputs((prev) => ({ ...prev, [groupId]: '' }));
+      setCategoryStatusMsg((prev) => ({ ...prev, [groupId]: '✓ ¡Imagen actualizada!' }));
+      setTimeout(() => setCategoryStatusMsg((prev) => ({ ...prev, [groupId]: '' })), 3000);
+    } catch (err) {
+      setCategoryStatusMsg((prev) => ({ ...prev, [groupId]: 'Error al guardar URL' }));
+    } finally {
+      setActiveCategoryUpload(null);
+    }
+  };
+
+  const handleCategoryReset = async (groupId, defaultImg) => {
+    if (!onUpdateCategoryImage) return;
+    if (!confirm(`¿Restablecer la portada de ${groupId} a la imagen original?`)) return;
+    await onUpdateCategoryImage(groupId, defaultImg);
+    setCategoryStatusMsg((prev) => ({ ...prev, [groupId]: '✓ Restablecida al original' }));
+    setTimeout(() => setCategoryStatusMsg((prev) => ({ ...prev, [groupId]: '' })), 3000);
+  };
 
   const counts = useMemo(() => {
     const c = { all: products.length, none: 0, one: 0, many: 0 };
@@ -59,6 +122,194 @@ export default function ImagesTab({ products, onUpdateImage }) {
 
   return (
     <div>
+      {/* SECCIÓN 1: FOTOS DE LAS 4 CATEGORÍAS PRINCIPALES DEL HOME */}
+      <div style={{
+        backgroundColor: 'var(--bg-card)',
+        border: '1px solid var(--border-color)',
+        borderRadius: '14px',
+        padding: '20px',
+        marginBottom: '28px',
+        boxShadow: '0 4px 12px rgba(0,0,0,0.03)'
+      }}>
+        <div style={{ marginBottom: '14px' }}>
+          <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', backgroundColor: '#EFF6FF', color: '#1D4ED8', padding: '3px 10px', borderRadius: '14px', fontSize: '0.74rem', fontWeight: 800, marginBottom: '6px' }}>
+            HOME / PÁGINA PRINCIPAL
+          </div>
+          <h3 style={{ fontSize: '1.25rem', fontWeight: 800, color: 'var(--text-main)', margin: '0 0 4px 0', display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <ImageIcon size={20} style={{ color: 'var(--accent-gold)' }} />
+            Portadas de las 4 Categorías Principales del Home
+          </h3>
+          <p style={{ fontSize: '0.84rem', color: 'var(--text-muted)', margin: 0 }}>
+            Cambiá las fotos que se ven en las tarjetas de la página principal (Calzado, Indumentaria, Lencería y Bebés). Podés subir una foto nueva desde tu computadora o pegar un enlace.
+          </p>
+        </div>
+
+        <div style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))',
+          gap: '16px'
+        }}>
+          {MAIN_CATEGORIES.map((cat) => {
+            const currentImg = categoryImages[cat.id] || cat.defaultImg;
+            const isCustom = categoryImages[cat.id] && categoryImages[cat.id] !== cat.defaultImg;
+            const isUploading = activeCategoryUpload === cat.id;
+            const status = categoryStatusMsg[cat.id];
+            const urlInput = categoryUrlInputs[cat.id] || '';
+
+            return (
+              <div
+                key={cat.id}
+                style={{
+                  border: isCustom ? '2px solid var(--accent-gold)' : '1px solid var(--border-color)',
+                  borderRadius: '12px',
+                  backgroundColor: 'var(--bg-surface-elevated)',
+                  overflow: 'hidden',
+                  display: 'flex',
+                  flexDirection: 'column'
+                }}
+              >
+                <div style={{ position: 'relative', width: '100%', height: '170px', backgroundColor: '#000' }}>
+                  <img
+                    src={currentImg}
+                    alt={cat.name}
+                    style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                  />
+                  {isCustom ? (
+                    <span style={{
+                      position: 'absolute',
+                      top: '8px',
+                      left: '8px',
+                      backgroundColor: 'var(--accent-gold)',
+                      color: '#000',
+                      fontSize: '0.68rem',
+                      fontWeight: 900,
+                      padding: '2px 8px',
+                      borderRadius: '6px'
+                    }}>
+                      PERSONALIZADA
+                    </span>
+                  ) : (
+                    <span style={{
+                      position: 'absolute',
+                      top: '8px',
+                      left: '8px',
+                      backgroundColor: 'rgba(0,0,0,0.65)',
+                      color: '#FFF',
+                      fontSize: '0.68rem',
+                      fontWeight: 700,
+                      padding: '2px 8px',
+                      borderRadius: '6px'
+                    }}>
+                      ORIGINAL
+                    </span>
+                  )}
+                </div>
+
+                <div style={{ padding: '14px', flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
+                  <div style={{ marginBottom: '12px' }}>
+                    <h4 style={{ margin: '0 0 2px 0', fontSize: '1.05rem', fontWeight: 800 }}>{cat.name}</h4>
+                    <p style={{ margin: 0, fontSize: '0.76rem', color: 'var(--text-muted)' }}>{cat.desc}</p>
+                  </div>
+
+                  {status && (
+                    <div style={{
+                      fontSize: '0.76rem',
+                      fontWeight: 700,
+                      padding: '4px 8px',
+                      borderRadius: '6px',
+                      marginBottom: '8px',
+                      backgroundColor: status.startsWith('Error') ? '#FEE2E2' : '#DCFCE7',
+                      color: status.startsWith('Error') ? '#991B1B' : '#166534'
+                    }}>
+                      {status}
+                    </div>
+                  )}
+
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                    {/* Botón Subir Foto */}
+                    <label
+                      htmlFor={`cat-file-${cat.id}`}
+                      className="btn-primary"
+                      style={{
+                        cursor: isUploading ? 'wait' : 'pointer',
+                        padding: '7px 12px',
+                        fontSize: '0.78rem',
+                        fontWeight: 700,
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: '6px',
+                        opacity: isUploading ? 0.7 : 1
+                      }}
+                    >
+                      {isUploading ? <Loader2 size={14} className="spin" /> : <UploadCloud size={14} />}
+                      {isUploading ? 'Subiendo foto...' : 'Subir Nueva Foto'}
+                    </label>
+                    <input
+                      id={`cat-file-${cat.id}`}
+                      type="file"
+                      accept="image/*"
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        if (file) handleCategoryFileUpload(cat.id, file);
+                        e.target.value = '';
+                      }}
+                      disabled={isUploading}
+                      style={{ display: 'none' }}
+                    />
+
+                    {/* Pegar URL externa */}
+                    <div style={{ display: 'flex', gap: '4px' }}>
+                      <input
+                        type="text"
+                        placeholder="...o pegar URL"
+                        value={urlInput}
+                        onChange={(e) => setCategoryUrlInputs((prev) => ({ ...prev, [cat.id]: e.target.value }))}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            e.preventDefault();
+                            handleCategoryUrlSave(cat.id);
+                          }
+                        }}
+                        className="form-input"
+                        style={{ flex: 1, padding: '4px 6px', fontSize: '0.75rem' }}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => handleCategoryUrlSave(cat.id)}
+                        disabled={!urlInput.trim() || isUploading}
+                        className="btn-secondary"
+                        style={{ padding: '4px 8px', fontSize: '0.72rem', fontWeight: 700 }}
+                      >
+                        OK
+                      </button>
+                    </div>
+
+                    {isCustom && (
+                      <button
+                        type="button"
+                        onClick={() => handleCategoryReset(cat.id, cat.defaultImg)}
+                        className="btn-secondary"
+                        style={{
+                          padding: '4px 8px',
+                          fontSize: '0.72rem',
+                          color: '#DC2626',
+                          borderColor: '#FCA5A5',
+                          backgroundColor: '#FFF'
+                        }}
+                      >
+                        Restablecer Original
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* SECCIÓN 2: GESTIÓN DE FOTOS DE PRODUCTOS */}
       <div className="imgm-head">
         <div>
           <h2 className="imgm-title">

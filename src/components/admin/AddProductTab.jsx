@@ -14,7 +14,7 @@ const EMPTY_FORM = {
   customSubcategory: '',
   description: '',
   wholesale_price: '',
-  stock: '50'
+  stock: '0'
 };
 
 // Alta de UN producto por vez con soporte de MULTIPLES IMAGENES.
@@ -27,7 +27,7 @@ export default function AddProductTab({ categories, onCreateProduct }) {
   const [sizes, setSizes] = useState([]);
   const [sizeConfigs, setSizeConfigs] = useState({});
   const [newSizeName, setNewSizeName] = useState('');
-  const [newSizeStock, setNewSizeStock] = useState('5');
+  const [newSizeStock, setNewSizeStock] = useState('1');
   const [customColorInputs, setCustomColorInputs] = useState({});
 
   // Para prenda de talle único (cuando sizes está vacío)
@@ -53,28 +53,23 @@ export default function AddProductTab({ categories, onCreateProduct }) {
 
   const update = (field) => (e) => setForm((f) => ({ ...f, [field]: e.target.value }));
 
-  // Manejo de talles
+  // Manejo de talles - Inicia totalmente limpio sin colores precargados
   const handleAddSize = () => {
     const trimmed = newSizeName.trim().toUpperCase();
     if (!trimmed || sizes.includes(trimmed)) return;
-    const initialStock = Math.max(1, parseInt(newSizeStock, 10) || 5);
-    const initialColors = defaultCategoryColors.length > 0 ? [...defaultCategoryColors] : ['Surtido'];
-    const initialColorStock = {};
-    initialColors.forEach((c) => {
-      initialColorStock[c] = initialStock;
-    });
+    const initialStock = Math.max(0, parseInt(newSizeStock, 10) || 0);
 
     setSizes((prev) => [...prev, trimmed]);
     setSizeConfigs((prev) => ({
       ...prev,
       [trimmed]: {
-        colors: initialColors,
-        color_stock: initialColorStock,
+        colors: [],
+        color_stock: {},
         bulkStock: String(initialStock)
       }
     }));
     setNewSizeName('');
-    setNewSizeStock('5');
+    setNewSizeStock('1');
   };
 
   const handleRemoveSize = (size) => {
@@ -122,11 +117,11 @@ export default function AddProductTab({ categories, onCreateProduct }) {
     });
   };
 
-  const handleAddColorToSize = (size, colorToAdd, defaultVal = 5) => {
+  const handleAddColorToSize = (size, colorToAdd, defaultVal = 1) => {
     const trimmed = (colorToAdd || '').trim();
     if (!trimmed) return;
     setSizeConfigs((prev) => {
-      const current = prev[size] || { colors: [], color_stock: {}, bulkStock: '5' };
+      const current = prev[size] || { colors: [], color_stock: {}, bulkStock: '0' };
       if (current.colors.includes(trimmed)) return prev;
       const initialStock = Math.max(0, parseInt(current.bulkStock, 10) || defaultVal);
       return {
@@ -161,7 +156,7 @@ export default function AddProductTab({ categories, onCreateProduct }) {
   };
 
   // Manejo de colores para talle único
-  const handleAddSingleColor = (colorToAdd, defaultVal = 5) => {
+  const handleAddSingleColor = (colorToAdd, defaultVal = 1) => {
     const trimmed = (colorToAdd || '').trim();
     if (!trimmed || singleColors.includes(trimmed)) return;
     setSingleColors((prev) => [...prev, trimmed]);
@@ -282,13 +277,13 @@ export default function AddProductTab({ categories, onCreateProduct }) {
   };
 
   const resetForNext = () => {
-    setForm((f) => ({ ...EMPTY_FORM, category: f.category, customCategory: f.customCategory, subcategory: f.subcategory, customSubcategory: f.customSubcategory, stock: f.stock }));
+    setForm((f) => ({ ...EMPTY_FORM, category: f.category, customCategory: f.customCategory, subcategory: f.subcategory, customSubcategory: f.customSubcategory, stock: '0' }));
     setImageUrls([]);
     setManualUrlInput('');
     setSizes([]);
     setSizeConfigs({});
     setNewSizeName('');
-    setNewSizeStock('5');
+    setNewSizeStock('1');
     setCustomColorInputs({});
     setSingleColors([]);
     setSingleColorStock({});
@@ -327,7 +322,7 @@ export default function AddProductTab({ categories, onCreateProduct }) {
 
         cleanStockPerSize[s] = {
           stock: sizeTotalStock,
-          colors: cleanColors.length > 0 ? cleanColors : ['Surtido'],
+          colors: cleanColors,
           color_stock: finalColorStock
         };
 
@@ -357,7 +352,7 @@ export default function AddProductTab({ categories, onCreateProduct }) {
         stock: finalCalculatedStock,
         stock_per_size: cleanStockPerSize,
         sizes,
-        colors: finalColorsList.length > 0 ? finalColorsList : ['Surtido'],
+        colors: finalColorsList,
         image_url: imageUrls[0] || '',
         image_urls: imageUrls
       });
@@ -720,7 +715,7 @@ export default function AddProductTab({ categories, onCreateProduct }) {
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginBottom: '8px' }}>
                 {singleColors.length === 0 ? (
                   <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)', fontStyle: 'italic' }}>
-                    Sin colores específicos (se asignarán los colores típicos de la categoría)
+                    Sin colores específicos (se asignará el stock general a la prenda)
                   </span>
                 ) : (
                   singleColors.map((c) => (

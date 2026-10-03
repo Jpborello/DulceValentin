@@ -95,6 +95,23 @@ class DataStore {
     this.transferHolder = '[Titular de la cuenta — COMPLETAR]';
     this.transferCuit = '[CUIT — COMPLETAR]';
     this.transferAlias = 'alias.dulcevalentin.completar';
+
+    // Imágenes de las 4 categorías principales del home
+    this.categoryImages = {
+      calzado: '/categorias/calzado.webp',
+      indumentaria: '/categorias/indumentaria.webp',
+      lenceria: '/categorias/lenceria.webp',
+      bebes: '/categorias/bebes.webp'
+    };
+    if (typeof window !== 'undefined') {
+      try {
+        const cachedCatImgs = JSON.parse(localStorage.getItem('dulcevalentin_category_images') || 'null');
+        if (cachedCatImgs && typeof cachedCatImgs === 'object') {
+          this.categoryImages = { ...this.categoryImages, ...cachedCatImgs };
+        }
+      } catch (e) {}
+    }
+
     // Copia local de los ultimos datos de transferencia conocidos, solo para
     // mostrar algo mientras carga la base. La fuente de verdad es Supabase
     // (filas _config_* de categories): fetchCategoriesFromSupabase la pisa.
@@ -137,6 +154,9 @@ class DataStore {
           image_url: p.image_url || (cleanUrls[0] || null),
           image_urls: cleanUrls,
           is_offer: p.is_offer,
+          is_new: p.is_new,
+          is_featured: p.is_featured,
+          badge_text: p.badge_text,
           colors: p.colors,
           sizes: p.sizes,
           stock_per_size: p.stock_per_size
@@ -165,7 +185,10 @@ class DataStore {
                 image_urls: flatUrls,
                 image_url: ov.image_url || (flatUrls[0] || null),
                 sizes: ov.sizes ?? p.sizes,
-                stock_per_size: ov.stock_per_size ?? p.stock_per_size
+                stock_per_size: ov.stock_per_size ?? p.stock_per_size,
+                badge_text: ov.badge_text !== undefined ? ov.badge_text : p.badge_text,
+                is_new: ov.is_new !== undefined ? ov.is_new : p.is_new,
+                is_featured: ov.is_featured !== undefined ? ov.is_featured : p.is_featured
               };
             }
             return p;
@@ -357,6 +380,37 @@ class DataStore {
         if (alias2Row?.name) this.transferAlias2 = alias2Row.name;
         if (holderRow?.name) this.transferHolder = holderRow.name;
         if (cuitRow?.name) this.transferCuit = cuitRow.name;
+
+        // Leer imágenes de categorías del home
+        const catImgKeys = ['calzado', 'indumentaria', 'lenceria', 'bebes'];
+        catImgKeys.forEach(k => {
+          const row = data.find(item => item.id === `_config_cat_img_${k}`);
+          if (row?.name) {
+            this.categoryImages[k] = row.name;
+          }
+        });
+        if (typeof window !== 'undefined') {
+          try {
+            localStorage.setItem('dulcevalentin_category_images', JSON.stringify(this.categoryImages));
+          } catch (e) {}
+        }
+
+        // Leer badges personalizados del hero
+        const heroBadgesRow = data.find(item => item.id === '_config_hero_badges');
+        if (heroBadgesRow) {
+          try {
+            const rawMap = heroBadgesRow.name ? JSON.parse(heroBadgesRow.name) : null;
+            if (rawMap && typeof rawMap === 'object') {
+              this.products = this.products.map(p => {
+                if (rawMap[p.id]) {
+                  return { ...p, badge_text: rawMap[p.id] };
+                }
+                return p;
+              });
+              this.saveProductsToLocalStorage();
+            }
+          } catch (e) {}
+        }
 
         const normStr = (str) => (str || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
         const catMap = new Map();
@@ -824,6 +878,122 @@ class DataStore {
     this.updateProduct(id, { stock: parseInt(newStock, 10) || 0 });
   }
 
+  // Elimina un producto definitivamente de la base y del estado local
+  async deleteProduct(id) {
+    if (!id) return { ok: false, error: new Error('ID de producto requerido') };
+
+    this.products = this.products.filter(p => p.id !== id);
+    this.saveProductsToLocalStorage();
+    this.notify();
+
+    let result = { ok: true, error: null };
+    if (supabase) {
+      try {
+        const { error } = await supabase
+          .from('products')
+          .delete()
+          .eq('id', id);
+
+        if (error) {
+          console.warn('Supabase deleteProduct error:', error);
+          result = { ok: false, error };
+        }
+      } catch (err) {
+        console.warn('Supabase deleteProduct error:', err);
+        result = { ok: false, error: err };
+      }
+    }
+    return result;
+  }
+
+  // Actualiza la imagen de una de las 4 categorías principales del home
+  async updateCategoryImage(groupId, imageUrl) {
+    if (!groupId) return;
+    const finalUrl = (imageUrl || '').trim();
+    this.categoryImages = {
+      ...this.categoryImages,
+      [groupId]: finalUrl
+    };
+    if (typeof window !== 'undefined') {
+      try {
+        localStorage.setItem('dulcevalentin_category_images', JSON.stringify(this.categoryImages));
+      } catch (e) {}
+    }
+    this.notify();
+
+    if (supabase) {
+      try {
+        await supabase.from('categories').upsert({
+          id: `_config_cat_img_${groupId}`,
+          name: finalUrl,
+          subcategories: []
+        });
+      } catch (err) {
+        console.warn('Error guardando imagen de categoría en Supabase:', err);
+      }
+    }
+  }
+
+  getCategoryImage(groupId) {
+    return this.categoryImages?.[groupId] || '';
+  }
+
+  getCategoryImages() {
+    return { ...this.categoryImages };
+  }
+
+  // Asigna o quita una etiqueta personalizada a un producto (para carrusel de Liquidación / Nuevos Ingresos)
+  async setProductHeroBadge(productId, badgeText) {
+    const prod = this.products.find(p => p.id === productId);
+    if (!prod) return;
+
+    const trimmedBadge = badgeText ? String(badgeText).trim() : '';
+
+    const updates = { badge_text: trimmedBadge || null };
+    if (trimmedBadge) {
+      if (trimmedBadge.toLowerCase().includes('nuevo')) {
+        updates.is_new = true;
+      } else {
+        updates.is_offer = true;
+      }
+    }
+
+    this.products = this.products.map(p => p.id === productId ? { ...p, ...updates } : p);
+    this.saveProductsToLocalStorage();
+    this.notify();
+
+    if (supabase) {
+      try {
+        // Actualizar flags en la tabla products
+        const dbProductUpdates = {};
+        if (updates.is_offer !== undefined) dbProductUpdates.is_offer = updates.is_offer;
+        if (updates.is_new !== undefined) dbProductUpdates.is_new = updates.is_new;
+
+        if (Object.keys(dbProductUpdates).length > 0) {
+          await supabase.from('products').update(dbProductUpdates).eq('id', productId);
+        }
+
+        // Guardar el mapa de badges en la fila _config_hero_badges
+        const badgesMap = {};
+        this.products.forEach(p => {
+          if (p.badge_text) badgesMap[p.id] = p.badge_text;
+        });
+
+        await supabase.from('categories').upsert({
+          id: '_config_hero_badges',
+          name: JSON.stringify(badgesMap),
+          subcategories: []
+        });
+      } catch (err) {
+        console.warn('Error guardando hero badge en Supabase:', err);
+      }
+    }
+  }
+
+  async removeProductHeroBadge(productId) {
+    await this.setProductHeroBadge(productId, null);
+  }
+
   // Usado en el checkout (cliente anonimo). Actualiza el estado local al
   // instante para la UI, y persiste el descuento real en la base via una
   // funcion SQL atomica (evita vender de mas con compras simultaneas y no
@@ -1140,14 +1310,21 @@ class DataStore {
   // (ademas hay un indice unico en la base como ultima red de seguridad).
   async createProduct(data) {
     const usedCodes = new Set(this.products.map((p) => p.code).filter(Boolean));
-    let nextNumericCode = this.products.reduce((max, p) => {
-      const n = parseInt(p.code, 10);
-      return Number.isFinite(n) && n > max ? n : max;
-    }, 0) + 1;
-    let code = String(nextNumericCode).padStart(4, '0');
-    while (usedCodes.has(code)) {
-      nextNumericCode += 1;
+    const requestedCode = data.code ? String(data.code).trim() : '';
+    let code;
+
+    if (requestedCode && !usedCodes.has(requestedCode)) {
+      code = requestedCode;
+    } else {
+      let nextNumericCode = this.products.reduce((max, p) => {
+        const n = parseInt(p.code, 10);
+        return Number.isFinite(n) && n > max ? n : max;
+      }, 0) + 1;
       code = String(nextNumericCode).padStart(4, '0');
+      while (usedCodes.has(code)) {
+        nextNumericCode += 1;
+        code = String(nextNumericCode).padStart(4, '0');
+      }
     }
 
     const categoryName = (data.category || '').trim();

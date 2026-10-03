@@ -3637,6 +3637,12 @@ button {
   color: #FFFFFF;
 }
 
+.dvn-badge--promo {
+  background: linear-gradient(135deg, #DC2626 0%, #E11D48 100%);
+  color: #FFFFFF;
+  box-shadow: 0 4px 12px rgba(225, 29, 72, 0.4);
+}
+
 .dvn-body {
   display: flex;
   flex-direction: column;
