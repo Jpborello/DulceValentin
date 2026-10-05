@@ -23,6 +23,9 @@ const nextConfig = {
     ];
   },
   images: {
+    // Las imagenes ya estan optimizadas como .webp y servidas desde Supabase Storage CDN.
+    // unoptimized: true evita que Vercel consuma el limite mensual de transformaciones (5K).
+    unoptimized: true,
     remotePatterns: [
       {
         protocol: 'https',
