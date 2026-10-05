@@ -4,10 +4,10 @@ import { requireAdmin } from '@/lib/adminAuth';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://revrbrrzlnweuxwhpgei.supabase.co';
 const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'sb_publishable_SG-JwsfgUZuPHN23twhBlw_QhaJmwL_';
 
-// Si falta la key en este entorno (deploy nuevo sin las variables cargadas
-// todavia), no tiramos abajo el build entero del sitio por esta ruta sola.
-const supabaseAdmin = serviceRoleKey ? createClient(supabaseUrl, serviceRoleKey) : null;
+const effectiveKey = (serviceRoleKey && !serviceRoleKey.includes('COMPLETAR')) ? serviceRoleKey : anonKey;
+const supabaseAdmin = createClient(supabaseUrl, effectiveKey);
 
 export async function GET(req) {
   const denied = await requireAdmin(req, supabaseAdmin);

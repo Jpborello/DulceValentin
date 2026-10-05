@@ -1,6 +1,7 @@
 import './globals.css';
 import Script from 'next/script';
 import PwaRegister from '@/components/PwaRegister';
+import FloatingWidgets from '@/components/FloatingWidgets';
 import { DM_Sans, DM_Serif_Display } from 'next/font/google';
 
 // Tipografia de marca: DM Serif Display para titulares grandes (H1, titulos
@@ -116,7 +117,7 @@ const localBusinessJsonLd = {
   name: 'Dulce Valentín',
   image: `${SITE_URL}/logo.png`,
   url: SITE_URL,
-  telephone: '+5493415147414',
+  telephone: '+5493412648035',
   priceRange: '$$',
   address: {
     '@type': 'PostalAddress',
@@ -205,6 +206,7 @@ export default function RootLayout({ children }) {
         {/* End Meta Pixel Code */}
 
         {children}
+        <FloatingWidgets />
         <PwaRegister />
       </body>
     </html>

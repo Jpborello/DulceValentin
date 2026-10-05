@@ -65,7 +65,7 @@ ${itemsList}
 
 Adjunto mi comprobante para coordinar el despacho. ¡Muchas gracias!`;
 
-    const phoneDigits = (COMPANY_INFO.phone || '5493415147414').replace(/\D/g, '');
+    const phoneDigits = (COMPANY_INFO.phone || '5493412648035').replace(/\D/g, '');
     return `https://wa.me/${phoneDigits}?text=${encodeURIComponent(text)}`;
   };
 
@@ -412,7 +412,7 @@ Adjunto mi comprobante para coordinar el despacho. ¡Muchas gracias!`;
                     <strong>Aprobación de Pago:</strong> Una vez verificado tu comprobante por nuestro equipo, tu pedido se marcará como <em>Aprobado</em> para su armado.
                   </li>
                   <li>
-                    <strong>Contacto:</strong> Un representante de ventas se pondrá en contacto con vos en pocos minutos por el Chat Online para coordinar la entrega o envío.
+                    <strong>Contacto y Comprobantes:</strong> Podés enviar tu comprobante de pago directo a nuestro WhatsApp <strong>341-264-8035</strong> con tu número de pedido para iniciar el armado inmediatamente.
                   </li>
                 </ul>
               </div>
@@ -440,7 +440,7 @@ Adjunto mi comprobante para coordinar el despacho. ¡Muchas gracias!`;
                   transition: 'transform 0.15s ease' 
                 }}
               >
-                <MessageCircle size={20} /> 📲 Enviar Pedido a WhatsApp
+                <MessageCircle size={20} /> 📲 Enviar Pedido y Comprobante a WhatsApp
               </a>
 
               <button 
@@ -505,7 +505,7 @@ Adjunto mi comprobante para coordinar el despacho. ¡Muchas gracias!`;
                     boxShadow: '0 3px 10px rgba(37, 211, 102, 0.3)'
                   }}
                 >
-                  <MessageCircle size={18} /> 📲 Notificar Pedido por WhatsApp
+                  <MessageCircle size={18} /> 📲 Notificar Pedido y Comprobante por WhatsApp
                 </a>
 
                 {/* Raffle Tickets Assigned Card (ONLY for registered users) */}

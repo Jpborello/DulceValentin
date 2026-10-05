@@ -7,5 +7,5 @@ export const COMPANY_INFO = {
   locality: 'Rosario',
   province: 'Santa Fe',
   postalCode: 'S2010AAD',
-  phone: '+54 9 3415 14-7414',
+  phone: '+54 9 341 264-8035',
 };

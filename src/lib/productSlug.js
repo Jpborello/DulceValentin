@@ -5,7 +5,7 @@
 // Asi un link ya compartido sigue funcionando aunque el nombre del
 // producto cambie despues.
 
-import { slugify } from './slugify';
+import { slugify } from './slugify.js';
 
 export const slugifyName = slugify;
 

@@ -3,7 +3,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { supabase } from '@/lib/supabaseClient';
 import { renderMessageWithLinks } from '@/lib/chatLinks';
-import { adminFetch } from '@/lib/adminFetch';
 import {
   MessageSquare,
   Send,
@@ -12,18 +11,14 @@ import {
   Search,
   Settings,
   RefreshCw,
-  CheckCheck,
   Sparkles,
-  PhoneCall,
-  Power,
-  Lock,
-  Eye,
-  EyeOff,
   Volume2,
   VolumeX,
   ArrowLeft,
   Trash2,
-  Paperclip
+  Paperclip,
+  Eye,
+  EyeOff
 } from 'lucide-react';
 
 export default function WhatsAppTab() {
@@ -79,34 +74,58 @@ export default function WhatsAppTab() {
     } catch (e) {}
   };
 
-  // Load Chats list on mount
+  // Cargar lista de chats y settings al montar
   useEffect(() => {
     fetchChats();
     fetchSettings();
   }, []);
 
-  // Poll chats list every 10 seconds for real-time inbox updates
+  // Polling de respaldo cada 8 segundos
   useEffect(() => {
     const interval = setInterval(() => {
       fetchChats(true);
       if (selectedPhone) fetchMessages(selectedPhone, true);
-    }, 10000);
+    }, 8000);
     return () => clearInterval(interval);
   }, [selectedPhone]);
 
-  // Scroll al ultimo mensaje solo cuando realmente cambia (mensaje nuevo o
-  // cambio de chat). El polling de fondo cada 10s vuelve a traer los mismos
-  // mensajes (array nuevo, mismo contenido); sin este chequeo, ese refresh
-  // disparaba un scroll-to-bottom cada 10s aunque el admin estuviera mirando
-  // hacia arriba, "arrastrandolo" de vuelta al final y tapando el panel de
-  // arriba en mobile.
+  const selectedPhoneRef = useRef(selectedPhone);
+  useEffect(() => {
+    selectedPhoneRef.current = selectedPhone;
+  }, [selectedPhone]);
+
+  // Suscripción Realtime a mensajes de Supabase (se monta una sola vez)
+  useEffect(() => {
+    if (!supabase) return;
+    const channelName = 'whatsapp-realtime-' + Math.random().toString(36).slice(2);
+    const channel = supabase
+      .channel(channelName)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'whatsapp_messages' },
+        (payload) => {
+          fetchChats(true);
+          const currentPhone = selectedPhoneRef.current;
+          if (currentPhone && (payload.new?.chat_phone === currentPhone || payload.old?.chat_phone === currentPhone)) {
+            fetchMessages(currentPhone, true);
+          }
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'whatsapp_chats' },
+        () => {
+          fetchChats(true);
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, []);
+
   const lastScrolledIdRef = useRef(null);
-  // Se pone en true en handleSelectChat para forzar el salto al fondo (sin
-  // animar) al entrar a una conversacion. Sin esto, lastScrolledIdRef seguia
-  // apuntando al ultimo mensaje de esa misma conversacion (ya visto en una
-  // visita anterior), asi que al volver a ella el efecto de abajo nunca
-  // disparaba el scroll y la vista quedaba con el scrollTop heredado del
-  // chat anterior, arrancando cerca del principio en conversaciones largas.
   const justSwitchedChatRef = useRef(false);
   useEffect(() => {
     if (messages.length === 0) return;
@@ -122,22 +141,26 @@ export default function WhatsAppTab() {
   const fetchChats = async (isBackground = false) => {
     if (!isBackground) setIsLoadingChats(true);
     try {
-      const res = await adminFetch('/api/admin/whatsapp');
-      const data = await res.json();
-      if (data.success && Array.isArray(data.chats)) {
-        const newUnreadTotal = data.chats.reduce((sum, c) => sum + (c.unread_count || 0), 0);
+      const { data, error } = await supabase
+        .from('whatsapp_chats')
+        .select('*')
+        .order('updated_at', { ascending: false });
+
+      if (error) throw error;
+      if (Array.isArray(data)) {
+        const newUnreadTotal = data.reduce((sum, c) => sum + (c.unread_count || 0), 0);
         if (isBackground && newUnreadTotal > prevUnreadRef.current) {
           playNotificationSound();
         }
         prevUnreadRef.current = newUnreadTotal;
-        setChats(data.chats);
-        if (!selectedPhone && data.chats.length > 0) {
-          setSelectedPhone(data.chats[0].phone);
-          fetchMessages(data.chats[0].phone);
+        setChats(data);
+        if (!selectedPhone && data.length > 0) {
+          setSelectedPhone(data[0].phone);
+          fetchMessages(data[0].phone);
         }
       }
     } catch (e) {
-      console.warn('Error al cargar chats de WhatsApp:', e);
+      console.warn('Error al cargar chats de Supabase:', e);
     } finally {
       if (!isBackground) setIsLoadingChats(false);
     }
@@ -147,25 +170,30 @@ export default function WhatsAppTab() {
     if (!phone) return;
     if (!isBackground) setIsLoadingMessages(true);
     try {
-      const res = await adminFetch(`/api/admin/whatsapp?phone=${encodeURIComponent(phone)}`);
-      const data = await res.json();
-      if (data.success && Array.isArray(data.messages)) {
-        if (data.messages.length > 0) {
-          const lastMsg = data.messages[data.messages.length - 1];
+      const { data, error } = await supabase
+        .from('whatsapp_messages')
+        .select('*')
+        .eq('chat_phone', phone)
+        .order('created_at', { ascending: true });
+
+      if (error) throw error;
+      if (Array.isArray(data)) {
+        if (data.length > 0) {
+          const lastMsg = data[data.length - 1];
           if (isBackground && lastMsg.id !== lastMsgIdRef.current && lastMsg.sender === 'client') {
             playNotificationSound();
           }
           lastMsgIdRef.current = lastMsg.id;
         }
-        setMessages(data.messages);
+        setMessages(data);
       }
-      // Mark as read
-      await adminFetch('/api/admin/whatsapp', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'markRead', phone })
-      });
-      // Update unread count locally
+
+      // Marcar como leído
+      await supabase
+        .from('whatsapp_chats')
+        .update({ unread_count: 0 })
+        .eq('phone', phone);
+
       setChats(prev => prev.map(c => c.phone === phone ? { ...c, unread_count: 0 } : c));
     } catch (e) {
       console.warn('Error al cargar mensajes:', e);
@@ -184,7 +212,7 @@ DATOS OFICIALES Y PREGUNTAS FRECUENTES:
    - Datos de Transferencia: Alias 'alias.dulcevalentin.completar' (Titular: [Titular de la cuenta — COMPLETAR], CUIT: [CUIT — COMPLETAR]).
 
 2. DIRECCIÓN, HORARIOS Y CONTACTO:
-   - Dulce Valentín: Pte. Perón 5349/5305/5265, Rosario, Santa Fe. Horario: Lunes a Sábado de 8:00 a 17:00 hs. Teléfono: +54 9 3415 14-7414.
+   - Dulce Valentín: Pte. Perón 5349/5305/5265, Rosario, Santa Fe. Horario: Lunes a Sábado de 8:00 a 17:00 hs. Teléfono / WhatsApp oficial: +54 9 341 264-8035 (3412648035).
 
 3. MODALIDAD DE VENTA, MÍNIMO DE COMPRA & ENVÍOS:
    - ¿Venden por unidad? Sí, vendemos por unidad, por talle completo o también podés armar surtido/variedad de productos según necesites.
@@ -193,23 +221,29 @@ DATOS OFICIALES Y PREGUNTAS FRECUENTES:
 
 4. REALIZACIÓN DE PEDIDOS Y COMPROBANTES:
    - Podés armar tu pedido directamente en la web o por este chat.
-   - El comprobante de pago lo podés enviar por acá mismo subiéndolo o adjuntándolo al hacer tu pedido en la web.
+   - El comprobante de pago lo podés enviar directamente al WhatsApp oficial 3412648035 o adjuntarlo al finalizar tu pedido en la web.
 
 5. ATENCIÓN CON REPRESENTANTE HUMANO:
-   - Si el cliente solicita hablar con una persona, asesor o representante, respondé amablemente: "¡Por supuesto! Te derivo en este momento con un asesor humano de Dulce Valentín para que te atienda de forma directa."
+   - Si el cliente solicita hablar con una persona, vendedor o asesor, respondé amablemente: "¡Por supuesto! Podés comunicarte directamente con nuestros vendedores por WhatsApp al 3412648035 o tocando el botón de WhatsApp del sitio."
 
 6. TONO Y FORMATO:
    - Sé claro, puntual, educado y sin rodeos (evitá divagar). Dá respuestas de 2 a 4 oraciones bien formateadas.`;
 
   const fetchSettings = async () => {
     try {
-      const res = await adminFetch('/api/admin/whatsapp?type=settings');
-      const data = await res.json();
-      if (data.success && data.settings) {
-        setOpenrouterKey(data.settings.openrouter_key || '');
-        setSelectedModel(data.settings.model || 'deepseek/deepseek-chat');
-        setSystemPrompt(data.settings.system_prompt || defaultSystemPrompt);
-        setIsGlobalEnabled(data.settings.is_global_enabled !== false);
+      const { data } = await supabase
+        .from('whatsapp_bot_settings')
+        .select('*')
+        .eq('id', 'main')
+        .maybeSingle();
+
+      if (data) {
+        setOpenrouterKey(data.openrouter_key || '');
+        setSelectedModel(data.model || 'deepseek/deepseek-chat');
+        setSystemPrompt(data.system_prompt || defaultSystemPrompt);
+        setIsGlobalEnabled(data.is_global_enabled !== false);
+      } else {
+        setSystemPrompt(defaultSystemPrompt);
       }
     } catch (e) {
       console.warn('Error al cargar configuración de bot:', e);
@@ -230,9 +264,8 @@ DATOS OFICIALES Y PREGUNTAS FRECUENTES:
     const textToSend = inputText.trim();
     setInputText('');
 
-    // Optimistic UI update
     const tempMsg = {
-      id: Date.now().toString(),
+      id: crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(),
       chat_phone: selectedPhone,
       sender: 'admin',
       content: textToSend,
@@ -241,11 +274,14 @@ DATOS OFICIALES Y PREGUNTAS FRECUENTES:
     setMessages(prev => [...prev, tempMsg]);
 
     try {
-      const res = await adminFetch('/api/admin/whatsapp', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'sendMessage', phone: selectedPhone, content: textToSend })
-      });
+      await supabase.from('whatsapp_messages').insert([tempMsg]);
+      await supabase.from('whatsapp_chats').upsert([{
+        phone: selectedPhone,
+        last_message: textToSend,
+        unread_count: 0,
+        updated_at: new Date().toISOString()
+      }], { onConflict: 'phone' });
+
       fetchMessages(selectedPhone, true);
       fetchChats(true);
     } catch (e) {
@@ -271,13 +307,24 @@ DATOS OFICIALES Y PREGUNTAS FRECUENTES:
       const { data: urlData } = supabase.storage.from('Productos').getPublicUrl(filePath);
       const imageUrl = urlData.publicUrl;
 
-      const res = await adminFetch('/api/admin/whatsapp', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'sendImage', phone: selectedPhone, imageUrl, caption: inputText.trim() })
-      });
-      const data = await res.json();
-      if (!data.success) throw new Error(data.error || 'No se pudo enviar la imagen');
+      const msgObj = {
+        id: crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(),
+        chat_phone: selectedPhone,
+        sender: 'admin',
+        content: inputText.trim() || '',
+        media_url: imageUrl,
+        message_type: 'image',
+        created_at: new Date().toISOString()
+      };
+
+      await supabase.from('whatsapp_messages').insert([msgObj]);
+      await supabase.from('whatsapp_chats').upsert([{
+        phone: selectedPhone,
+        last_message: msgObj.content || '📷 Imagen',
+        unread_count: 0,
+        updated_at: new Date().toISOString()
+      }], { onConflict: 'phone' });
+
       setInputText('');
       fetchMessages(selectedPhone, true);
       fetchChats(true);
@@ -296,13 +343,8 @@ DATOS OFICIALES Y PREGUNTAS FRECUENTES:
       return;
     }
     try {
-      const res = await adminFetch('/api/admin/whatsapp', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'deleteChat', phone: chat.phone })
-      });
-      const data = await res.json();
-      if (!data.success) throw new Error(data.error || 'No se pudo borrar el chat');
+      await supabase.from('whatsapp_messages').delete().eq('chat_phone', chat.phone);
+      await supabase.from('whatsapp_chats').delete().eq('phone', chat.phone);
 
       setChats(prev => prev.filter(c => c.phone !== chat.phone));
       if (selectedPhone === chat.phone) {
@@ -319,11 +361,7 @@ DATOS OFICIALES Y PREGUNTAS FRECUENTES:
     const newStatus = !currentStatus;
     setChats(prev => prev.map(c => c.phone === phone ? { ...c, bot_enabled: newStatus } : c));
     try {
-      await adminFetch('/api/admin/whatsapp', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'toggleBot', phone, bot_enabled: newStatus })
-      });
+      await supabase.from('whatsapp_chats').update({ bot_enabled: newStatus }).eq('phone', phone);
     } catch (e) {
       console.warn('Error al cambiar estado del bot:', e);
     }
@@ -333,22 +371,18 @@ DATOS OFICIALES Y PREGUNTAS FRECUENTES:
     e.preventDefault();
     setSaveSuccessMsg('');
     try {
-      const res = await adminFetch('/api/admin/whatsapp', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          action: 'saveSettings',
-          openrouter_key: openrouterKey,
-          model: selectedModel,
-          system_prompt: systemPrompt,
-          is_global_enabled: isGlobalEnabled
-        })
-      });
-      const data = await res.json();
-      if (data.success) {
-        setSaveSuccessMsg('✓ Configuración del Bot guardada con éxito.');
-        setTimeout(() => setSaveSuccessMsg(''), 3000);
-      }
+      const { error } = await supabase.from('whatsapp_bot_settings').upsert([{
+        id: 'main',
+        openrouter_key: openrouterKey,
+        model: selectedModel,
+        system_prompt: systemPrompt,
+        is_global_enabled: isGlobalEnabled,
+        updated_at: new Date().toISOString()
+      }], { onConflict: 'id' });
+
+      if (error) throw error;
+      setSaveSuccessMsg('✓ Configuración del Bot guardada con éxito.');
+      setTimeout(() => setSaveSuccessMsg(''), 3000);
     } catch (e) {
       console.warn('Error al guardar ajustes:', e);
     }
@@ -369,7 +403,7 @@ DATOS OFICIALES Y PREGUNTAS FRECUENTES:
           <MessageSquare className="text-gold" size={22} />
           <div>
             <h3 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 800 }}>WhatsApp CRM & Bot de IA</h3>
-            <span className="whatsapp-subtitle" style={{ fontSize: '0.75rem', color: '#94A3B8' }}>Bandeja de Entrada & Atención Inteligente con OpenRouter</span>
+            <span className="whatsapp-subtitle" style={{ fontSize: '0.75rem', color: '#94A3B8' }}>Bandeja en Vivo • Conectada con Supabase & DeepSeek IA</span>
           </div>
         </div>
 
@@ -407,7 +441,7 @@ DATOS OFICIALES Y PREGUNTAS FRECUENTES:
               gap: '6px'
             }}
           >
-            <Settings size={15} /> Ajustes IA / OpenRouter
+            <Settings size={15} /> Ajustes del Bot
           </button>
         </div>
       </div>
@@ -598,30 +632,24 @@ DATOS OFICIALES Y PREGUNTAS FRECUENTES:
                           <span style={{ fontSize: '0.68rem', fontWeight: 800, opacity: 0.8, textTransform: 'uppercase' }}>
                             {isClient ? (selectedChat.client_name || 'Cliente') : isBot ? '🤖 IA Bot' : '👤 Administrador'}
                           </span>
+                          <span style={{ fontSize: '0.65rem', opacity: 0.6 }}>{timeStr}</span>
                         </div>
 
-                        {msg.media_url && (msg.message_type === 'image' || msg.message_type === 'sticker') ? (
-                          <a href={msg.media_url} target="_blank" rel="noreferrer">
-                            <img
-                              src={msg.media_url}
-                              alt="Imagen enviada por WhatsApp"
-                              style={{ maxWidth: '220px', maxHeight: '260px', borderRadius: '10px', display: 'block', marginBottom: msg.content ? '6px' : 0 }}
-                            />
-                          </a>
-                        ) : msg.media_url ? (
-                          <a href={msg.media_url} target="_blank" rel="noreferrer" style={{ display: 'block', marginBottom: msg.content ? '6px' : 0, color: 'inherit', textDecoration: 'underline', fontSize: '0.85rem' }}>
-                            📎 Ver {msg.message_type === 'video' ? 'video' : msg.message_type === 'audio' ? 'audio' : 'archivo'} adjunto
-                          </a>
-                        ) : null}
-
-                        {msg.content && (
-                          <div style={{ fontSize: '0.88rem', lineHeight: '1.4', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
-                            {renderMessageWithLinks(msg.content)}
+                        {/* Si tiene imagen adjunta */}
+                        {msg.media_url && (
+                          <div style={{ marginBottom: msg.content ? '8px' : 0 }}>
+                            <a href={msg.media_url} target="_blank" rel="noreferrer">
+                              <img
+                                src={msg.media_url}
+                                alt="Adjunto"
+                                style={{ maxWidth: '100%', maxHeight: '240px', borderRadius: '8px', objectFit: 'cover', display: 'block' }}
+                              />
+                            </a>
                           </div>
                         )}
 
-                        <div style={{ textAlign: 'right', fontSize: '0.65rem', opacity: 0.7, marginTop: '4px' }}>
-                          {timeStr}
+                        <div style={{ fontSize: '0.85rem', lineHeight: 1.4, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+                          {renderMessageWithLinks(msg.content)}
                         </div>
                       </div>
                     );
@@ -630,51 +658,50 @@ DATOS OFICIALES Y PREGUNTAS FRECUENTES:
                 <div ref={messagesEndRef} />
               </div>
 
-              {/* Message Input Box */}
-              <form onSubmit={handleSendMessage} style={{ padding: '12px 18px', borderTop: '1px solid var(--border-color)', display: 'flex', gap: '10px', background: 'var(--bg-main)', alignItems: 'flex-end' }}>
+              {/* Chat Input Bar */}
+              <form onSubmit={handleSendMessage} style={{ padding: '12px 18px', borderTop: '1px solid var(--border-color)', display: 'flex', gap: '10px', alignItems: 'center', background: 'var(--bg-main)' }}>
                 <input
                   type="file"
-                  accept="image/*"
                   ref={fileInputRef}
                   onChange={handleAttachImage}
+                  accept="image/*"
                   style={{ display: 'none' }}
                 />
+
                 <button
                   type="button"
-                  title={selectedChat.channel === 'web' ? 'Adjuntar imagen (queda en el chat, no se manda por WhatsApp)' : 'Adjuntar imagen para enviar por WhatsApp'}
-                  onClick={() => fileInputRef.current?.click()}
                   disabled={isUploadingImage}
+                  onClick={() => fileInputRef.current?.click()}
+                  title="Adjuntar imagen"
                   style={{
-                    padding: '10px 12px',
-                    borderRadius: '10px',
-                    background: 'var(--bg-card)',
-                    color: 'var(--text-muted)',
+                    padding: '8px 12px',
+                    borderRadius: '8px',
+                    background: 'var(--bg-surface-elevated)',
                     border: '1px solid var(--border-color)',
-                    cursor: isUploadingImage ? 'default' : 'pointer',
-                    opacity: isUploadingImage ? 0.6 : 1
+                    color: 'var(--text-main)',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '4px'
                   }}
                 >
                   <Paperclip size={16} />
                 </button>
-                <textarea
-                  placeholder={selectedChat.channel === 'web' ? 'Escribí una respuesta para el chat web del cliente... (Enter para renglón nuevo, Ctrl+Enter para enviar)' : 'Escribí un mensaje directo al WhatsApp del cliente... (Enter para renglón nuevo, Ctrl+Enter para enviar)'}
+
+                <input
+                  type="text"
+                  placeholder={`Responder a ${selectedChat.client_name || selectedChat.phone}...`}
                   value={inputText}
                   onChange={(e) => setInputText(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
-                      e.preventDefault();
-                      handleSendMessage(e);
-                    }
-                  }}
-                  rows={2}
-                  style={{ flex: 1, padding: '10px 14px', fontSize: '0.88rem', borderRadius: '10px', border: '1px solid var(--border-color)', background: 'var(--bg-card)', color: 'var(--text-main)', resize: 'vertical', fontFamily: 'inherit' }}
+                  style={{ flex: 1, padding: '9px 14px', fontSize: '0.85rem', borderRadius: '8px', border: '1px solid var(--border-color)', background: 'var(--bg-card)', color: 'var(--text-main)' }}
                 />
+
                 <button
                   type="submit"
                   disabled={!inputText.trim()}
                   style={{
-                    padding: '10px 18px',
-                    borderRadius: '10px',
+                    padding: '9px 18px',
+                    borderRadius: '8px',
                     background: 'var(--accent-gold)',
                     color: '#FFFFFF',
                     border: 'none',
@@ -706,7 +733,7 @@ DATOS OFICIALES Y PREGUNTAS FRECUENTES:
             
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '18px' }}>
               <h3 style={{ margin: 0, fontSize: '1.2rem', fontWeight: 800, display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <Sparkles className="text-gold" size={20} /> Configuración de OpenRouter & Bot IA
+                <Sparkles className="text-gold" size={20} /> Configuración del Bot IA
               </h3>
               <button onClick={() => setIsSettingsOpen(false)} style={{ background: 'none', border: 'none', fontSize: '1.2rem', cursor: 'pointer', color: 'var(--text-muted)' }}>✕</button>
             </div>
@@ -720,12 +747,12 @@ DATOS OFICIALES Y PREGUNTAS FRECUENTES:
             <form onSubmit={handleSaveSettings}>
               <div style={{ marginBottom: '16px' }}>
                 <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 700, marginBottom: '6px' }}>
-                  OpenRouter API Key:
+                  OpenRouter API Key (Opcional - ya configurada en el servidor):
                 </label>
                 <div style={{ position: 'relative' }}>
                   <input 
                     type={showKey ? 'text' : 'password'}
-                    placeholder="sk-or-v1-..."
+                    placeholder="sk-or-v1-... (ya cargada en .env.local)"
                     value={openrouterKey}
                     onChange={(e) => setOpenrouterKey(e.target.value)}
                     style={{ width: '100%', padding: '8px 40px 8px 12px', fontSize: '0.85rem', borderRadius: '8px', border: '1px solid var(--border-color)', background: 'var(--bg-main)', color: 'var(--text-main)' }}
@@ -738,21 +765,20 @@ DATOS OFICIALES Y PREGUNTAS FRECUENTES:
                     {showKey ? <EyeOff size={16} /> : <Eye size={16} />}
                   </button>
                 </div>
-                <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>Obtenela gratis en openrouter.ai para habilitar la respuesta automática.</span>
+                <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>La clave ya está guardada de forma segura en las variables de entorno.</span>
               </div>
 
               <div style={{ marginBottom: '16px' }}>
                 <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 700, marginBottom: '6px' }}>
-                  Modelo de IA Preferido:
+                  Modelo de IA:
                 </label>
                 <select 
                   value={selectedModel}
                   onChange={(e) => setSelectedModel(e.target.value)}
                   style={{ width: '100%', padding: '8px 12px', fontSize: '0.85rem', borderRadius: '8px', border: '1px solid var(--border-color)', background: 'var(--bg-main)', color: 'var(--text-main)' }}
                 >
-                  <option value="deepseek/deepseek-chat">🔥 DeepSeek V3 (deepseek-chat) - Ultra Rápido & Económico</option>
-                  <option value="deepseek/deepseek-r1">🧠 DeepSeek R1 (deepseek-r1) - Razonamiento Avanzado</option>
-                  <option value="deepseek/deepseek-chat:free">⚡ DeepSeek V3 (Gratis — requiere haber cargado crédito una vez en OpenRouter)</option>
+                  <option value="deepseek/deepseek-chat">🔥 DeepSeek V3 (deepseek-chat) - Rápido & Económico (Recomendado)</option>
+                  <option value="deepseek/deepseek-r1">🧠 DeepSeek R1 (deepseek-r1) - Razonamiento</option>
                   <option value="meta-llama/llama-3.3-70b-instruct">Meta Llama 3.3 70B</option>
                   <option value="openai/gpt-4o-mini">OpenAI GPT-4o Mini</option>
                 </select>
@@ -765,16 +791,16 @@ DATOS OFICIALES Y PREGUNTAS FRECUENTES:
                     checked={isGlobalEnabled}
                     onChange={(e) => setIsGlobalEnabled(e.target.checked)}
                   />
-                  Habilitar Bot de IA de forma global para nuevos clientes
+                  Habilitar Bot de IA de forma global para nuevos visitantes
                 </label>
               </div>
 
               <div style={{ marginBottom: '20px' }}>
                 <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 700, marginBottom: '6px' }}>
-                  Prompt / Instrucciones de la IA:
+                  Prompt / Instrucciones del Bot de Ventas:
                 </label>
                 <textarea 
-                  rows={6}
+                  rows={8}
                   value={systemPrompt}
                   onChange={(e) => setSystemPrompt(e.target.value)}
                   style={{ width: '100%', padding: '10px', fontSize: '0.8rem', borderRadius: '8px', border: '1px solid var(--border-color)', background: 'var(--bg-main)', color: 'var(--text-main)', fontFamily: 'monospace' }}
@@ -792,10 +818,7 @@ DATOS OFICIALES Y PREGUNTAS FRECUENTES:
         </div>
       )}
 
-      {/* En celular no entran las dos columnas (lista + conversacion) lado a
-          lado, asi que se muestra una por vez, como WhatsApp Web: la lista
-          por default, y al elegir un chat pasa a mostrar solo la conversacion
-          con un boton de volver. */}
+      {/* En celular no entran las dos columnas lado a lado */}
       <style jsx>{`
         @media (max-width: 768px) {
           .whatsapp-tab-root {

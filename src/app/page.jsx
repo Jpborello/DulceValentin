@@ -11,7 +11,6 @@ import dynamic from 'next/dynamic';
 
 const CartDrawer = dynamic(() => import('@/components/CartDrawer'), { ssr: false });
 const AuthModal = dynamic(() => import('@/components/AuthModal'), { ssr: false });
-const WebChatWidget = dynamic(() => import('@/components/WebChatWidget'), { ssr: false });
 const ProductDetailModal = dynamic(() => import('@/components/ProductDetailModal'), { ssr: false });
 
 import WholesaleBanner from '@/components/WholesaleBanner';
@@ -687,12 +686,6 @@ export default function Home() {
         </div>
       )}
 
-      {/* Chat en vivo de la web — desactivado temporalmente (29/8: sin
-          SUPABASE_SERVICE_ROLE_KEY configurada en Vercel, el endpoint
-          /api/webchat/message tira error 500 en cada mensaje). Reactivar
-          descomentando <WebChatWidget /> una vez cargada la Service Role
-          Key real en las variables de entorno de Vercel. */}
-      {/* <WebChatWidget /> */}
 
       {/* Shopping Cart Drawer */}
       <CartDrawer

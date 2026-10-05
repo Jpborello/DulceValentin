@@ -4,18 +4,15 @@ import { processIncomingChatMessage } from '@/lib/whatsappBot';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://revrbrrzlnweuxwhpgei.supabase.co';
 const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'sb_publishable_SG-JwsfgUZuPHN23twhBlw_QhaJmwL_';
 
-// Si falta la key en este entorno (deploy nuevo sin las variables cargadas
-// todavia), no tiramos abajo el build entero del sitio por esta ruta sola.
-const supabaseAdmin = serviceRoleKey ? createClient(supabaseUrl, serviceRoleKey) : null;
+const effectiveKey = (serviceRoleKey && !serviceRoleKey.includes('COMPLETAR')) ? serviceRoleKey : anonKey;
+const supabaseAdmin = createClient(supabaseUrl, effectiveKey);
 
 // GET: el widget hace polling de los mensajes de su propia sesion (incluye
 // respuestas del bot y del admin escritas desde el panel).
 export async function GET(req) {
   try {
-    if (!serviceRoleKey || serviceRoleKey.includes('COMPLETAR')) {
-      return NextResponse.json({ success: true, messages: [] });
-    }
 
     const { searchParams } = new URL(req.url);
     const sessionId = searchParams.get('sessionId');

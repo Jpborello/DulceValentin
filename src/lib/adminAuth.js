@@ -9,13 +9,13 @@ import { NextResponse } from 'next/server';
 //
 // Si ADMIN_EMAIL esta cargada en las variables de entorno, ademas exige que
 // el usuario logueado sea ese mail (por si algun dia se crea otro usuario).
+import { createClient } from '@supabase/supabase-js';
+
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://revrbrrzlnweuxwhpgei.supabase.co';
+const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'sb_publishable_SG-JwsfgUZuPHN23twhBlw_QhaJmwL_';
+
 export async function requireAdmin(req, supabaseAdmin) {
-  if (!supabaseAdmin) {
-    return NextResponse.json(
-      { error: 'Falta configurar SUPABASE_SERVICE_ROLE_KEY en el servidor.' },
-      { status: 503 }
-    );
-  }
+  const client = supabaseAdmin || createClient(supabaseUrl, anonKey);
 
   const header = req.headers.get('authorization') || '';
   const token = header.toLowerCase().startsWith('bearer ') ? header.slice(7).trim() : '';
@@ -23,7 +23,7 @@ export async function requireAdmin(req, supabaseAdmin) {
     return NextResponse.json({ error: 'No autorizado' }, { status: 401 });
   }
 
-  const { data, error } = await supabaseAdmin.auth.getUser(token);
+  const { data, error } = await client.auth.getUser(token);
   const user = data?.user;
   if (error || !user) {
     return NextResponse.json({ error: 'Sesión inválida o vencida' }, { status: 401 });

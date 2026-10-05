@@ -1,4 +1,4 @@
-import { getProductUrlPath } from './productSlug';
+import { getProductUrlPath } from './productSlug.js';
 
 const SITE_URL = 'https://www.dulcevalentin.com.ar';
 
@@ -12,7 +12,7 @@ DATOS OFICIALES Y PREGUNTAS FRECUENTES:
    - Datos de Transferencia: Alias 'alias.dulcevalentin.completar' (Titular: [Titular de la cuenta — COMPLETAR], CUIT: [CUIT — COMPLETAR]).
 
 2. DIRECCIÓN Y HORARIOS DE ATENCIÓN:
-   - Dulce Valentín: Pte. Perón 5349/5305/5265, Rosario, Santa Fe. Horario: Lunes a Sábado de 8:00 a 17:00 hs. Teléfono: +54 9 3415 14-7414.
+   - Dulce Valentín: Pte. Perón 5349/5305/5265, Rosario, Santa Fe. Horario: Lunes a Sábado de 8:00 a 17:00 hs. Teléfono / WhatsApp oficial de atención y comprobantes: +54 9 341 264-8035 (3412648035).
 
 3. MODALIDAD DE VENTA, MÍNIMO DE COMPRA & ENVÍOS:
    - ¿Venden por unidad? Sí, vendemos por unidad, por talle completo o también podés armar surtido/variedad de productos según necesites.
@@ -21,10 +21,10 @@ DATOS OFICIALES Y PREGUNTAS FRECUENTES:
 
 4. REALIZACIÓN DE PEDIDOS Y COMPROBANTES:
    - Podés armar tu pedido directamente en la web o por este chat.
-   - El comprobante de pago lo podés enviar por acá mismo subiéndolo o adjuntándolo al hacer tu pedido en la web.
+   - El comprobante de pago de tu pedido lo podés enviar directamente al WhatsApp oficial de vendedores: 3412648035 (o tocando el botón de WhatsApp en la pantalla), o adjuntarlo al finalizar tu pedido en la web.
 
-5. ATENCIÓN CON REPRESENTANTE HUMANO:
-   - Si el cliente solicita hablar con una persona, asesor o representante, respondé amablemente: "¡Por supuesto! Te derivo en este momento con un asesor humano de Dulce Valentín para que te atienda de forma directa."
+5. ATENCIÓN CON REPRESENTANTE HUMANO / VENDEDORES:
+   - Si el cliente solicita hablar con una persona, vendedor o asesor, respondé amablemente: "¡Por supuesto! Podés comunicarte directamente con nuestros vendedores por WhatsApp tocando el logo de WhatsApp en pantalla o escribiendo al 3412648035 para que te atiendan de forma directa y puedas enviar tu comprobante."
 
 6. TONO Y FORMATO:
    - Sé claro, puntual, educado y sin rodeos (evitá divagar). Dá respuestas de 2 a 4 oraciones bien formateadas.`;
@@ -87,9 +87,10 @@ export async function processIncomingChatMessage(supabaseAdmin, { chatId, client
   }
 
   const { data: products } = await supabaseAdmin.from('products').select('*').gt('stock', 0);
-  const catalogSummary = (products || []).map(p =>
-    `- ${p.name} | Cat: ${p.category} (${p.subcategory || ''}) | Precio Mayorista: $${p.wholesale_price} | Stock: ${p.stock} | Desc: ${p.description || ''} | Link: ${SITE_URL}${getProductUrlPath(p)}`
-  ).join('\n');
+  const catalogSummary = (products || []).map(p => {
+    const productUrl = `${SITE_URL}${getProductUrlPath(p)}`;
+    return `- [${p.name}](${productUrl}) | Categoría: ${p.category} (${p.subcategory || ''}) | Precio: $${Number(p.wholesale_price || 0).toLocaleString('es-AR')} | Stock: ${p.stock}`;
+  }).join('\n');
 
   const nowInArgentina = new Date().toLocaleString('sv-SE', { timeZone: 'America/Argentina/Buenos_Aires', hour12: false });
   const [argDate, argTime] = nowInArgentina.split(' ');
@@ -102,7 +103,7 @@ export async function processIncomingChatMessage(supabaseAdmin, { chatId, client
 
   const channelNotice = channel === 'web'
     ? `\n\nCANAL ACTUAL: Chat web del sitio.
-   - Si el cliente pide hablar con una persona, un asesor o un humano, invitalo amablemente a escribir por el botón/logo de WhatsApp del sitio (no le des el número, solo mencioná "el botón de WhatsApp de la página") — así lo atiende un asesor directamente y su consulta queda registrada ahí. Solo ofrecé esto si el cliente lo pide específicamente, no lo repitas de más.`
+   - Si el cliente pide hablar con una persona, un asesor o un humano, invitalo amablemente a escribir por el botón de WhatsApp del sitio (al número 3412648035) — así lo atiende un asesor directamente.`
     : `\n\nCANAL ACTUAL: WhatsApp.`;
 
   const genericNames = ['visitante web', 'cliente whatsapp', 'cliente'];
@@ -117,12 +118,21 @@ FECHA Y HORA ACTUAL EN ARGENTINA: ${argDate} ${argTime} hs — Local ${isWithinB
 ${channelNotice}
 ${nameNotice}
 
-REGLAS SOBRE EL CATÁLOGO (muy importante):
-- Cuando menciones un producto, usá SIEMPRE el nombre EXACTO tal como figura en el catálogo de abajo — nunca lo generalices ni lo cambies por el nombre de otra categoría similar (ej: si el producto se llama "Calza Oxford", no digas "pantalón").
-- Si no estás seguro de qué producto corresponde a lo que pide el cliente, buscá en el catálogo el que más se ajuste y nombralo tal cual está escrito, no inventes uno genérico.
-- Cuando el cliente pregunte por un producto específico o vos le sugieras uno puntual, pasale el "Link" de ese producto tal cual aparece en el catálogo (no lo modifiques ni armes uno nuevo).
+REGLAS ESTRICTAS DE PRODUCTOS Y ENLACES (OBLIGATORIAS):
+1. NO DIVAGAR Y SER DIRECTO:
+   - Dá respuestas puntuales, cortas y bien estructuradas (máximo 2 a 4 oraciones, o una lista concisa de 2 a 4 productos sugeridos).
+   - NUNCA uses frases de relleno vacías como "Podés explorar todos los productos en los links que te envié" a menos que en ese mismo mensaje hayas puesto los links correspondientes.
+2. VERIFICACIÓN ESTRICTA EN BASE DE DATOS (PROHIBIDO INVENTAR):
+   - Toda información sobre productos (nombres, categorías, precios y stock) DEBE provenir EXCLUSIVAMENTE del "CATÁLOGO DE PRODUCTOS EN STOCK" que figura más abajo.
+   - NUNCA inventes marcas (Nike, Adidas, etc.), modelos ni precios que no figuren en la lista. Si el cliente busca algo que no está en el catálogo, decí con total honestidad: "Actualmente no disponemos de ese artículo en stock." y sugerí 1 o 2 opciones reales que sí tengamos en el catálogo.
+3. ENLACES CLICKEABLES OBLIGATORIOS (FORMATO MARKDOWN):
+   - Cada vez que menciones un producto del catálogo, DEBES hacerlo SIEMPRE con el enlace Markdown exacto que ya viene entre corchetes en el catálogo:
+     • [Nombre del Producto](URL_DEL_PRODUCTO) - $Precio
+     Ejemplo:
+     • [Boxer uomo de niño](https://www.dulcevalentin.com.ar/producto/p-0131-boxer-uomo-de-nino) - $2.000 (Stock: 50)
+   - NUNCA pongas enlaces en texto plano ni nombres productos sin su enlace clickeable.
 
-CATÁLOGO DE PRODUCTOS ACTUALIZADO EN STOCK:
+CATÁLOGO DE PRODUCTOS EN STOCK (CONSULTÁ SIEMPRE ACÁ):
 ${catalogSummary}
 `;
 
@@ -138,7 +148,7 @@ ${catalogSummary}
     content: m.content
   }));
 
-  const openrouterModel = settings?.model || 'deepseek/deepseek-chat';
+  const openrouterModel = process.env.OPENROUTER_MODEL || settings?.model || 'deepseek/deepseek-chat';
 
   const aiRes = await fetch('https://openrouter.ai/api/v1/chat/completions', {
     method: 'POST',

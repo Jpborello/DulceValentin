@@ -115,24 +115,22 @@ export default function AdminPage() {
     let messagesChannel = null;
     if (supabase) {
       messagesChannel = supabase
-        .channel('admin-whatsapp-messages-realtime')
+        .channel('admin-msgs-' + Math.random().toString(36).slice(2))
         .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'whatsapp_messages', filter: 'sender=eq.client' }, (payload) => {
           notifyNewMessage(payload.new.chat_phone, payload.new.content);
         })
         .subscribe();
     }
 
-    // Red de seguridad: si el realtime no llega a disparar, este polling
-    // detecta el aumento de mensajes sin leer y avisa igual.
+    // Red de seguridad: polling cada 15s para detectar mensajes sin leer en whatsapp_chats
     let prevUnreadTotal = null;
     const unreadPollInterval = setInterval(async () => {
       try {
-        const res = await adminFetch('/api/admin/whatsapp');
-        const data = await res.json();
-        if (!data.success || !Array.isArray(data.chats)) return;
-        const total = data.chats.reduce((sum, c) => sum + (c.unread_count || 0), 0);
+        const { data: chats } = await supabase.from('whatsapp_chats').select('unread_count, client_name, phone, last_message');
+        if (!chats || !Array.isArray(chats)) return;
+        const total = chats.reduce((sum, c) => sum + (c.unread_count || 0), 0);
         if (prevUnreadTotal !== null && total > prevUnreadTotal) {
-          const chatWithNew = data.chats.find((c) => c.unread_count > 0);
+          const chatWithNew = chats.find((c) => (c.unread_count || 0) > 0);
           notifyNewMessage(chatWithNew?.client_name || chatWithNew?.phone, chatWithNew?.last_message);
         }
         prevUnreadTotal = total;
@@ -865,6 +863,10 @@ export default function AdminPage() {
             </div>
           </div>
         </div>
+      )}
+
+      {activeTab === 'whatsapp' && (
+        <WhatsAppTab />
       )}
 
       {activeTab === 'stock' && (
