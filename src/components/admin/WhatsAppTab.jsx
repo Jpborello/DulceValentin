@@ -21,6 +21,20 @@ import {
   EyeOff
 } from 'lucide-react';
 
+// Numero que dejo el cliente en el chat -> link de WhatsApp (formato AR).
+const toWhatsAppNumber = (raw) => {
+  let d = String(raw || '').replace(/\D/g, '');
+  if (d.startsWith('54')) return d;
+  if (d.startsWith('0')) d = d.slice(1);
+  // Saca el "15" del celular escrito a la antigua (ej. 341 15 555-1234).
+  if (d.length === 12) {
+    for (const a of [2, 3, 4]) {
+      if (d.slice(a, a + 2) === '15') { d = d.slice(0, a) + d.slice(a + 2); break; }
+    }
+  }
+  return d.length === 10 ? `549${d}` : d;
+};
+
 export default function WhatsAppTab() {
   const [chats, setChats] = useState([]);
   const [selectedPhone, setSelectedPhone] = useState(null);
@@ -497,6 +511,9 @@ DATOS OFICIALES Y PREGUNTAS FRECUENTES:
                           {chat.channel === 'web' ? '🌐' : '📱'}
                         </span>
                         {chat.client_name || chat.phone}
+                        {chat.contact_phone && (
+                          <span title={`Dejó su teléfono: ${chat.contact_phone}`} style={{ fontSize: '0.75rem' }}>📞</span>
+                        )}
                       </span>
                       <span style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0 }}>
                         <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>{dateStr}</span>
@@ -566,7 +583,25 @@ DATOS OFICIALES Y PREGUNTAS FRECUENTES:
                     </h4>
                     <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
                       {selectedChat.channel === 'web' ? (
-                        <>🌐 Chat Web (visitante del sitio)</>
+                        <>
+                          🌐 Chat Web
+                          {selectedChat.contact_phone ? (
+                            <>
+                              {' · 📞 '}
+                              <a
+                                href={`https://wa.me/${toWhatsAppNumber(selectedChat.contact_phone)}`}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                title="Escribirle por WhatsApp"
+                                style={{ color: '#059669', fontWeight: 700 }}
+                              >
+                                {selectedChat.contact_phone}
+                              </a>
+                            </>
+                          ) : (
+                            ' (todavía no dejó teléfono)'
+                          )}
+                        </>
                       ) : (
                         <>WhatsApp: <strong>{selectedChat.phone}</strong></>
                       )}

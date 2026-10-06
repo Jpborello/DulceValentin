@@ -29,6 +29,57 @@ DATOS OFICIALES Y PREGUNTAS FRECUENTES:
 6. TONO Y FORMATO:
    - Sé claro, puntual, educado y sin rodeos (evitá divagar). Dá respuestas de 2 a 4 oraciones bien formateadas.`;
 
+// Busca un telefono argentino dentro del texto del cliente (con o sin +54,
+// 9, 0, 15, espacios o guiones). Devuelve solo los digitos, o null.
+export function extractPhone(text) {
+  if (!text) return null;
+  const candidates = String(text).match(/\+?\d[\d\s().-]{6,20}\d/g) || [];
+  for (const raw of candidates) {
+    const digits = raw.replace(/\D/g, '');
+    if (digits.length >= 8 && digits.length <= 13) return digits;
+  }
+  return null;
+}
+
+// Llamada a OpenRouter con tiempo limite y un reintento, para que un corte
+// momentaneo de la IA no deje al cliente sin respuesta.
+async function callOpenRouter(payload, apiKey) {
+  let lastError = '';
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 22000);
+    try {
+      const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${apiKey}`,
+          'HTTP-Referer': 'https://dulcevalentin.com',
+          'X-Title': 'Dulce Valentín Assistant',
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(payload),
+        signal: controller.signal
+      });
+      if (res.ok) {
+        const data = await res.json();
+        const content = data.choices?.[0]?.message?.content;
+        if (content && content.trim()) return { ok: true, content };
+        lastError = 'respuesta vacía';
+      } else {
+        lastError = `${res.status} ${await res.text()}`;
+        if (res.status < 500 && res.status !== 429) break; // error de config: no reintentar
+      }
+    } catch (err) {
+      lastError = err?.name === 'AbortError' ? 'timeout' : String(err?.message || err);
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+  return { ok: false, error: lastError };
+}
+
+const FALLBACK_REPLY = 'Perdón, tuve un problema para responderte recién. ¿Me repetís la consulta? Si preferís, también podés escribirnos al WhatsApp 3412648035 y te atiende un vendedor.';
+
 // Procesa un mensaje entrante de CUALQUIER canal (WhatsApp o Chat Web) contra
 // las mismas tablas whatsapp_chats/whatsapp_messages, para que el admin vea
 // y responda todo desde un unico inbox sin importar de donde vino.
@@ -42,6 +93,10 @@ export async function processIncomingChatMessage(supabaseAdmin, { chatId, client
     .maybeSingle();
 
   const isBotEnabledForChat = existingChat ? existingChat.bot_enabled !== false : true;
+  // Si el cliente escribio un telefono, se guarda para que el vendedor lo vea
+  // en el panel (columna contact_phone).
+  const detectedPhone = extractPhone(messageText);
+  const contactPhone = detectedPhone || existingChat?.contact_phone || null;
   const currentUnread = (existingChat?.unread_count || 0) + 1;
   const mediaLabels = { image: '📷 Imagen', video: '🎥 Video', audio: '🎤 Audio', document: '📎 Documento', sticker: '💬 Sticker' };
   const previewMessage = messageText || (mediaUrl ? mediaLabels[messageType] || '📎 Archivo' : messageText);
@@ -63,6 +118,7 @@ export async function processIncomingChatMessage(supabaseAdmin, { chatId, client
     last_message: previewMessage,
     unread_count: currentUnread,
     bot_enabled: isBotEnabledForChat,
+    contact_phone: contactPhone,
     updated_at: timestamp
   }], { onConflict: 'phone' });
 
@@ -112,11 +168,19 @@ export async function processIncomingChatMessage(supabaseAdmin, { chatId, client
     ? `\n\nNOMBRE DEL CLIENTE: ${clientName}. Usalo en el saludo inicial (ej: "¡Hola ${clientName}, ${saludoSegunHora.toLowerCase()}! ¿Cómo estás?").`
     : `\n\nNOMBRE DEL CLIENTE: no disponible todavía — saludalo sin nombre (ej: "¡Hola, ${saludoSegunHora.toLowerCase()}!") y si en algún momento se presenta, usalo de ahí en adelante.`;
 
+  const phoneNotice = contactPhone
+    ? `\n\nTELÉFONO DE CONTACTO: el cliente ya dejó su número (${contactPhone}). NO se lo vuelvas a pedir. Si corresponde, confirmale que un vendedor lo va a contactar por WhatsApp a ese número.`
+    : `\n\nTELÉFONO DE CONTACTO: el cliente todavía no dejó su número.
+   - Pedíselo SOLO cuando sea pertinente: cuando quiere hacer, confirmar o reservar un pedido; cuando pide que un vendedor lo contacte o quiere hablar con una persona; cuando consulta el costo o la forma de envío a su localidad; cuando pide una cotización por cantidad o algo que vos no podés resolver.
+   - NO lo pidas en consultas generales (horarios, dirección, medios de pago, compra mínima, ver productos o precios).
+   - Pedilo una sola vez, en una frase corta y explicando para qué: "¿Me dejás tu número de WhatsApp así un vendedor te contacta para cerrar el pedido?". Si no lo quiere dar, seguí ayudándolo igual sin insistir.`;
+
   const systemPrompt = (settings?.system_prompt || DEFAULT_SYSTEM_PROMPT) + `
 
 FECHA Y HORA ACTUAL EN ARGENTINA: ${argDate} ${argTime} hs — Local ${isWithinBusinessHours ? 'ABIERTO en este momento' : 'CERRADO en este momento (fuera del horario Lunes a Sábado 8:00 a 16:30hs)'}. Saludo que corresponde según la hora: "${saludoSegunHora}".
 ${channelNotice}
 ${nameNotice}
+${phoneNotice}
 
 REGLAS ESTRICTAS DE PRODUCTOS Y ENLACES (OBLIGATORIAS):
 1. NO DIVAGAR Y SER DIRECTO:
@@ -150,33 +214,30 @@ ${catalogSummary}
 
   const openrouterModel = process.env.OPENROUTER_MODEL || settings?.model || 'deepseek/deepseek-chat';
 
-  const aiRes = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${openrouterKey}`,
-      'HTTP-Referer': 'https://dulcevalentin.com',
-      'X-Title': 'Dulce Valentín Assistant',
-      'Content-Type': 'application/json'
-    },
-    body: JSON.stringify({
-      model: openrouterModel,
-      messages: [
-        { role: 'system', content: systemPrompt },
-        ...formattedHistory
-      ],
-      temperature: 0.4,
-      max_tokens: 450
-    })
-  });
+  const ai = await callOpenRouter({
+    model: openrouterModel,
+    messages: [
+      { role: 'system', content: systemPrompt },
+      ...formattedHistory
+    ],
+    temperature: 0.4,
+    max_tokens: 450
+  }, openrouterKey);
 
-  if (!aiRes.ok) {
-    const errText = await aiRes.text();
-    console.error('Error OpenRouter API:', errText);
-    return { botReply: null, status: 'ai_error', error: errText };
+  let botReply;
+  let status = 'ok';
+  if (ai.ok) {
+    botReply = ai.content;
+  } else {
+    console.error('Error OpenRouter API:', ai.error);
+    // En la web el cliente esta mirando la pantalla esperando: mejor una
+    // disculpa con salida a WhatsApp que el silencio.
+    if (channel !== 'web') {
+      return { botReply: null, status: 'ai_error', error: ai.error };
+    }
+    botReply = FALLBACK_REPLY;
+    status = 'ai_error_fallback';
   }
-
-  const aiData = await aiRes.json();
-  const botReply = aiData.choices?.[0]?.message?.content || '¡Hola! Muchas gracias por comunicarte con Dulce Valentín. ¿En qué prenda o talle te podemos asesorar?';
 
   const botTimestamp = new Date().toISOString();
 
@@ -194,5 +255,5 @@ ${catalogSummary}
     updated_at: botTimestamp
   }], { onConflict: 'phone' });
 
-  return { botReply, status: 'ok', model: openrouterModel };
+  return { botReply, status, model: openrouterModel };
 }

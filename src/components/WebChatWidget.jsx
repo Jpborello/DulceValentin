@@ -34,6 +34,9 @@ export default function WebChatWidget() {
   const [isSending, setIsSending] = useState(false);
   const [clientName, setClientName] = useState('');
   const [showNameInput, setShowNameInput] = useState(false);
+  // El chat se habilita recien cuando el visitante deja su nombre.
+  const [nameConfirmed, setNameConfirmed] = useState(false);
+  const [sendError, setSendError] = useState('');
   const [unseenCount, setUnseenCount] = useState(0);
   const messagesEndRef = useRef(null);
   const pollRef = useRef(null);
@@ -45,6 +48,7 @@ export default function WebChatWidget() {
     const savedName = localStorage.getItem(NAME_KEY);
     if (savedName) {
       setClientName(savedName);
+      if (savedName.trim().length >= 2) setNameConfirmed(true);
     }
   }, []);
 
@@ -93,16 +97,20 @@ export default function WebChatWidget() {
 
   const handleSaveName = (e) => {
     e.preventDefault();
-    const trimmed = clientName.trim();
-    if (!trimmed) return;
+    const trimmed = clientName.trim().slice(0, 60);
+    if (trimmed.length < 2) return;
     localStorage.setItem(NAME_KEY, trimmed);
+    setClientName(trimmed);
+    setNameConfirmed(true);
+    setSendError('');
     setShowNameInput(false);
   };
 
   const sendMessage = async (textToSend) => {
     const text = (textToSend || inputText).trim();
-    if (!text || !sessionId || isSending) return;
+    if (!text || !sessionId || isSending || !nameConfirmed) return;
 
+    setSendError('');
     setInputText('');
     setIsSending(true);
 
@@ -121,14 +129,21 @@ export default function WebChatWidget() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           sessionId,
-          clientName: clientName || 'Visitante Web',
+          clientName: clientName.trim(),
           message: text
         })
       });
-      await res.json();
+      const data = await res.json().catch(() => ({}));
+      if (res.status === 400 && data?.error === 'name_required') {
+        setNameConfirmed(false);
+        setSendError('Antes de chatear necesitamos tu nombre.');
+      } else if (!res.ok) {
+        setSendError('No pudimos enviar tu mensaje. Probá de nuevo en un momento.');
+      }
       await fetchMessages(sessionId, true);
     } catch (e) {
       console.warn('Error enviando mensaje de chat web:', e);
+      setSendError('Sin conexión. Revisá tu internet y probá de nuevo.');
     } finally {
       setIsSending(false);
     }
@@ -346,7 +361,7 @@ export default function WebChatWidget() {
           </div>
 
           {/* Formulario de nombre (opcional / desplegable) */}
-          {showNameInput && (
+          {showNameInput && nameConfirmed && (
             <form
               onSubmit={handleSaveName}
               style={{
@@ -443,8 +458,69 @@ export default function WebChatWidget() {
               </div>
             </div>
 
+            {/* Paso obligatorio: el nombre antes de chatear */}
+            {!nameConfirmed && (
+              <form
+                onSubmit={handleSaveName}
+                style={{
+                  alignSelf: 'stretch',
+                  padding: '12px 14px',
+                  borderRadius: '14px',
+                  background: 'var(--bg-card, #FFFFFF)',
+                  border: '1px solid var(--border-color, #E2E8F0)',
+                  boxShadow: '0 2px 8px rgba(0, 0, 0, 0.06)',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '8px'
+                }}
+              >
+                <label htmlFor="webchat-name" style={{ fontSize: '0.84rem', fontWeight: 700, color: 'var(--text-main, #0F172A)' }}>
+                  Para empezar, ¿cómo te llamás?
+                </label>
+                <div style={{ display: 'flex', gap: '8px' }}>
+                  <input
+                    id="webchat-name"
+                    type="text"
+                    autoComplete="given-name"
+                    placeholder="Tu nombre"
+                    maxLength={60}
+                    value={clientName}
+                    onChange={(e) => setClientName(e.target.value)}
+                    style={{
+                      flex: 1,
+                      minWidth: 0,
+                      padding: '9px 12px',
+                      fontSize: '15px',
+                      borderRadius: '10px',
+                      border: '1px solid var(--border-color, #CBD5E1)',
+                      background: 'var(--bg-main, #F8FAFC)',
+                      color: 'var(--text-main, #0F172A)'
+                    }}
+                  />
+                  <button
+                    type="submit"
+                    disabled={clientName.trim().length < 2}
+                    style={{
+                      padding: '9px 14px',
+                      borderRadius: '10px',
+                      background: 'linear-gradient(135deg, #4F46E5 0%, #4338CA 100%)',
+                      color: '#FFFFFF',
+                      border: 'none',
+                      fontSize: '0.84rem',
+                      fontWeight: 700,
+                      cursor: clientName.trim().length < 2 ? 'not-allowed' : 'pointer',
+                      opacity: clientName.trim().length < 2 ? 0.5 : 1,
+                      whiteSpace: 'nowrap'
+                    }}
+                  >
+                    Empezar
+                  </button>
+                </div>
+              </form>
+            )}
+
             {/* Chips de sugerencias rápidas cuando hay pocos mensajes */}
-            {messages.length <= 1 && (
+            {nameConfirmed && messages.length <= 1 && (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', margin: '4px 0' }}>
                 <span style={{ fontSize: '0.72rem', color: 'var(--text-muted, #64748B)', fontWeight: 700, paddingLeft: '4px' }}>
                   Preguntas frecuentes:
@@ -575,13 +651,18 @@ export default function WebChatWidget() {
               gap: '6px'
             }}
           >
+            {sendError && (
+              <div role="alert" style={{ fontSize: '0.75rem', color: '#B91C1C', background: '#FEF2F2', borderRadius: '8px', padding: '6px 10px' }}>
+                {sendError}
+              </div>
+            )}
             <form onSubmit={handleSend} style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
               <input
                 type="text"
-                placeholder="Escribí tu consulta..."
+                placeholder={nameConfirmed ? 'Escribí tu consulta...' : 'Primero ingresá tu nombre'}
                 value={inputText}
                 onChange={(e) => setInputText(e.target.value)}
-                disabled={isSending}
+                disabled={isSending || !nameConfirmed}
                 style={{
                   flex: 1,
                   padding: '10px 14px',
@@ -595,7 +676,7 @@ export default function WebChatWidget() {
               />
               <button
                 type="submit"
-                disabled={!inputText.trim() || isSending}
+                disabled={!inputText.trim() || isSending || !nameConfirmed}
                 aria-label="Enviar mensaje"
                 style={{
                   width: '42px',

@@ -9,6 +9,15 @@ const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'sb_publishable_SG-
 const effectiveKey = (serviceRoleKey && !serviceRoleKey.includes('COMPLETAR')) ? serviceRoleKey : anonKey;
 const supabaseAdmin = createClient(supabaseUrl, effectiveKey);
 
+// La IA a veces tarda (catalogo grande + respuesta con varios productos).
+// Con el limite por defecto de Vercel la funcion se cortaba y el cliente se
+// quedaba sin respuesta. 60 s es el maximo del plan Hobby.
+export const maxDuration = 60;
+export const dynamic = 'force-dynamic';
+
+const GENERIC_NAMES = ['visitante web', 'visitante', 'cliente', 'cliente whatsapp'];
+const MAX_MESSAGE_LENGTH = 1000;
+
 // GET: el widget hace polling de los mensajes de su propia sesion (incluye
 // respuestas del bot y del admin escritas desde el panel).
 export async function GET(req) {
@@ -47,10 +56,17 @@ export async function POST(req) {
       return NextResponse.json({ error: 'Faltan parámetros sessionId o message' }, { status: 400 });
     }
 
+    // Para chatear hay que dejar el nombre (el widget lo pide antes de
+    // habilitar el chat; esto es por si alguien llama a la API directo).
+    const name = typeof clientName === 'string' ? clientName.trim().slice(0, 60) : '';
+    if (name.length < 2 || GENERIC_NAMES.includes(name.toLowerCase())) {
+      return NextResponse.json({ error: 'name_required' }, { status: 400 });
+    }
+
     const { botReply, status } = await processIncomingChatMessage(supabaseAdmin, {
       chatId: sessionId,
-      clientName: clientName || 'Visitante Web',
-      messageText: message,
+      clientName: name,
+      messageText: String(message).slice(0, MAX_MESSAGE_LENGTH),
       channel: 'web'
     });
 
