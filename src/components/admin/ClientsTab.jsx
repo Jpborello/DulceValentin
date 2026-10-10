@@ -5,8 +5,28 @@ import { Search, Crown, Ticket, MapPin, Phone, FileText, Gift, X } from 'lucide-
 import { normalizePhone } from '@/lib/phoneUtils';
 import { adminFetch } from '@/lib/adminFetch';
 
+// A partir de cuantos dias sin comprar un cliente se marca para reactivar.
+const INACTIVE_DAYS = 30;
+
+const daysSince = (iso) => {
+  if (!iso) return null;
+  const ms = Date.now() - new Date(iso).getTime();
+  return Number.isFinite(ms) ? Math.max(0, Math.floor(ms / 86400000)) : null;
+};
+
+// Link de WhatsApp con un mensaje listo para reactivar a un cliente que
+// hace rato no compra (el admin lo revisa/edita antes de mandarlo).
+const reactivationLink = (client) => {
+  const digits = String(client.phone || '').replace(/\D/g, '');
+  const phone = digits.length === 10 ? `549${digits}` : digits;
+  const firstName = String(client.name || '').trim().split(' ')[0];
+  const text = `¡Hola${firstName ? ` ${firstName}` : ''}! 👋 Te escribimos de Dulce Valentín. Entraron prendas nuevas y queríamos avisarte antes que a nadie. Podés ver el catálogo y armar tu pedido acá: https://www.dulcevalentin.com.ar 🛍️`;
+  return `https://wa.me/${phone}?text=${encodeURIComponent(text)}`;
+};
+
 export default function ClientsTab({ clients }) {
   const [searchFilter, setSearchFilter] = useState('');
+  const [onlyInactive, setOnlyInactive] = useState(false);
   const [vouchersByPhone, setVouchersByPhone] = useState({}); // { [phone_normalized]: {id, amount, reason} }
   const [voucherClient, setVoucherClient] = useState(null);
   const [voucherAmount, setVoucherAmount] = useState('');
@@ -36,12 +56,14 @@ export default function ClientsTab({ clients }) {
 
   const normalizeSearch = (str) => (str || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().trim();
 
-  const filteredClients = clients.filter(c =>
+  const inactiveCount = clients.filter((c) => (daysSince(c.last_order_at) ?? -1) >= INACTIVE_DAYS).length;
+
+  const filteredClients = clients.filter(c => (
     normalizeSearch(c.name).includes(normalizeSearch(searchFilter)) ||
     (c.dni && c.dni.includes(searchFilter)) ||
     (c.phone && c.phone.includes(searchFilter)) ||
     (c.locality && normalizeSearch(c.locality).includes(normalizeSearch(searchFilter)))
-  );
+  ) && (!onlyInactive || (daysSince(c.last_order_at) ?? -1) >= INACTIVE_DAYS));
 
   const openVoucherModal = (client) => {
     setVoucherClient(client);
@@ -86,6 +108,20 @@ export default function ClientsTab({ clients }) {
           </p>
         </div>
 
+        <button
+          type="button"
+          onClick={() => setOnlyInactive((v) => !v)}
+          title={`Clientes que no compran hace ${INACTIVE_DAYS} días o más`}
+          style={{
+            padding: '8px 12px', fontSize: '0.8rem', fontWeight: 700, borderRadius: '8px', cursor: 'pointer',
+            border: `1px solid ${onlyInactive ? '#B91C1C' : 'var(--border-color)'}`,
+            backgroundColor: onlyInactive ? '#FEF2F2' : 'var(--bg-card)',
+            color: onlyInactive ? '#B91C1C' : 'var(--text-main)'
+          }}
+        >
+          {onlyInactive ? '✕ ' : ''}Para reactivar ({inactiveCount})
+        </button>
+
         <div style={{ position: 'relative', width: '100%', maxWidth: '320px' }}>
           <Search size={16} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
           <input
@@ -113,6 +149,7 @@ export default function ClientsTab({ clients }) {
               <th>Teléfono</th>
               <th>Localidad</th>
               <th>Pedidos</th>
+              <th>Última compra</th>
               <th>Total Gastado ($)</th>
               <th>Cupones Sorteo</th>
               <th>Baucher</th>
@@ -151,6 +188,34 @@ export default function ClientsTab({ clients }) {
                     {client.locality || 'Sin localidad'}
                   </td>
                   <td style={{ fontWeight: 700 }}>{client.orders_count} compras</td>
+                  <td>
+                    {(() => {
+                      const days = daysSince(client.last_order_at);
+                      if (days === null) return <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>Nunca compró</span>;
+                      const stale = days >= INACTIVE_DAYS;
+                      return (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+                          <span style={{
+                            fontSize: '0.78rem', fontWeight: 800, padding: '3px 8px', borderRadius: 'var(--radius-full)',
+                            backgroundColor: stale ? '#FEF2F2' : '#ECFDF5', color: stale ? '#B91C1C' : '#047857'
+                          }}>
+                            {days === 0 ? 'Hoy' : `Hace ${days} día${days === 1 ? '' : 's'}`}
+                          </span>
+                          {stale && client.phone && client.phone !== 'Sin especificar' && (
+                            <a
+                              href={reactivationLink(client)}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              title="Escribirle por WhatsApp para que vuelva a comprar"
+                              style={{ fontSize: '0.72rem', fontWeight: 700, color: '#FFFFFF', backgroundColor: '#25D366', padding: '3px 8px', borderRadius: '6px', textDecoration: 'none' }}
+                            >
+                              WhatsApp
+                            </a>
+                          )}
+                        </div>
+                      );
+                    })()}
+                  </td>
                   <td style={{ fontWeight: 800, color: 'var(--accent-emerald)', fontSize: '1rem' }}>
                     ${client.total_spent?.toLocaleString('es-AR')}
                   </td>

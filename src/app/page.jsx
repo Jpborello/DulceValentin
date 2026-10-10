@@ -21,6 +21,7 @@ import { dataStore, CATEGORIES, getProductPrice } from '@/lib/dataStore';
 import { getProductStockForSizeColor } from '@/lib/catalogData';
 import { getSearchScores } from '@/lib/searchUtils';
 import { evaluateWholesaleRule } from '@/lib/cartStorage';
+import { trackPixel } from '@/lib/metaPixel';
 import { Store, MapPin, Instagram, PackageSearch } from 'lucide-react';
 import Link from 'next/link';
 
@@ -258,6 +259,13 @@ export default function Home() {
         );
       }
       return [...prev, { product: productWithPrice, quantity: qtyToAdd, variantKey }];
+    });
+
+    trackPixel('AddToCart', {
+      content_ids: [product.id],
+      content_name: product.name,
+      content_type: 'product',
+      value: (productWithPrice.unit_price || 0) * qtyToAdd
     });
 
     // Toast no invasivo en vez de abrir el drawer en cada click (especialmente en celulares).
@@ -530,6 +538,15 @@ export default function Home() {
         onOpenAuth={() => setIsAuthOpen(true)}
         currentUser={currentUser}
         onLogout={handleLogout}
+        onOpenCatalog={() => {
+          setCatalogOpen(true);
+          requestAnimationFrame(() => {
+            requestAnimationFrame(() => {
+              const el = document.getElementById('catalogo');
+              if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            });
+          });
+        }}
       />
 
       {/* Wholesale Threshold Banner */}

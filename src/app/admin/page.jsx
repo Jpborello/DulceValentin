@@ -920,8 +920,9 @@ export default function AdminPage() {
       )}
 
       {activeTab === 'categories' && (
-        <CategoriesTab 
+        <CategoriesTab
           categories={categories}
+          products={products}
           onAddCategory={handleAddCategory}
           onAddSubcategory={handleAddSubcategory}
           onDeleteCategory={handleDeleteCategory}

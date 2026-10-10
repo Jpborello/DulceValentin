@@ -5,6 +5,13 @@ import Image from 'next/image';
 import { ShoppingCart, Share2, Check, ChevronLeft, ChevronRight, Camera, MessageCircle } from 'lucide-react';
 import { shareProduct } from '@/lib/shareProduct';
 import { getProductImages, getProductPrice, getProductPriceRange, getThumbUrl } from '@/lib/dataStore';
+import { COMPANY_INFO } from '@/lib/companyInfo';
+
+const restockWhatsAppUrl = (product) => {
+  const phone = (COMPANY_INFO.phone || '').replace(/\D/g, '');
+  const text = `¡Hola Dulce Valentín! 👋 Me interesa "${product.name}"${product.code ? ` (ART. #${product.code})` : ''} que figura sin stock. ¿Me avisan cuando vuelva a entrar?`;
+  return `https://wa.me/${phone}?text=${encodeURIComponent(text)}`;
+};
 
 export function ProductGridSkeleton({ count = 8 }) {
   return (
@@ -438,18 +445,33 @@ function ProductGridCard({ product, onOpenDetail, onQuickAdd, onShare, isCopiedS
           })()}
         </span>
 
-        <button
-          onClick={(e) => onQuickAdd(e, product)}
-          className="btn-add-cart-compact"
-          disabled={Number(product.stock) <= 0}
-          style={{
-            opacity: Number(product.stock) <= 0 ? 0.35 : 1,
-            cursor: Number(product.stock) <= 0 ? 'not-allowed' : 'pointer'
-          }}
-          title={Number(product.stock) > 0 ? 'Agregar al Carrito' : 'Sin Stock disponible'}
-        >
-          <ShoppingCart size={16} />
-        </button>
+        {Number(product.stock) > 0 ? (
+          <button
+            onClick={(e) => onQuickAdd(e, product)}
+            className="btn-add-cart-compact"
+            title="Agregar al Carrito"
+          >
+            <ShoppingCart size={16} />
+          </button>
+        ) : (
+          // Sin stock: en vez de un boton muerto, un pedido de aviso por
+          // WhatsApp (el vendedor tiene el contacto de alguien que YA quiere
+          // ese producto para avisarle cuando reponga).
+          <a
+            href={restockWhatsAppUrl(product)}
+            target="_blank"
+            rel="noopener noreferrer"
+            onClick={(e) => e.stopPropagation()}
+            title="Avisame por WhatsApp cuando vuelva a haber stock"
+            style={{
+              display: 'inline-flex', alignItems: 'center', gap: '4px', padding: '6px 8px', borderRadius: '8px',
+              backgroundColor: '#25D366', color: '#FFFFFF', fontSize: '0.7rem', fontWeight: 800,
+              textDecoration: 'none', whiteSpace: 'nowrap'
+            }}
+          >
+            <MessageCircle size={13} /> Avisame
+          </a>
+        )}
       </div>
     </div>
   );

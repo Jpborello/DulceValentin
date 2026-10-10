@@ -1990,8 +1990,14 @@ class DataStore {
         };
       }
 
-      clientMap[key].total_spent += order.total_amount;
+      // Los cancelados no cuentan como compra (ni para el ranking ni para
+      // saber hace cuanto que no compra).
+      if (order.status === 'cancelado') return;
+      clientMap[key].total_spent += Number(order.total_amount) || 0;
       clientMap[key].orders_count += 1;
+      if (order.created_at && (!clientMap[key].last_order_at || order.created_at > clientMap[key].last_order_at)) {
+        clientMap[key].last_order_at = order.created_at;
+      }
     });
 
     // 3. Los boletos se cuentan aparte, de la tabla real de boletos (ya no

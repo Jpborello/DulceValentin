@@ -8,6 +8,8 @@ import { getProductStockForSizeColor } from '@/lib/catalogData';
 import useCloseOnBack from '@/lib/useCloseOnBack';
 import { compressImage } from '@/lib/compressImage';
 import { COMPANY_INFO } from '@/lib/companyInfo';
+import { getCheckoutProfile, saveCheckoutProfile, saveMyOrder, forgetMyOrder } from '@/lib/myOrders';
+import { trackPixel } from '@/lib/metaPixel';
 
 export default function CartDrawer({
   isOpen,
@@ -32,6 +34,28 @@ export default function CartDrawer({
   const [clientAddress, setClientAddress] = useState('');
   const [clientPostalCode, setClientPostalCode] = useState('');
   const [clientFloorApt, setClientFloorApt] = useState('');
+
+  // Datos de la compra anterior en este dispositivo: el cliente que vuelve
+  // no tiene que tipear todo de nuevo (es la mayor friccion del checkout).
+  useEffect(() => {
+    const saved = getCheckoutProfile();
+    if (!saved) return;
+    setClientName((v) => v || saved.name || '');
+    setClientDni((v) => v || saved.dni || '');
+    setClientPhone((v) => v || saved.phone || '');
+    setClientLocality((v) => v || saved.locality || '');
+    setClientAddress((v) => v || saved.address || '');
+    setClientPostalCode((v) => v || saved.postalCode || '');
+    setClientFloorApt((v) => v || saved.floorApt || '');
+  }, []);
+
+  // Evento de Pixel cuando el cliente abre el carrito con productos.
+  useEffect(() => {
+    if (!isOpen || cartItems.length === 0) return;
+    trackPixel('InitiateCheckout', { num_items: cartItems.reduce((s, i) => s + i.quantity, 0) });
+    // Solo al abrir, no en cada cambio de cantidad.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOpen]);
   
   // Checkout & Receipt state
   const [createdOrder, setCreatedOrder] = useState(null);
@@ -280,6 +304,14 @@ Adjunto mi comprobante para coordinar el despacho. ¡Muchas gracias!`;
       setIsSubmittingOrder(false);
     }
 
+    // Para "Mis pedidos" / "Repetir pedido" y para no volver a pedir los datos.
+    saveMyOrder(orderData);
+    saveCheckoutProfile({ name, dni, phone, locality, address, postalCode, floorApt });
+    trackPixel('Purchase', {
+      value: Number(orderData.total_amount) || 0,
+      num_items: (orderData.items || []).reduce((s, i) => s + (Number(i.quantity) || 0), 0)
+    });
+
     // El pedido ya viene completo del servidor (telefono normalizado, DNI
     // completado para clientes del Club, entrega, total con baucher).
     setCreatedOrder(orderData);
@@ -357,6 +389,7 @@ Adjunto mi comprobante para coordinar el despacho. ¡Muchas gracias!`;
       setOrderActionError(err.message);
       return;
     }
+    forgetMyOrder(displayOrder.id);
     if (displayOrder.items && onRestoreCart) {
       onRestoreCart(displayOrder.items);
     }
@@ -519,6 +552,13 @@ Adjunto mi comprobante para coordinar el despacho. ¡Muchas gracias!`;
               >
                 🛍️ Volver al Catálogo y Seguir Comprando
               </button>
+
+              <a
+                href="/pedido"
+                style={{ display: 'block', marginTop: '12px', fontSize: '0.84rem', fontWeight: 700, color: 'var(--text-muted)', textDecoration: 'underline' }}
+              >
+                Seguí el estado de tu pedido (y repetilo cuando quieras) en “Mis Pedidos”
+              </a>
             </div>
           ) : displayOrder ? (
             <div style={{ padding: '10px 0' }}>

@@ -2,9 +2,11 @@
 
 import { useState } from 'react';
 import { FolderPlus, Tag, PlusCircle, Trash2, X, Layers, AlertCircle } from 'lucide-react';
+import MoveProductsPanel from './MoveProductsPanel';
 
-export default function CategoriesTab({ 
-  categories, 
+export default function CategoriesTab({
+  categories,
+  products = [],
   onAddCategory, 
   onAddSubcategory, 
   onDeleteCategory, 
@@ -50,6 +52,8 @@ export default function CategoriesTab({
           Crea nuevas categorías de ropa o agrega subcategorías para organizar el catálogo de tu tienda en tiempo real.
         </p>
       </div>
+
+      <MoveProductsPanel products={products} categories={categories} />
 
       {/* Forms Grid */}
       <div style={{ 
