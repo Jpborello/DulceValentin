@@ -134,7 +134,9 @@ export default function AuthModal({ isOpen, onClose, onLogin, onRegister }) {
                     <Phone size={14} style={{ display: 'inline', marginRight: '4px' }} /> Número de WhatsApp *
                   </label>
                   <input
-                    type="text"
+                    type="tel"
+                    inputMode="tel"
+                    autoComplete="tel"
                     placeholder="Ej: 3416095021"
                     value={phone}
                     onChange={(e) => setPhone(e.target.value)}
@@ -175,6 +177,7 @@ export default function AuthModal({ isOpen, onClose, onLogin, onRegister }) {
                     </label>
                     <input
                       type="text"
+                      inputMode="numeric"
                       placeholder="Ej: 38450123"
                       value={dni}
                       onChange={(e) => setDni(e.target.value)}

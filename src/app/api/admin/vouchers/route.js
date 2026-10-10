@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { normalizePhone } from '@/lib/phoneUtils';
+import { requireAdmin } from '@/lib/adminAuth';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://revrbrrzlnweuxwhpgei.supabase.co';
 const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -13,6 +14,8 @@ const supabaseAdmin = serviceRoleKey ? createClient(supabaseUrl, serviceRoleKey)
 // atado al telefono del cliente. Le sirva o no la proxima vez que compre,
 // registrado o no, porque el telefono siempre se carga en el checkout.
 export async function POST(req) {
+  const denied = await requireAdmin(req, supabaseAdmin);
+  if (denied) return denied;
   try {
     const body = await req.json();
     const { phone, amount, reason, source_order_id } = body;
@@ -49,7 +52,9 @@ export async function POST(req) {
 }
 
 // GET: lista de baucheres (activos primero) para verlos en el panel.
-export async function GET() {
+export async function GET(req) {
+  const denied = await requireAdmin(req, supabaseAdmin);
+  if (denied) return denied;
   try {
     const { data, error } = await supabaseAdmin
       .from('vouchers')

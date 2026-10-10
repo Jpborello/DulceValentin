@@ -1148,57 +1148,56 @@ class DataStore {
       this.clients.unshift(user);
     }
 
-    if (supabase) {
-      supabase.rpc('upsert_wholesale_client', {
-        p_name: user.name,
-        p_dni: user.dni,
-        p_phone: user.phone,
-        p_locality: user.locality,
-        p_password: 'sinclave-' + (normalizedPhone.slice(-4) || '0000')
-      }).then(() => {}).catch((err) => console.warn('Client upsert warning:', err));
+    // Se registra via /api/club (ya no hay acceso directo a la base desde el
+    // navegador). Si el telefono ya tenia cuenta, el servidor no la pisa.
+    if (typeof window !== 'undefined') {
+      fetch('/api/club', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'register', phone: user.phone, name: user.name, dni: user.dni, locality: user.locality })
+      }).catch((err) => console.warn('Client register warning:', err));
     }
-
+    this.notify();
     return user;
   }
 
   // Boletos del sorteo del propio cliente, buscados solo por teléfono (para
   // que los pueda ver el/ella mismo/a desde el banner del Club Mayorista,
   // no solo una vez en la pantalla de confirmación del pedido).
-  async fetchMyRaffleTickets(phone) {
-    const normalizedPhone = normalizePhone(phone) || phone || '';
-    if (!normalizedPhone || !supabase) return [];
+  async fetchMyRaffleTicketCount(phone) {
+    const normalizedPhone = normalizePhone(phone) || '';
+    if (normalizedPhone.length < 8) return 0;
     try {
-      const { data, error } = await supabase.rpc('get_my_raffle_tickets', { p_phone: normalizedPhone });
-      if (!error && Array.isArray(data)) return data;
+      const res = await fetch('/api/club', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'tickets', phone: normalizedPhone })
+      });
+      const data = await res.json();
+      return Number(data.count) || 0;
     } catch (err) {
-      console.warn('fetchMyRaffleTickets warning:', err);
+      console.warn('fetchMyRaffleTicketCount warning:', err);
+      return 0;
     }
-    return [];
   }
-
   // Chequea contra la base si un telefono ya tiene cuenta mayorista (para el
   // paso 1 del modal: "solo con tu WhatsApp"). Devuelve los datos del
   // cliente si existe, o null si es la primera vez que entra con ese numero
   // (en ese caso el modal le pide completar Nombre/DNI/Localidad una vez).
   async findClientByPhone(phone) {
-    const normalizedPhone = normalizePhone(phone) || phone || '';
-    if (!normalizedPhone) return null;
-
-    if (supabase) {
-      try {
-        const { data, error } = await supabase.rpc('get_wholesale_client_by_phone', { p_phone: normalizedPhone });
-        if (!error && Array.isArray(data) && data.length > 0) {
-          return data[0];
-        }
-      } catch (err) {
-        console.warn('findClientByPhone warning:', err);
-      }
-    }
-    // Fallback por si ya se cargó en memoria en esta misma sesión (ej. el
-    // propio admin tiene la lista completa cargada en ClientsTab).
-    return this.clients.find(c => normalizePhone(c.phone) === normalizedPhone) || null;
+    const normalizedPhone = normalizePhone(phone) || '';
+    if (normalizedPhone.length < 8) return null;
+    // El servidor solo devuelve nombre y localidad (nunca el DNI); si hace
+    // falta para un pedido, /api/orders lo completa con lo guardado.
+    const res = await fetch('/api/club', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'lookup', phone: normalizedPhone })
+    });
+    if (!res.ok) throw new Error('lookup failed');
+    const data = await res.json();
+    return data.client ? { ...data.client, phone: normalizedPhone } : null;
   }
-
   // Reconoce a un cliente que ya tiene cuenta, solo con el teléfono — ya no
   // se pide/valida contraseña (ver comentario en registerUser). Se llama
   // desde el modal DESPUES de confirmar con findClientByPhone que el
@@ -1632,6 +1631,121 @@ class DataStore {
     this.notify();
 
     return order;
+  }
+
+  // Checkout de la tienda: el pedido lo arma y valida /api/orders en el
+  // servidor (precios, stock, regla x3, baucher y boletos). createOrder()
+  // queda solo para los pedidos que carga el admin a mano desde OrdersTab.
+  // Si el precio de algo cambio desde que se agrego al carrito, el error
+  // trae `code: 'PRICE_CHANGED'` y `prices` para actualizar el carrito.
+  async submitOrder(cartItems, clientDetails) {
+    const res = await fetch('/api/orders', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        items: cartItems.map((item) => ({
+          id: item.product.id,
+          quantity: item.quantity,
+          selectedSize: item.product.selectedSize || null,
+          selectedColor: item.product.selectedColor || null,
+          unit_price: item.product.unit_price != null ? item.product.unit_price : null
+        })),
+        client: {
+          name: clientDetails.name,
+          phone: clientDetails.phone,
+          dni: clientDetails.dni,
+          locality: clientDetails.locality,
+          address: clientDetails.address,
+          postalCode: clientDetails.postalCode,
+          floorApt: clientDetails.floorApt
+        },
+        deliveryMethod: clientDetails.deliveryMethod,
+        useVoucher: Boolean(clientDetails.useVoucher)
+      })
+    });
+
+    let data = {};
+    try { data = await res.json(); } catch (e) {}
+    if (!res.ok || !data.order) {
+      const err = new Error(data.error || 'Ocurrió un error al generar el pedido. Probá de nuevo o escribinos por WhatsApp.');
+      err.code = data.code;
+      err.prices = data.prices;
+      throw err;
+    }
+
+    const order = data.order;
+    this.activeOrder = order;
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('dulcevalentin_active_order', JSON.stringify(order));
+    }
+
+    // Stock local al dia sin esperar a recargar el catalogo.
+    const qtyByProduct = {};
+    order.items.forEach((it) => {
+      qtyByProduct[it.product.id] = (qtyByProduct[it.product.id] || 0) + it.quantity;
+    });
+    this.products = this.products.map((p) => qtyByProduct[p.id]
+      ? { ...p, stock: Math.max(0, (Number(p.stock) || 0) - qtyByProduct[p.id]), sales_count: (p.sales_count || 0) + qtyByProduct[p.id] }
+      : p);
+    this.saveProductsToLocalStorage();
+    this.notify();
+
+    // Aviso por Telegram (el servidor vuelve a leer el pedido de la base).
+    fetch('/api/notify-order', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ orderId: order.id }),
+      keepalive: true
+    }).catch(() => {});
+
+    return order;
+  }
+
+  // Comprobante subido por el cliente desde el checkout. Devuelve true si
+  // quedo guardado en el pedido (y el pedido pasa a "comprobante_subido").
+  async submitOrderReceipt(orderId, phone, receiptUrl) {
+    const res = await fetch('/api/orders/receipt', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ orderId, phone, receiptUrl })
+    });
+    if (!res.ok) return false;
+    const data = await res.json().catch(() => ({}));
+
+    if (this.activeOrder && this.activeOrder.id === orderId) {
+      this.activeOrder = { ...this.activeOrder, receipt_url: receiptUrl, status: data.status || this.activeOrder.status };
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('dulcevalentin_active_order', JSON.stringify(this.activeOrder));
+      }
+    }
+    this.notify();
+    return true;
+  }
+
+  // "Modificar o cancelar" desde el checkout: cancela el pedido en la base
+  // (devuelve stock/baucher/boletos). Tira error con el mensaje para el
+  // cliente si ya no se puede (ej. ya mando comprobante).
+  async cancelMyOrder(orderId, phone) {
+    const res = await fetch('/api/orders/cancel', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ orderId, phone })
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || 'No pudimos cancelar el pedido. Escribinos por WhatsApp.');
+
+    const order = this.getActiveOrder();
+    if (order?.id === orderId && !data.alreadyCancelled) {
+      const qtyByProduct = {};
+      (order.items || []).forEach((it) => {
+        if (it.product?.id) qtyByProduct[it.product.id] = (qtyByProduct[it.product.id] || 0) + it.quantity;
+      });
+      this.products = this.products.map((p) => qtyByProduct[p.id]
+        ? { ...p, stock: (Number(p.stock) || 0) + qtyByProduct[p.id], sales_count: Math.max(0, (p.sales_count || 0) - qtyByProduct[p.id]) }
+        : p);
+      this.saveProductsToLocalStorage();
+    }
+    this.clearActiveOrder();
   }
 
   updateOrderReceipt(orderId, receiptUrl) {

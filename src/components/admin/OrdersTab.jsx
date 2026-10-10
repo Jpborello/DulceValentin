@@ -5,6 +5,7 @@ import { RefreshCw, Image as ImageIcon, ExternalLink, X, Eye, Download, Trash2, 
 import { dataStore } from '@/lib/dataStore';
 import { getProductColors } from '@/lib/catalogData';
 import { COMPANY_INFO } from '@/lib/companyInfo';
+import { adminFetch } from '@/lib/adminFetch';
 
 // Techo de repeticiones del timbre para que no suene para siempre si
 // el pedido se queda sin atender (10 veces cada 6s = 1 minuto de aviso).
@@ -53,7 +54,7 @@ export default function OrdersTab({ orders, mpTransfers, mpConfigured, mpLoading
     }
     setVoucherSubmitting(true);
     try {
-      const res = await fetch('/api/admin/vouchers', {
+      const res = await adminFetch('/api/admin/vouchers', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

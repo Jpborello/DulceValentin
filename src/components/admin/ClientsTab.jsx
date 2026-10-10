@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { Search, Crown, Ticket, MapPin, Phone, FileText, Gift, X } from 'lucide-react';
 import { normalizePhone } from '@/lib/phoneUtils';
+import { adminFetch } from '@/lib/adminFetch';
 
 export default function ClientsTab({ clients }) {
   const [searchFilter, setSearchFilter] = useState('');
@@ -15,7 +16,7 @@ export default function ClientsTab({ clients }) {
 
   const fetchVouchers = async () => {
     try {
-      const res = await fetch('/api/admin/vouchers');
+      const res = await adminFetch('/api/admin/vouchers');
       const data = await res.json();
       if (data.success) {
         const map = {};
@@ -59,7 +60,7 @@ export default function ClientsTab({ clients }) {
     }
     setVoucherSubmitting(true);
     try {
-      const res = await fetch('/api/admin/vouchers', {
+      const res = await adminFetch('/api/admin/vouchers', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ phone: voucherClient.phone, amount: amountNum, reason: voucherReason || null })

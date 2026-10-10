@@ -31,3 +31,6 @@ DOCUMENTACION_GERENCIAL_Y_TECNICA.md
 # Credenciales reales del proyecto (nunca al repo)
 Credenciales.md
 node_modules_broken_*
+
+# Salidas de trabajo con Claude (incluye una copia del env)
+Claude outputs/

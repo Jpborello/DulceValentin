@@ -98,11 +98,15 @@ export default function ProductGrid({ products, onAddToCart, isWholesaleQualifie
   const handleQuickAdd = (e, product) => {
     e.stopPropagation();
     if (Number(product.stock) <= 0) return;
-    const hasSizes = Array.isArray(product.sizes) && product.sizes.length > 0;
-    // El agregado rapido no deja elegir talle: si el producto tiene precio
-    // por talle, se toma el del primer talle de la lista (mismo criterio
-    // que ya usaba para elegirle el talle por defecto).
-    const selectedSize = hasSizes ? product.sizes[0] : null;
+    const sizes = Array.isArray(product.sizes) ? product.sizes : [];
+    // El agregado rapido no deja elegir talle: antes agregaba el primero de
+    // la lista sin avisar (y el cliente pedia un S sin darse cuenta). Si hay
+    // mas de un talle, se abre el detalle para que lo elija.
+    if (sizes.length > 1 && onOpenDetail) {
+      onOpenDetail(product);
+      return;
+    }
+    const selectedSize = sizes.length === 1 ? sizes[0] : null;
     onAddToCart({
       ...product,
       selectedSize,

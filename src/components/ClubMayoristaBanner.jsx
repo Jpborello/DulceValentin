@@ -19,8 +19,8 @@ export default function ClubMayoristaBanner({ currentUser, onOpenAuth }) {
       setTicketCount(null);
       return;
     }
-    dataStore.fetchMyRaffleTickets(currentUser.phone).then((tickets) => {
-      if (!cancelled) setTicketCount(tickets.length);
+    dataStore.fetchMyRaffleTicketCount(currentUser.phone).then((count) => {
+      if (!cancelled) setTicketCount(count);
     });
     return () => { cancelled = true; };
   }, [currentUser?.phone]);

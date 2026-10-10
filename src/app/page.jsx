@@ -296,20 +296,31 @@ export default function Home() {
       }
     }
 
-    const order = await dataStore.createOrder(cart, {
-      name: clientDetails?.name || currentUser?.name || 'Cliente Mayorista',
-      phone: clientDetails?.phone || currentUser?.phone || 'Sin especificar',
-      dni: clientDetails?.dni || currentUser?.dni || 'Sin especificar',
-      locality: clientDetails?.locality || currentUser?.locality || 'Sin especificar',
-      address: clientDetails?.address || currentUser?.address || '',
-      postalCode: clientDetails?.postalCode || '',
-      floorApt: clientDetails?.floorApt || '',
-      isRegistered: Boolean(clientDetails?.isRegistered || currentUser),
-      deliveryMethod: clientDetails?.deliveryMethod || 'Envío a Domicilio',
-      receiptUrl: clientDetails?.receiptUrl || null,
-      voucherId: clientDetails?.voucherId || null,
-      voucherAmount: clientDetails?.voucherAmount || 0
-    });
+    let order;
+    try {
+      order = await dataStore.submitOrder(cart, {
+        name: clientDetails?.name || currentUser?.name || '',
+        phone: clientDetails?.phone || currentUser?.phone || '',
+        dni: clientDetails?.dni || currentUser?.dni || '',
+        locality: clientDetails?.locality || currentUser?.locality || '',
+        address: clientDetails?.address || currentUser?.address || '',
+        postalCode: clientDetails?.postalCode || '',
+        floorApt: clientDetails?.floorApt || '',
+        deliveryMethod: clientDetails?.deliveryMethod || 'Envío a Domicilio',
+        useVoucher: Boolean(clientDetails?.useVoucher)
+      });
+    } catch (err) {
+      // Si cambio algun precio desde que se agrego al carrito, el servidor
+      // rechaza el pedido y manda los precios nuevos: se actualizan en el
+      // carrito para que el cliente vea el total real antes de confirmar.
+      if (err.code === 'PRICE_CHANGED' && Array.isArray(err.prices)) {
+        const newPrices = new Map(err.prices.map((p) => [p.variantKey, p.unit_price]));
+        setCartItems((prev) => prev.map((item) => newPrices.has(item.variantKey)
+          ? { ...item, product: { ...item.product, unit_price: newPrices.get(item.variantKey) } }
+          : item));
+      }
+      throw err;
+    }
     setCartItems([]);
     return order;
   };
@@ -405,6 +416,18 @@ export default function Home() {
   // descartar las debiles (ver getSearchScores).
   const searchScores = getSearchScores(products.filter((p) => p.is_active !== false), searchQuery);
 
+  // Mismo top 5 que ya usa el admin en Metricas ("Mayor Rotacion"), para que
+  // el sello "Mas Vendido" en la grilla coincida con ese ranking. Tiene que
+  // estar definido ANTES de filteredProducts: el filtro "Mas Vendidos" lo usa
+  // (declarado despues, tocar ese chip tiraba ReferenceError y rompia la home).
+  const topSellingIds = new Set(
+    [...products]
+      .filter((p) => (p.sales_count || 0) > 0)
+      .sort((a, b) => b.sales_count - a.sales_count)
+      .slice(0, 5)
+      .map((p) => p.id)
+  );
+
   const filteredProducts = products.filter((product) => {
     const matchesCategory = matchesCategoryFor(product, selectedCategory);
     const matchesSubcategory = matchesSubcategoryFor(product, selectedSubcategory);
@@ -466,16 +489,6 @@ export default function Home() {
     .filter((p) => p.is_new && p.is_active !== false && (p.stock ?? 1) > 0 && p.image_url)
     .sort((a, b) => (parseInt(b.code, 10) || 0) - (parseInt(a.code, 10) || 0))
     .slice(0, 10);
-
-  // Mismo top 5 que ya usa el admin en Metricas ("Mayor Rotacion"), para que
-  // el sello "Mas Vendido" en la grilla coincida con ese ranking.
-  const topSellingIds = new Set(
-    [...products]
-      .filter((p) => (p.sales_count || 0) > 0)
-      .sort((a, b) => b.sales_count - a.sales_count)
-      .slice(0, 5)
-      .map((p) => p.id)
-  );
 
   // "También te puede interesar" del detalle: misma subcategoria primero,
   // despues el resto de la categoria. Solo productos con stock.
@@ -641,7 +654,7 @@ export default function Home() {
               onClick={() => setQuickFilter('all')}
               className={`quick-filter-chip ${quickFilter === 'all' ? 'active' : ''}`}
             >
-              Todos ({products.length})
+              Todos ({products.filter((p) => p.is_active !== false).length})
             </button>
             <button
               type="button"

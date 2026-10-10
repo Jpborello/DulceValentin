@@ -46,6 +46,9 @@ export default function CartDrawer({
   const [postalWarned, setPostalWarned] = useState(false);
   const [receiptImage, setReceiptImage] = useState(null);
   const [receiptUploaded, setReceiptUploaded] = useState(false);
+  const [receiptUploading, setReceiptUploading] = useState(false);
+  const [receiptError, setReceiptError] = useState('');
+  const [orderActionError, setOrderActionError] = useState('');
   const [copiedAlias, setCopiedAlias] = useState(false);
   const [isFinishedSuccess, setIsFinishedSuccess] = useState(false);
   const [completedOrderId, setCompletedOrderId] = useState('');
@@ -79,7 +82,7 @@ Adjunto mi comprobante para coordinar el despacho. ¡Muchas gracias!`;
   // Baucher/credito disponible para el telefono que se esta cargando (ya
   // sea de una cuenta registrada o tipeado a mano) — se detecta solo, sin
   // que el cliente tenga que hacer nada mas que cargar su numero.
-  const [voucher, setVoucher] = useState(null); // { id, amount, reason }
+  const [voucher, setVoucher] = useState(null); // { amount }
   const phoneForVoucher = currentUser?.phone || clientPhone;
 
   useEffect(() => {
@@ -213,8 +216,10 @@ Adjunto mi comprobante para coordinar el despacho. ¡Muchas gracias!`;
     const postalCode = clientPostalCode;
     const floorApt = clientFloorApt;
 
-    if (!name || !phone || !dni || !locality) {
-      const missing = [!name && 'Nombre', !phone && 'Teléfono', !dni && 'DNI', !locality && 'Localidad'].filter(Boolean);
+    // A un cliente logueado no se le pide el DNI: el servidor lo completa con
+    // el de su cuenta (el login ya no lo devuelve al navegador).
+    if (!name || !phone || (!dni && !currentUser) || !locality) {
+      const missing = [!name && 'Nombre', !phone && 'Teléfono', !dni && !currentUser && 'DNI', !locality && 'Localidad'].filter(Boolean);
       setCheckoutError(`Completá ${missing.length === 1 ? 'este dato' : 'estos datos'} para generar el pedido: ${missing.join(', ')}.`);
       return;
     }
@@ -266,8 +271,7 @@ Adjunto mi comprobante para coordinar el despacho. ¡Muchas gracias!`;
         floorApt,
         isRegistered: Boolean(currentUser),
         deliveryMethod: deliveryMethod === 'envio' ? 'Envío a Domicilio / Transporte' : 'Retiro por Sucursal (Pte. Perón 5349/5305/5265)',
-        voucherId: voucher?.id || null,
-        voucherAmount: voucherDiscount
+        useVoucher: Boolean(voucher)
       });
     } catch (err) {
       setCheckoutError(err.message || 'Ocurrió un error al generar el pedido. Por favor verificá la disponibilidad de tus prendas.');
@@ -276,85 +280,65 @@ Adjunto mi comprobante para coordinar el despacho. ¡Muchas gracias!`;
       setIsSubmittingOrder(false);
     }
 
-    // Si se uso un baucher, lo marcamos como canjeado para que no se pueda
-    // volver a aplicar. Si falla (ej: dos pedidos casi al mismo tiempo con
-    // el mismo telefono), no rompemos el pedido — ya se cobro el monto
-    // correcto igual, solo quedaria el baucher sin marcar y habria que
-    // revisarlo a mano.
-    if (voucher?.id && orderData?.id) {
-      fetch('/api/vouchers', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ voucher_id: voucher.id, order_id: orderData.id })
-      }).catch(() => {});
-    }
-
-    const fullOrderObj = {
-      ...orderData,
-      client_name: name,
-      client_phone: phone,
-      client_dni: dni,
-      client_locality: locality,
-      client_address: address,
-      client_postal_code: postalCode,
-      client_floor_apt: floorApt,
-      delivery_method: deliveryMethod
-    };
-
-    setCreatedOrder(fullOrderObj);
+    // El pedido ya viene completo del servidor (telefono normalizado, DNI
+    // completado para clientes del Club, entrega, total con baucher).
+    setCreatedOrder(orderData);
   };
 
   const handleImageUpload = async (e) => {
     const file = e.target.files[0];
-    if (!file || !displayOrder) return;
+    e.target.value = '';
+    if (!file || !displayOrder || receiptUploading) return;
+    setReceiptError('');
 
-    const reader = new FileReader();
-    reader.onloadend = () => {
-      setReceiptImage(reader.result);
-    };
-    reader.readAsDataURL(file);
+    if (!supabase) {
+      setReceiptError('No pudimos subir el comprobante. Envialo por WhatsApp al 341-264-8035 con tu N° de pedido.');
+      return;
+    }
 
-    if (supabase) {
-      try {
-        // Los comprobantes (fotos de transferencia sacadas con el celu) pesan
-        // mucho mas de lo necesario. Se comprimen a .webp con el mismo helper
-        // que ya se usa para las fotos de producto, asi no se revienta el
-        // storage con archivos de varios MB por cada pedido.
-        const isPdf = file.type === 'application/pdf';
-        let uploadBlob = file;
-        let ext = 'pdf';
+    setReceiptUploading(true);
+    try {
+      // Los comprobantes (fotos de transferencia sacadas con el celu) pesan
+      // mucho mas de lo necesario. Se comprimen a .webp con el mismo helper
+      // que ya se usa para las fotos de producto, asi no se revienta el
+      // storage con archivos de varios MB por cada pedido.
+      const isPdf = file.type === 'application/pdf';
+      let uploadBlob = file;
+      let ext = 'pdf';
 
-        if (!isPdf) {
-          const { blob, compressed } = await compressImage(file, { maxWidth: 1200, maxHeight: 1600, quality: 0.82 });
-          uploadBlob = blob;
-          ext = compressed ? 'webp' : (file.name.split('.').pop() || 'jpg');
-        }
-
-        const filePath = `comprobante_${displayOrder.id}_${Date.now()}.${ext}`;
-        const { error: uploadErr } = await supabase.storage
-          .from('comprobantes')
-          .upload(filePath, uploadBlob, { upsert: true, contentType: isPdf ? 'application/pdf' : `image/${ext === 'webp' ? 'webp' : ext}` });
-
-        if (!uploadErr) {
-          const { data: urlData } = supabase.storage.from('comprobantes').getPublicUrl(filePath);
-          dataStore.updateOrderReceipt(displayOrder.id, urlData.publicUrl);
-          setReceiptUploaded(true);
-        } else {
-          console.warn('Error subiendo comprobante a Supabase Storage:', uploadErr);
-        }
-      } catch (err) {
-        console.warn('Error subiendo comprobante a Supabase Storage:', err);
+      if (!isPdf) {
+        const { blob, compressed } = await compressImage(file, { maxWidth: 1200, maxHeight: 1600, quality: 0.82 });
+        uploadBlob = blob;
+        ext = compressed ? 'webp' : (file.name.split('.').pop() || 'jpg');
       }
-    } else {
+
+      const filePath = `comprobante_${displayOrder.id}_${Date.now()}.${ext}`;
+      const { error: uploadErr } = await supabase.storage
+        .from('comprobantes')
+        .upload(filePath, uploadBlob, { upsert: true, contentType: isPdf ? 'application/pdf' : `image/${ext === 'webp' ? 'webp' : ext}` });
+      if (uploadErr) throw uploadErr;
+
+      const { data: urlData } = supabase.storage.from('comprobantes').getPublicUrl(filePath);
+      // Recien con el comprobante guardado en el pedido se muestra como
+      // adjuntado (antes se mostraba la vista previa aunque fallara la subida).
+      const saved = await dataStore.submitOrderReceipt(displayOrder.id, displayOrder.client_phone, urlData.publicUrl);
+      if (!saved) throw new Error('receipt not saved');
+
+      setReceiptImage(isPdf ? null : urlData.publicUrl);
       setReceiptUploaded(true);
+    } catch (err) {
+      console.warn('Error subiendo comprobante:', err);
+      setReceiptError('No pudimos subir el comprobante. Probá de nuevo, o envialo por WhatsApp al 341-264-8035 con tu N° de pedido.');
+    } finally {
+      setReceiptUploading(false);
     }
   };
 
   const handleFinishWithReceipt = () => {
     if (!displayOrder) return;
-    const targetId = displayOrder.id;
-    dataStore.updateOrderStatus(targetId, 'comprobante_subido');
-    setCompletedOrderId(targetId);
+    // El estado "comprobante_subido" ya lo guardo el servidor al recibir el
+    // comprobante (/api/orders/receipt).
+    setCompletedOrderId(displayOrder.id);
     dataStore.clearActiveOrder();
     setCreatedOrder(null);
     setReceiptImage(null);
@@ -362,11 +346,20 @@ Adjunto mi comprobante para coordinar el despacho. ¡Muchas gracias!`;
     setIsFinishedSuccess(true);
   };
 
-  const handleModifyOrCancelOrder = () => {
-    if (displayOrder?.items && onRestoreCart) {
+  const handleModifyOrCancelOrder = async () => {
+    if (!displayOrder) return;
+    setOrderActionError('');
+    // Se cancela de verdad en la base (devuelve el stock) antes de volver al
+    // carrito; si no, al regenerarlo quedaba un pedido duplicado.
+    try {
+      await dataStore.cancelMyOrder(displayOrder.id, displayOrder.client_phone);
+    } catch (err) {
+      setOrderActionError(err.message);
+      return;
+    }
+    if (displayOrder.items && onRestoreCart) {
       onRestoreCart(displayOrder.items);
     }
-    dataStore.clearActiveOrder();
     setCreatedOrder(null);
     setReceiptImage(null);
     setReceiptUploaded(false);
@@ -750,7 +743,7 @@ Adjunto mi comprobante para coordinar el despacho. ¡Muchas gracias!`;
 
                 <input 
                   type="file" 
-                  accept="image/*" 
+                  accept="image/*,application/pdf" 
                   onChange={handleImageUpload} 
                   id="receipt-file-input"
                   style={{ display: 'none' }}
@@ -762,16 +755,26 @@ Adjunto mi comprobante para coordinar el despacho. ¡Muchas gracias!`;
                   style={{ width: '100%', justifyContent: 'center', display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}
                 >
                   <Upload size={16} /> 
-                  {receiptUploaded || displayOrder.receipt_url ? '✓ Comprobante Cargado (Cambiar)' : 'Subir Imagen de Comprobante'}
+                  {receiptUploading
+                    ? 'Subiendo comprobante...'
+                    : receiptUploaded || displayOrder.receipt_url ? '✓ Comprobante Cargado (Cambiar)' : 'Subir Imagen de Comprobante'}
                 </label>
 
-                {(receiptImage || displayOrder.receipt_url) && (
+                {receiptError && (
+                  <div role="alert" style={{ marginTop: '10px', background: '#FEF2F2', border: '1px solid #FECACA', color: '#B91C1C', borderRadius: '8px', padding: '8px 10px', fontSize: '0.8rem', fontWeight: 600 }}>
+                    {receiptError}
+                  </div>
+                )}
+
+                {(receiptUploaded || displayOrder.receipt_url) && (
                   <div style={{ marginTop: '12px', textAlign: 'center' }}>
-                    <img 
-                      src={receiptImage || displayOrder.receipt_url} 
-                      alt="Comprobante" 
-                      style={{ maxHeight: '120px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)' }}
-                    />
+                    {(receiptImage || displayOrder.receipt_url) && !String(receiptImage || displayOrder.receipt_url).endsWith('.pdf') && (
+                      <img
+                        src={receiptImage || displayOrder.receipt_url}
+                        alt="Comprobante"
+                        style={{ maxHeight: '120px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)' }}
+                      />
+                    )}
                     <div style={{ fontSize: '0.75rem', color: 'var(--accent-emerald)', fontWeight: 700, marginTop: '4px' }}>
                       Comprobante adjuntado correctamente
                     </div>
@@ -820,9 +823,15 @@ Adjunto mi comprobante para coordinar el despacho. ¡Muchas gracias!`;
                 <span>💬 ¿Dudas con el pago o el envío? Escribinos o envianos tu comprobante directo a nuestro WhatsApp <strong>341-264-8035</strong>. ¡Te atendemos con la mejor onda!</span>
               </div>
 
-              <button 
+              {orderActionError && (
+                <div role="alert" style={{ background: '#FEF2F2', border: '1px solid #FECACA', color: '#B91C1C', borderRadius: '10px', padding: '10px 12px', fontSize: '0.82rem', fontWeight: 600, marginBottom: '10px' }}>
+                  {orderActionError}
+                </div>
+              )}
+
+              <button
                 type="button"
-                onClick={handleModifyOrCancelOrder} 
+                onClick={handleModifyOrCancelOrder}
                 style={{
                   width: '100%',
                   padding: '12px',
@@ -1266,14 +1275,17 @@ Adjunto mi comprobante para coordinar el despacho. ¡Muchas gracias!`;
                       <input
                         type="text"
                         placeholder="DNI / CUIT *"
+                        inputMode="numeric"
                         value={clientDni}
                         onChange={(e) => setClientDni(e.target.value)}
                         className="form-input"
                         style={{ fontSize: '0.85rem', padding: '8px 10px' }}
                       />
                       <input
-                        type="text"
+                        type="tel"
                         placeholder="Teléfono *"
+                        inputMode="tel"
+                        autoComplete="tel"
                         value={clientPhone}
                         onChange={(e) => setClientPhone(e.target.value)}
                         className="form-input"
@@ -1312,6 +1324,7 @@ Adjunto mi comprobante para coordinar el despacho. ¡Muchas gracias!`;
                       <input
                         type="text"
                         placeholder="Código Postal *"
+                        autoComplete="postal-code"
                         value={clientPostalCode}
                         onChange={(e) => setClientPostalCode(e.target.value)}
                         className="form-input"
