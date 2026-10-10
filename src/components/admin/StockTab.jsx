@@ -7,6 +7,7 @@ import { getProductImages, getThumbUrl } from '@/lib/dataStore';
 import ImageLightbox from '@/components/admin/ImageLightbox';
 import SafeImg from '@/components/admin/SafeImg';
 import DuplicateProductModal from '@/components/admin/DuplicateProductModal';
+import CategoryEditModal from '@/components/admin/CategoryEditModal';
 
 export default function StockTab({ products, categories = [], searchFilter, setSearchFilter, onUpdateStock, onUpdateSizesColors, onToggleActive, onUpdateDetails, onCreateProduct, onDeleteProduct }) {
   // Local state for stock per size per product
@@ -20,6 +21,7 @@ export default function StockTab({ products, categories = [], searchFilter, setS
   // chica y en una notebook no se distingue el articulo).
   const [zoomProduct, setZoomProduct] = useState(null);
   const [editingProduct, setEditingProduct] = useState(null);
+  const [categoryProduct, setCategoryProduct] = useState(null);
 
   const criticalCount = products.filter(p => p.stock > 0 && p.stock <= 5).length;
   const outOfStockCount = products.filter(p => p.stock <= 0).length;
@@ -200,10 +202,17 @@ export default function StockTab({ products, categories = [], searchFilter, setS
                   {p.code && <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontWeight: 600 }}>Cód: {p.code}</span>}
                 </td>
                 <td>
-                  <span style={{ backgroundColor: '#EFF6FF', color: '#1D4ED8', padding: '2px 8px', borderRadius: '4px', fontSize: '0.78rem', fontWeight: 600 }}>
-                    {p.category}
-                  </span>
-                  {p.subcategory && <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>{p.subcategory}</div>}
+                  <button
+                    type="button"
+                    onClick={() => setCategoryProduct(p)}
+                    title="Cambiar de categoría"
+                    style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', textAlign: 'left' }}
+                  >
+                    <span style={{ backgroundColor: '#EFF6FF', color: '#1D4ED8', padding: '2px 8px', borderRadius: '4px', fontSize: '0.78rem', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                      {p.category || 'Sin categoría'} <Pencil size={11} aria-hidden="true" />
+                    </span>
+                    {p.subcategory && <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>{p.subcategory}</div>}
+                  </button>
                 </td>
 
                 {/* Activar / Desactivar */}
@@ -380,6 +389,14 @@ export default function StockTab({ products, categories = [], searchFilter, setS
           product={editingProduct}
           onClose={() => setEditingProduct(null)}
           onSave={onUpdateDetails}
+        />
+      )}
+
+      {categoryProduct && (
+        <CategoryEditModal
+          product={categoryProduct}
+          categories={categories}
+          onClose={() => setCategoryProduct(null)}
         />
       )}
 
@@ -709,11 +726,17 @@ function SizeColorManagerModal({ product, onClose, onSave }) {
 
   // Para productos sin talle (talle único)
   const [singleColors, setSingleColors] = useState(() => getProductColors(product));
+  // Stock por color de un producto de talle unico: se guarda en
+  // products.color_stock. Antes no se guardaba en ningun lado (el modal lo
+  // sumaba al total y lo descartaba), asi que al reabrirlo todo aparecia en
+  // 0 y, si se guardaba de nuevo, el stock del producto quedaba en 0.
+  // Si todavia no hay detalle por color, los campos quedan vacios y se
+  // respeta el total actual hasta que se cargue cuanto hay de cada color.
   const [singleColorStock, setSingleColorStock] = useState(() => {
-    const details = getSizeDetails(product, null);
+    const saved = product.color_stock && typeof product.color_stock === 'object' ? product.color_stock : {};
     const map = {};
-    (details.colors || []).forEach((c) => {
-      map[c] = details.color_stock?.[c] ?? 5;
+    getProductColors(product).forEach((c) => {
+      if (saved[c] !== undefined && saved[c] !== null) map[c] = Math.max(0, parseInt(saved[c], 10) || 0);
     });
     return map;
   });
@@ -839,7 +862,9 @@ function SizeColorManagerModal({ product, onClose, onSave }) {
     const trimmed = (colorToAdd || '').trim();
     if (!trimmed || singleColors.includes(trimmed)) return;
     setSingleColors((prev) => [...prev, trimmed]);
-    setSingleColorStock((prev) => ({ ...prev, [trimmed]: defaultVal }));
+    if (hasSingleColorStock) {
+      setSingleColorStock((prev) => ({ ...prev, [trimmed]: defaultVal }));
+    }
   };
 
   const handleRemoveSingleColor = (colorToRemove) => {
@@ -856,6 +881,9 @@ function SizeColorManagerModal({ product, onClose, onSave }) {
     setSingleColorStock((prev) => ({ ...prev, [color]: num }));
   };
 
+  // Hay detalle por color cargado (al menos un color con numero)?
+  const hasSingleColorStock = singleColors.some((c) => singleColorStock[c] !== undefined && singleColorStock[c] !== '');
+
   // Cálculo de stock total
   const calculatedTotalStock = sizes.length > 0
     ? sizes.reduce((acc, s) => {
@@ -863,7 +891,7 @@ function SizeColorManagerModal({ product, onClose, onSave }) {
         const subtotal = (cfg.colors || []).reduce((sum, c) => sum + (parseInt(cfg.color_stock?.[c], 10) || 0), 0);
         return acc + subtotal;
       }, 0)
-    : (singleColors.length > 0
+    : (hasSingleColorStock
         ? singleColors.reduce((sum, c) => sum + (parseInt(singleColorStock[c], 10) || 0), 0)
         : Math.max(0, parseInt(singleStock, 10) || 0));
 
@@ -906,15 +934,19 @@ function SizeColorManagerModal({ product, onClose, onSave }) {
       });
     } else {
       // Talle único
-      const totalStock = singleColors.length > 0
-        ? singleColors.reduce((sum, c) => sum + (parseInt(singleColorStock[c], 10) || 0), 0)
-        : Math.max(0, parseInt(singleStock, 10) || 0);
+      const colorStock = {};
+      if (hasSingleColorStock) {
+        singleColors.forEach((c) => {
+          colorStock[c] = Math.max(0, parseInt(singleColorStock[c], 10) || 0);
+        });
+      }
 
       await onSave(product.id, {
         sizes: [],
         stock_per_size: {},
         colors: singleColors.length > 0 ? singleColors : ['Surtido'],
-        stock: totalStock
+        color_stock: hasSingleColorStock ? colorStock : null,
+        stock: calculatedTotalStock
       });
     }
 
@@ -1166,9 +1198,9 @@ function SizeColorManagerModal({ product, onClose, onSave }) {
                   <input
                     type="number"
                     min="0"
-                    value={singleColors.length > 0 ? calculatedTotalStock : singleStock}
+                    value={hasSingleColorStock ? calculatedTotalStock : singleStock}
                     onChange={(e) => setSingleStock(e.target.value)}
-                    disabled={singleColors.length > 0}
+                    disabled={hasSingleColorStock}
                     className="form-input"
                     style={{ width: '80px', padding: '6px 8px', fontWeight: 800, textAlign: 'center' }}
                   />
@@ -1178,6 +1210,11 @@ function SizeColorManagerModal({ product, onClose, onSave }) {
               <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 700, color: 'var(--text-muted)', marginBottom: '8px' }}>
                 Colores y Stock de cada uno:
               </label>
+              {singleColors.length > 0 && !hasSingleColorStock && (
+                <div style={{ fontSize: '0.76rem', color: '#B45309', backgroundColor: '#FFFBEB', border: '1px solid #FDE68A', borderRadius: '8px', padding: '6px 10px', marginBottom: '10px', fontWeight: 600 }}>
+                  Este producto todavía no tiene el stock separado por color: se mantiene el total ({singleStock}). Si cargás cuánto hay de cada color, el total pasa a ser la suma.
+                </div>
+              )}
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginBottom: '10px' }}>
                 {singleColors.map((c) => (
                   <div
@@ -1198,7 +1235,8 @@ function SizeColorManagerModal({ product, onClose, onSave }) {
                     <input
                       type="number"
                       min="0"
-                      value={singleColorStock[c] ?? 0}
+                      value={singleColorStock[c] ?? ''}
+                      placeholder="—"
                       onChange={(e) => handleUpdateSingleColorStock(c, e.target.value)}
                       className="form-input"
                       style={{ width: '52px', padding: '2px 4px', fontSize: '0.82rem', fontWeight: 800, textAlign: 'center' }}

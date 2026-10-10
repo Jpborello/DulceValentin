@@ -269,9 +269,7 @@ Adjunto mi comprobante para coordinar el despacho. ¡Muchas gracias!`;
     for (const item of cartItems) {
       const p = item.product;
       const liveProduct = dataStore.getProductById(p.id) || p;
-      const available = p.selectedSize
-        ? getProductStockForSizeColor(liveProduct, p.selectedSize, p.selectedColor)
-        : (Number(liveProduct.stock) || 0);
+      const available = getProductStockForSizeColor(liveProduct, p.selectedSize, p.selectedColor);
       if (available <= 0) {
         setCheckoutError(`El producto "${p.name}" no cuenta con stock disponible en este momento. Por favor quitalo de tu carrito o consultanos por WhatsApp para conseguírtelo.`);
         return;

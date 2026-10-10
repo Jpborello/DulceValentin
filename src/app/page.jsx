@@ -67,7 +67,13 @@ export default function Home() {
 
     updateStoreData();
     const unsubscribe = dataStore.subscribe(updateStoreData);
-    return () => unsubscribe();
+    // Stock en vivo para el cliente: si algo se agota o se repone mientras
+    // mira el catalogo, lo ve sin refrescar.
+    const unsubscribeProducts = dataStore.subscribeProductsRealtime();
+    return () => {
+      unsubscribe();
+      unsubscribeProducts();
+    };
   }, []);
 
   // Links compartidos (?producto=ID) abren directo el modal de esa prenda.
@@ -233,9 +239,7 @@ export default function Home() {
   // Cart operations
   const handleAddToCart = (product, { silent = false, quantity = 1 } = {}) => {
     // Verificación estricta de stock disponible
-    const availableStock = product.selectedSize
-      ? getProductStockForSizeColor(product, product.selectedSize, product.selectedColor)
-      : (Number(product.stock) || 0);
+    const availableStock = getProductStockForSizeColor(product, product.selectedSize, product.selectedColor);
 
     if (availableStock <= 0) {
       alert(`El producto "${product.name}" no tiene stock disponible en este momento.`);
@@ -293,9 +297,7 @@ export default function Home() {
     // Pre-validación de stock en vivo de cada producto del carrito
     for (const item of cart) {
       const p = item.product;
-      const available = p.selectedSize
-        ? getProductStockForSizeColor(p, p.selectedSize, p.selectedColor)
-        : (Number(p.stock) || 0);
+      const available = getProductStockForSizeColor(p, p.selectedSize, p.selectedColor);
       if (available <= 0) {
         throw new Error(`El producto "${p.name}" se quedó sin stock disponible. Por favor eliminalo de tu pedido.`);
       }

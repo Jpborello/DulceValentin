@@ -54,15 +54,18 @@ export async function POST(req) {
     if (!cancelled) return NextResponse.json({ success: true, alreadyCancelled: true });
 
     if (!order.stock_issue) {
-      const qtyByProduct = {};
-      (order.items || []).forEach((it) => {
-        const id = it?.product?.id;
-        if (id) qtyByProduct[id] = (qtyByProduct[id] || 0) + (Number(it.quantity) || 0);
-      });
+      // Devuelve el total y el talle/color de cada linea.
       await Promise.all(
-        Object.entries(qtyByProduct).map(([productId, qty]) =>
-          supabaseAdmin.rpc('restore_product_stock', { p_product_id: productId, p_qty: qty })
-        )
+        (order.items || [])
+          .filter((it) => it?.product?.id && Number(it.quantity) > 0)
+          .map((it) =>
+            supabaseAdmin.rpc('restore_variant_stock', {
+              p_product_id: it.product.id,
+              p_size: it.product.selectedSize || null,
+              p_color: it.product.selectedColor || null,
+              p_qty: Number(it.quantity)
+            })
+          )
       );
     }
 

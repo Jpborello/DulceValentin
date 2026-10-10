@@ -265,6 +265,52 @@ class DataStore {
     this.notify();
   }
 
+  // Cambios de un pedido hechos desde otro lado (el cliente lo cancela o sube
+  // el comprobante desde la web, u otro dispositivo del admin).
+  handleRealtimeOrderUpdate(row) {
+    if (!row?.id || !this.orders.some(o => o.id === row.id)) return;
+    this.orders = this.orders.map(o => (o.id === row.id ? { ...o, ...row } : o));
+    this.notify();
+  }
+
+  // Stock/precios en vivo: cada venta, cancelacion o edicion de un producto
+  // llega por Supabase Realtime (tabla products en la publicacion
+  // supabase_realtime, ver migracion 20261011). Antes habia que refrescar
+  // para ver el stock real despues de que un cliente cancelaba un pedido.
+  subscribeProductsRealtime() {
+    if (!supabase) return () => {};
+    const channel = supabase
+      .channel(`products-realtime-${Math.random().toString(36).slice(2)}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'products' }, (payload) => {
+        if (payload.eventType === 'DELETE') {
+          const id = payload.old?.id;
+          if (!id) return;
+          this.products = this.products.filter(p => p.id !== id);
+        } else {
+          const row = payload.new;
+          if (!row?.id) return;
+          const normalized = {
+            ...row,
+            price: Number(row.price),
+            wholesale_price: Number(row.wholesale_price),
+            stock: Number(row.stock),
+            sales_count: row.sales_count ?? 0,
+            image_urls: flattenImageUrls(row.image_urls).length > 0
+              ? flattenImageUrls(row.image_urls)
+              : (row.image_url ? flattenImageUrls(row.image_url) : [])
+          };
+          const exists = this.products.some(p => p.id === row.id);
+          this.products = exists
+            ? this.products.map(p => (p.id === row.id ? { ...p, ...normalized } : p))
+            : [...this.products, normalized];
+        }
+        this.saveProductsToLocalStorage();
+        this.notify();
+      })
+      .subscribe();
+    return () => supabase.removeChannel(channel);
+  }
+
   // Llamado desde el listener de Supabase Realtime cuando se asigna un
   // boleto nuevo (compra en vivo mientras el admin tiene abierta la pestaña
   // "Sorteo en Vivo" para transmitir por Instagram) — asi el boleto aparece
@@ -1004,7 +1050,9 @@ class DataStore {
   // avisa que ya no habia stock suficiente (dos compras casi simultaneas
   // del ultimo/anteultimo producto) — createOrder usa este resultado para
   // marcar el pedido como "stock_issue" en vez de dejarlo pasar en silencio.
-  async decrementStockAfterSale(id, qty) {
+  // size/color (opcionales): si vienen, tambien se descuenta ese talle/color
+  // (decrement_variant_stock); sin ellos baja solo el total como antes.
+  async decrementStockAfterSale(id, qty, size = null, color = null) {
     if (!qty || qty <= 0) return true;
 
     const prod = this.products.find(p => p.id === id);
@@ -1026,7 +1074,7 @@ class DataStore {
 
     if (supabase) {
       try {
-        const { data, error } = await supabase.rpc('decrement_product_stock', { p_product_id: id, p_qty: qty });
+        const { data, error } = await supabase.rpc('decrement_variant_stock', { p_product_id: id, p_size: size || null, p_color: color || null, p_qty: qty });
         if (error) {
           console.warn('Stock decrement warning:', error);
           await supabase.from('products').update({ stock: newStock }).eq('id', id);
@@ -1044,7 +1092,7 @@ class DataStore {
   // Reversa de decrementStockAfterSale: se llama cuando un pedido se
   // cancela, para devolver el stock que se habia descontado al crearlo
   // (el descuento pasa al crear el pedido, no cuando se aprueba el pago).
-  restoreStockAfterCancel(id, qty) {
+  restoreStockAfterCancel(id, qty, size = null, color = null) {
     if (!qty || qty <= 0) return;
 
     this.products = this.products.map(p => {
@@ -1059,7 +1107,7 @@ class DataStore {
     this.notify();
 
     if (supabase) {
-      supabase.rpc('restore_product_stock', { p_product_id: id, p_qty: qty }).then(() => {}).catch(() => {});
+      supabase.rpc('restore_variant_stock', { p_product_id: id, p_size: size || null, p_color: color || null, p_qty: qty }).then(() => {}).catch(() => {});
     }
   }
 
@@ -1467,7 +1515,7 @@ class DataStore {
     const stockIssues = [];
     for (const item of cartItems) {
       if (this.products.some(p => p.id === item.product.id)) {
-        const ok = await this.decrementStockAfterSale(item.product.id, item.quantity);
+        const ok = await this.decrementStockAfterSale(item.product.id, item.quantity, item.product.selectedSize, item.product.selectedColor);
         if (ok) {
           deductedStock[item.product.id] = (deductedStock[item.product.id] || 0) + item.quantity;
         } else {
@@ -1793,7 +1841,7 @@ class DataStore {
       } else if (existingOrder?.items && !existingOrder?.stock_issue) {
         existingOrder.items.forEach((item) => {
           if (item.product?.id && this.products.some((p) => p.id === item.product.id)) {
-            this.restoreStockAfterCancel(item.product.id, item.quantity);
+            this.restoreStockAfterCancel(item.product.id, item.quantity, item.product.selectedSize, item.product.selectedColor);
           }
         });
       }
@@ -1816,7 +1864,7 @@ class DataStore {
       } else if (existingOrder?.items && !existingOrder?.stock_issue) {
         existingOrder.items.forEach((item) => {
           if (item.product?.id && this.products.some((p) => p.id === item.product.id)) {
-            this.restoreStockAfterCancel(item.product.id, item.quantity);
+            this.restoreStockAfterCancel(item.product.id, item.quantity, item.product.selectedSize, item.product.selectedColor);
           }
         });
       }

@@ -192,9 +192,7 @@ export default function ProductDetailModal({ product, isOpen, onClose, onAddToCa
     setJustAdded(`Pack x${packSlots.length} variado (${summary})`);
   };
 
-  const currentVariantStock = selectedSize
-    ? getProductStockForSizeColor(product, selectedSize, selectedColor)
-    : Number(product.stock) || 0;
+  const currentVariantStock = getProductStockForSizeColor(product, selectedSize, selectedColor);
   const isStockOk = currentVariantStock > 5;
 
   const handlePrevImg = (e) => {
@@ -816,9 +814,7 @@ export default function ProductDetailModal({ product, isOpen, onClose, onAddToCa
                     <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginTop: '6px' }}>
                       {availableColors.map((color) => {
                         const isSelected = selectedColor === color;
-                        const stockForThisColor = selectedSize
-                          ? getProductStockForSizeColor(product, selectedSize, color)
-                          : Number(product.stock) || 0;
+                        const stockForThisColor = getProductStockForSizeColor(product, selectedSize, color);
                         const isOut = stockForThisColor <= 0;
 
                         return (

@@ -331,6 +331,10 @@ export const getProductStockForSizeColor = (product, size, color) => {
     }
     return Math.max(0, Math.min(totalStock, Number(variantStock) || 0));
   }
+  // Talle unico con stock por color (products.color_stock, desde 2026-10).
+  if (color && product.color_stock && typeof product.color_stock === 'object' && product.color_stock[color] !== undefined) {
+    return Math.max(0, Math.min(totalStock, Number(product.color_stock[color]) || 0));
+  }
   return Math.max(0, totalStock);
 };
 

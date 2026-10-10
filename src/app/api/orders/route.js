@@ -21,7 +21,7 @@ const RAFFLE_STEP = 50000;
 const MAX_LINES = 200;
 const MAX_QTY_PER_LINE = 999;
 
-const PRODUCT_COLUMNS = 'id, name, code, category, subcategory, price, wholesale_price, price_per_size, stock, stock_per_size, sizes, colors, image_url, thumb_url, is_active, exempt_from_min3';
+const PRODUCT_COLUMNS = 'id, name, code, category, subcategory, price, wholesale_price, price_per_size, stock, stock_per_size, color_stock, sizes, colors, image_url, thumb_url, is_active, exempt_from_min3';
 
 const clean = (value, max = 200) => String(value ?? '').trim().slice(0, max);
 const variantKeyOf = (id, size, color) => `${id}::${size || ''}::${color || ''}`;
@@ -41,10 +41,16 @@ async function generateUniqueOrderId() {
   throw new Error('No se pudo generar un número de pedido');
 }
 
-async function restoreStock(deducted) {
+// Devuelve el stock de las lineas ya descontadas (total + talle/color).
+async function restoreStock(deductedLines) {
   await Promise.all(
-    Object.entries(deducted).map(([productId, qty]) =>
-      supabaseAdmin.rpc('restore_product_stock', { p_product_id: productId, p_qty: qty })
+    deductedLines.map((l) =>
+      supabaseAdmin.rpc('restore_variant_stock', {
+        p_product_id: l.product.id,
+        p_size: l.product.selectedSize,
+        p_color: l.product.selectedColor,
+        p_qty: l.quantity
+      })
     )
   );
 }
@@ -163,9 +169,7 @@ export async function POST(req) {
   }
   for (const line of lines) {
     const { product } = line;
-    const available = product.selectedSize
-      ? getProductStockForSizeColor(product, product.selectedSize, product.selectedColor)
-      : Number(product.stock) || 0;
+    const available = getProductStockForSizeColor(product, product.selectedSize, product.selectedColor);
     const requested = qtyByVariant.get(line.variantKey);
     if (available <= 0) {
       return fail(409, `"${product.name}"${product.selectedSize ? ` (talle ${product.selectedSize})` : ''} se quedó sin stock. Quitalo de tu carrito o consultanos por WhatsApp.`);
@@ -221,17 +225,23 @@ export async function POST(req) {
   const discountApplied = Math.min(subtotal, Math.max(0, Number(voucher?.amount) || 0));
   const total = subtotal - discountApplied;
 
-  // ---- Descuento de stock atomico (y vuelta atras si algo falla) ----
-  const deducted = {};
-  for (const [productId, qty] of Object.entries(qtyByProduct)) {
-    const { data: ok, error } = await supabaseAdmin.rpc('decrement_product_stock', { p_product_id: productId, p_qty: qty });
+  // ---- Descuento de stock atomico por linea: baja el total y tambien el
+  // talle/color vendido (antes solo bajaba el total y el stock por talle
+  // quedaba desfasado). Si algo falla se devuelve lo ya descontado. ----
+  const deducted = [];
+  for (const line of lines) {
+    const { data: ok, error } = await supabaseAdmin.rpc('decrement_variant_stock', {
+      p_product_id: line.product.id,
+      p_size: line.product.selectedSize,
+      p_color: line.product.selectedColor,
+      p_qty: line.quantity
+    });
     if (error || ok === false) {
       await restoreStock(deducted);
       await releaseVoucher(voucher?.id);
-      const name = productById.get(productId)?.name || 'un producto';
-      return fail(409, `"${name}" se agotó mientras armabas el pedido. Revisá tu carrito y probá de nuevo.`);
+      return fail(409, `"${line.product.name}" se agotó mientras armabas el pedido. Revisá tu carrito y probá de nuevo.`);
     }
-    deducted[productId] = qty;
+    deducted.push(line);
   }
 
   const isRegistered = Boolean(existingClient);

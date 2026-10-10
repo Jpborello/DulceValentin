@@ -278,8 +278,14 @@ export default function AdminPage() {
         .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'orders' }, (payload) => {
           dataStore.handleRealtimeOrderInsert(payload.new);
         })
+        .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'orders' }, (payload) => {
+          dataStore.handleRealtimeOrderUpdate(payload.new);
+        })
         .subscribe();
     }
+
+    // Stock en vivo (ventas, cancelaciones y ediciones desde otro dispositivo).
+    const unsubscribeProducts = dataStore.subscribeProductsRealtime();
 
     // Mismo mecanismo para los boletos del sorteo: la pestaña "Sorteo en
     // Vivo" se usa para transmitir por Instagram, asi que un boleto nuevo
@@ -304,6 +310,7 @@ export default function AdminPage() {
 
     return () => {
       unsubscribe();
+      unsubscribeProducts();
       if (ordersChannel) supabase.removeChannel(ordersChannel);
       if (raffleTicketsChannel) supabase.removeChannel(raffleTicketsChannel);
       clearInterval(ordersPollInterval);
@@ -347,10 +354,16 @@ export default function AdminPage() {
     return result;
   };
 
-  const handleUpdateSizesColors = async (id, { sizes, stock_per_size, colors, stock }) => {
+  const handleUpdateSizesColors = async (id, { sizes, stock_per_size, colors, color_stock, stock }) => {
     const updates = { sizes, stock_per_size, colors };
+    // Stock por color de los productos de talle unico (null = sin detalle).
+    if (color_stock !== undefined) updates.color_stock = color_stock;
     if (stock !== undefined && stock !== null) updates.stock = Number(stock);
-    await dataStore.updateProduct(id, updates);
+    const result = await dataStore.updateProduct(id, updates);
+    if (result?.ok === false) {
+      showSuccessNotice('⚠️ No se pudo guardar en la base. Revisá la conexión o volvé a iniciar sesión.');
+      return;
+    }
     showSuccessNotice('Talles, colores y stock actualizados correctamente.');
   };
 
