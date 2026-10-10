@@ -60,11 +60,21 @@ export function ProductBuyButton({ product, fallbackHref = '/' }) {
   const [open, setOpen] = useState(false);
   const [added, setAdded] = useState(null);
   const [countForProduct, setCountForProduct] = useState(0);
+  // El carrito guardado ya tiene un articulo con 3+ unidades? (la regla x3
+  // se cumple una sola vez por pedido; despues todo va por unidad). Aca no
+  // tenemos los productos completos para saber cuales estan exceptuados, asi
+  // que es aproximado: solo decide si el selector arranca en "Pack x3".
+  const [cartQualified, setCartQualified] = useState(false);
   const router = useRouter();
   const goBack = useSmartBack(fallbackHref);
 
-  const refreshCount = () =>
-    setCountForProduct(readStoredCart().filter((t) => t.id === product.id).reduce((s, t) => s + (Number(t.quantity) || 1), 0));
+  const refreshCount = () => {
+    const cart = readStoredCart();
+    setCountForProduct(cart.filter((t) => t.id === product.id).reduce((s, t) => s + (Number(t.quantity) || 1), 0));
+    const byProduct = {};
+    cart.forEach((t) => { byProduct[t.id] = (byProduct[t.id] || 0) + (Number(t.quantity) || 1); });
+    setCartQualified(Object.values(byProduct).some((n) => n >= 3));
+  };
   useEffect(() => { refreshCount(); }, [product.id]); // eslint-disable-line react-hooks/exhaustive-deps
   const outOfStock = !(Number(product?.stock) > 0);
 
@@ -126,7 +136,7 @@ export function ProductBuyButton({ product, fallbackHref = '/' }) {
         isOpen={open}
         onClose={() => setOpen(false)}
         onAddToCart={handleAdd}
-        isWholesaleQualified
+        isWholesaleQualified={cartQualified}
         cartCountForProduct={countForProduct}
         onViewCart={() => router.push('/?carrito=1')}
       />

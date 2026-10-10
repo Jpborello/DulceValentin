@@ -148,7 +148,7 @@ export default function StockTab({ products, categories = [], searchFilter, setS
             <th>Estado</th>
             <th>Talles Disponibles</th>
             <th>Stock Total</th>
-            <th>Modificar Stock</th>
+            <th>Cargado / Queda</th>
             <th>Opciones (Talles, Colores y Duplicar)</th>
           </tr>
         </thead>
@@ -296,14 +296,31 @@ export default function StockTab({ products, categories = [], searchFilter, setS
 
                 {/* Acción Modificar */}
                 <td>
-                  <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                    <input 
-                      type="number" 
-                      defaultValue={p.stock} 
-                      id={`stock-${p.id}`}
-                      className="form-input" 
-                      style={{ width: '90px', padding: '6px 10px', fontWeight: 700 }} 
-                    />
+                  <div style={{ display: 'flex', gap: '8px', alignItems: 'flex-end' }}>
+                    {/* Total cargado: solo lectura, lo mantiene la base (sube
+                        cuando se carga mas mercaderia, no baja con las ventas). */}
+                    <div title="Total de unidades cargadas de este producto (no se edita: sube cuando cargás más stock)">
+                      <div style={{ fontSize: '0.68rem', fontWeight: 700, color: 'var(--text-muted)', marginBottom: '2px' }}>Cargado</div>
+                      <div style={{
+                        minWidth: '64px', padding: '6px 10px', borderRadius: '8px', fontWeight: 800, textAlign: 'center',
+                        backgroundColor: 'var(--bg-surface-elevated)', border: '1px dashed var(--border-color)', color: 'var(--text-main)'
+                      }}>
+                        {p.stock_loaded ?? '—'}
+                      </div>
+                    </div>
+                    <div>
+                      <div style={{ fontSize: '0.68rem', fontWeight: 700, color: 'var(--text-muted)', marginBottom: '2px' }}>Queda</div>
+                      {/* key con el stock: si cambia por realtime (una venta o
+                          cancelacion), el campo se actualiza solo. */}
+                      <input
+                        key={`${p.id}-${p.stock}`}
+                        type="number"
+                        defaultValue={p.stock}
+                        id={`stock-${p.id}`}
+                        className="form-input"
+                        style={{ width: '90px', padding: '6px 10px', fontWeight: 700 }}
+                      />
+                    </div>
                     <button
                       onClick={() => {
                         const val = document.getElementById(`stock-${p.id}`).value;

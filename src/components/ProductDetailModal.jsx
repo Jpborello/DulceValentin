@@ -60,7 +60,11 @@ export default function ProductDetailModal({ product, isOpen, onClose, onAddToCa
       setSelectedColor(initialC);
 
       const hasV = (hasS && product.sizes.length > 1) || (colors && colors.length > 1);
-      setSelectionMode(hasV ? 'pack' : 'single');
+      // El "Pack x3" es solo una ayuda para armar el PRIMER articulo x3. Si el
+      // carrito ya cumple la regla (o el producto esta exceptuado), se abre
+      // por unidad: antes se abria siempre en pack y el cliente entendia que
+      // tenia que llevar 3 de cada articulo.
+      setSelectionMode(hasV && !isWholesaleQualified && !product.exempt_from_min3 ? 'pack' : 'single');
 
       // Inicializar 3 prendas para el pack variado (con variedad sugerida)
       const sList = hasS ? product.sizes : [null];
@@ -1101,9 +1105,11 @@ export default function ProductDetailModal({ product, isOpen, onClose, onAddToCa
                 <div className="pdm-added-title">✓ Agregado: {justAdded}</div>
                 <div className="pdm-added-text">
                   Llevás <strong>{cartCountForProduct}</strong> de este producto.
-                  {!product.exempt_from_min3 && cartCountForProduct < 3
+                  {!product.exempt_from_min3 && !isWholesaleQualified && cartCountForProduct < 3
                     ? ` Sumá ${3 - cartCountForProduct} más para completar tu primer artículo x3: podés combinar talles y colores.`
-                    : ' Podés sumar otro talle o color, o seguir comprando.'}
+                    : isWholesaleQualified
+                      ? ' Ya tenés tu primer artículo x3: el resto lo podés sumar por unidad.'
+                      : ' Podés sumar otro talle o color, o seguir comprando.'}
                 </div>
                 <div className="pdm-added-actions">
                   <button type="button" className="pdm-added-btn" onClick={handleClose}>Seguir comprando</button>
