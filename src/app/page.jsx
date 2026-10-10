@@ -18,7 +18,9 @@ import ClubMayoristaBanner from '@/components/ClubMayoristaBanner';
 import TrustBar from '@/components/TrustBar';
 import FaqSection from '@/components/FaqSection';
 import { dataStore, CATEGORIES, getProductPrice } from '@/lib/dataStore';
-import { flexibleProductMatch } from '@/lib/searchUtils';
+import { getProductStockForSizeColor } from '@/lib/catalogData';
+import { getSearchScores } from '@/lib/searchUtils';
+import { evaluateWholesaleRule } from '@/lib/cartStorage';
 import { Store, MapPin, Instagram, PackageSearch } from 'lucide-react';
 import Link from 'next/link';
 
@@ -91,6 +93,13 @@ export default function Home() {
       setSelectedCategory(catParam);
       if (subParam) setSelectedSubcategory(subParam);
     }
+    // La busqueda tambien viaja en la URL (?q=short): si el cliente sale a
+    // otra pagina y vuelve, sigue viendo lo que estaba buscando.
+    const qParam = params.get('q');
+    if (qParam) {
+      setSearchQuery(qParam);
+      setCatalogOpen(true);
+    }
     categoryDeepLinkHandledRef.current = true;
   }, []);
 
@@ -109,10 +118,16 @@ export default function Home() {
     } else {
       params.delete('sub');
     }
+    if (searchQuery.trim()) {
+      params.set('q', searchQuery.trim());
+    } else {
+      params.delete('q');
+    }
     const queryString = params.toString();
     const newUrl = queryString ? `${window.location.pathname}?${queryString}` : window.location.pathname;
-    window.history.replaceState(null, '', newUrl);
-  }, [selectedCategory, selectedSubcategory]);
+    // Se conserva el state del historial (lo usa Next.js para el boton atras).
+    window.history.replaceState(window.history.state, '', newUrl);
+  }, [selectedCategory, selectedSubcategory, searchQuery]);
 
   // Cada combinacion de producto + talle + color es una linea de carrito
   // distinta, para no perder el talle/color elegido cuando el cliente agrega
@@ -152,11 +167,47 @@ export default function Home() {
     setCartHydrated(true);
   }, [products, cartHydrated]);
 
+  // ?carrito=1 abre el carrito directo. Lo usan las paginas de producto
+  // ("Ver carrito" despues de agregar algo desde ahi).
+  useEffect(() => {
+    if (!cartHydrated) return;
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('carrito') !== '1') return;
+    setIsCartOpen(true);
+    params.delete('carrito');
+    const qs = params.toString();
+    window.history.replaceState(window.history.state, '', qs ? `${window.location.pathname}?${qs}` : window.location.pathname);
+  }, [cartHydrated]);
+
+  // Con la barra fija del carrito visible, los botones flotantes (WhatsApp y
+  // chat) suben para no taparla.
+  useEffect(() => {
+    const hasItems = cartItems.length > 0 && !isCartOpen && !detailProduct && !isAuthOpen;
+    document.body.classList.toggle('has-cart-bar', hasItems);
+    return () => document.body.classList.remove('has-cart-bar');
+  }, [cartItems.length, isCartOpen, detailProduct, isAuthOpen]);
+
   // Volver a mostrar solo el primer lote cada vez que cambian los filtros,
   // para no arrancar una nueva búsqueda con la paginación ya "gastada".
   useEffect(() => {
     setVisibleCount(PRODUCTS_PER_PAGE);
   }, [selectedCategory, selectedSubcategory, searchQuery, quickFilter, selectedSizeFilter]);
+
+  // Si el cliente busca algo en el buscador, posicionar suavemente la vista en los productos
+  useEffect(() => {
+    if (searchQuery.trim().length >= 2) {
+      const timer = setTimeout(() => {
+        const el = document.getElementById('catalogo');
+        if (el) {
+          const rect = el.getBoundingClientRect();
+          if (rect.top > 320 || rect.top < -50) {
+            el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+          }
+        }
+      }, 400);
+      return () => clearTimeout(timer);
+    }
+  }, [searchQuery]);
 
 
 
@@ -179,11 +230,22 @@ export default function Home() {
   }, [cartItems, cartHydrated]);
 
   // Cart operations
-  const handleAddToCart = (product) => {
+  const handleAddToCart = (product, { silent = false, quantity = 1 } = {}) => {
+    // Verificación estricta de stock disponible
+    const availableStock = product.selectedSize
+      ? getProductStockForSizeColor(product, product.selectedSize, product.selectedColor)
+      : (Number(product.stock) || 0);
+
+    if (availableStock <= 0) {
+      alert(`El producto "${product.name}" no tiene stock disponible en este momento.`);
+      return;
+    }
+
     // Red de seguridad: si quien llama no calculo unit_price (no debería
     // pasar, pero por las dudas), se congela aca mismo con el precio
     // vigente para el talle elegido, para que nunca quede un item de
     // carrito sin precio propio.
+    const qtyToAdd = Math.max(1, Number(product?.quantityToOrder) || Number(quantity) || 1);
     const productWithPrice = product.unit_price != null
       ? product
       : { ...product, unit_price: getProductPrice(product, product.selectedSize || null) };
@@ -192,14 +254,16 @@ export default function Home() {
       const existing = prev.find(item => item.variantKey === variantKey);
       if (existing) {
         return prev.map(item =>
-          item.variantKey === variantKey ? { ...item, quantity: item.quantity + 1 } : item
+          item.variantKey === variantKey ? { ...item, quantity: item.quantity + qtyToAdd } : item
         );
       }
-      return [...prev, { product: productWithPrice, quantity: 1, variantKey }];
+      return [...prev, { product: productWithPrice, quantity: qtyToAdd, variantKey }];
     });
 
-    // Toast no invasivo en vez de abrir el drawer en cada click (especialmente en celulares)
-    setAddedToast(product.name);
+    // Toast no invasivo en vez de abrir el drawer en cada click (especialmente en celulares).
+    // Desde el detalle no hace falta: el propio modal muestra la confirmacion.
+    if (silent) return;
+    setAddedToast(`${qtyToAdd > 1 ? `${qtyToAdd}x ` : ''}${product.name}`);
     setTimeout(() => setAddedToast(null), 3000);
   };
 
@@ -218,6 +282,20 @@ export default function Home() {
   };
 
   const handleCheckout = async (cart, clientDetails) => {
+    // Pre-validación de stock en vivo de cada producto del carrito
+    for (const item of cart) {
+      const p = item.product;
+      const available = p.selectedSize
+        ? getProductStockForSizeColor(p, p.selectedSize, p.selectedColor)
+        : (Number(p.stock) || 0);
+      if (available <= 0) {
+        throw new Error(`El producto "${p.name}" se quedó sin stock disponible. Por favor eliminalo de tu pedido.`);
+      }
+      if (item.quantity > available) {
+        throw new Error(`El producto "${p.name}" solo cuenta con ${available} un. en stock (tenés ${item.quantity} en el carrito).`);
+      }
+    }
+
     const order = await dataStore.createOrder(cart, {
       name: clientDetails?.name || currentUser?.name || 'Cliente Mayorista',
       phone: clientDetails?.phone || currentUser?.phone || 'Sin especificar',
@@ -322,11 +400,16 @@ export default function Home() {
       (p) => p.is_active !== false && matchesCategoryFor(p, selectedCategory) && matchesSubcategoryFor(p, sub)
     );
 
+  // Puntaje de busqueda (null si no hay texto buscado). Se calcula sobre
+  // todo el catalogo activo para saber si hay coincidencias "de verdad" y
+  // descartar las debiles (ver getSearchScores).
+  const searchScores = getSearchScores(products.filter((p) => p.is_active !== false), searchQuery);
+
   const filteredProducts = products.filter((product) => {
     const matchesCategory = matchesCategoryFor(product, selectedCategory);
     const matchesSubcategory = matchesSubcategoryFor(product, selectedSubcategory);
 
-    const matchesSearch = flexibleProductMatch(product, searchQuery);
+    const matchesSearch = !searchScores || searchScores.has(product.id);
 
     let matchesQuick = true;
     if (quickFilter === 'offers') {
@@ -347,7 +430,14 @@ export default function Home() {
     }
 
     return product.is_active !== false && matchesCategory && matchesSubcategory && matchesSearch && matchesQuick && matchesSize;
-  }).sort((a, b) => Number(!!b.is_new) - Number(!!a.is_new));
+  }).sort((a, b) => {
+    // Con busqueda: primero lo mas relevante. Sin busqueda: nuevos ingresos primero.
+    if (searchScores) {
+      const diff = (searchScores.get(b.id) || 0) - (searchScores.get(a.id) || 0);
+      if (diff !== 0) return diff;
+    }
+    return Number(!!b.is_new) - Number(!!a.is_new);
+  });
 
   // Talles disponibles presentes en el catálogo activo
   const availableSizes = Array.from(
@@ -387,6 +477,16 @@ export default function Home() {
       .map((p) => p.id)
   );
 
+  // "También te puede interesar" del detalle: misma subcategoria primero,
+  // despues el resto de la categoria. Solo productos con stock.
+  const relatedProducts = (() => {
+    if (!detailProduct) return [];
+    const ok = (p) => p.id !== detailProduct.id && p.is_active !== false && Number(p.stock) > 0;
+    const same = products.filter((p) => ok(p) && p.category === detailProduct.category && p.subcategory && p.subcategory === detailProduct.subcategory);
+    const sameCategory = products.filter((p) => ok(p) && p.category === detailProduct.category && !same.includes(p));
+    return [...same, ...sameCategory].slice(0, 8);
+  })();
+
   const hasSearch = searchQuery.trim() !== '';
   const isCategoryFiltered = Boolean(selectedCategory) && selectedCategory !== 'all';
   const isQuickFiltered = quickFilter !== 'all' || Boolean(selectedSizeFilter);
@@ -399,8 +499,14 @@ export default function Home() {
       : getProductPrice(item.product, item.product.selectedSize);
     return sum + (p * item.quantity);
   }, 0);
-  // Ya no hay monto minimo: todas las compras web son a precio mayorista.
-  const isWholesaleQualified = true;
+  
+  // Evaluación unificada de la regla de 3 unidades para precio mayorista
+  const wholesaleEval = evaluateWholesaleRule(cartItems);
+  const hasMinQtyItem = wholesaleEval.hasMinQtyItem;
+  const unitsNeededForMinQty = wholesaleEval.unitsNeededForMinQty;
+  const isWholesaleQualified = hasMinQtyItem;
+
+  const showCartBar = totalCartItemsCount > 0 && !isCartOpen && !detailProduct && !isAuthOpen;
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', minHeight: '100vh' }}>
@@ -459,61 +565,58 @@ export default function Home() {
         newArrivals={newArrivals}
         promoProducts={promoProducts}
         onOpenDetail={setDetailProduct}
-        onExploreCatalog={() => {
-          setCatalogOpen(true);
-          setSelectedCategory('all');
-          setSelectedSubcategory(null);
-          requestAnimationFrame(() => {
-            const el = document.getElementById('catalogo') || document.getElementById('categorias');
-            if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
-          });
-        }}
       />
 
-      {/* Club Mayorista: banner de retención (registrate y sumás boletos
-          para el sorteo, o vés cuántos llevás si ya sos parte) */}
-      <ClubMayoristaBanner currentUser={currentUser} onOpenAuth={() => setIsAuthOpen(true)} />
+      {/* Buscador Central: justo debajo del Hero */}
+      <div id="buscador-principal">
+        <SearchBarSection
+          searchQuery={searchQuery}
+          setSearchQuery={(q) => {
+            setSearchQuery(q);
+            if (q.trim()) setCatalogOpen(true);
+          }}
+          totalResults={hasSearch ? filteredProducts.length : null}
+          onClear={() => setSearchQuery('')}
+        />
+      </div>
 
-      {/* Buscador Central: ¿Qué estás buscando? */}
-      <SearchBarSection
-        searchQuery={searchQuery}
-        setSearchQuery={(q) => {
-          setSearchQuery(q);
-          if (q.trim()) setCatalogOpen(true);
-        }}
-        totalResults={hasSearch ? filteredProducts.length : null}
-        onClear={() => setSearchQuery('')}
-      />
+      {/* Secciones visuales intermedias: solo se muestran si NO hay una búsqueda activa
+          para que en móviles el cliente vea los resultados inmediatamente sin scroll infinito */}
+      {!hasSearch && (
+        <>
+          {/* Club Mayorista: banner de retención */}
+          <ClubMayoristaBanner currentUser={currentUser} onOpenAuth={() => setIsAuthOpen(true)} />
 
-      {/* Categorías principales: 4 cards (Calzado, Indumentaria, Lencería, Bebés) + secundarias */}
-      <CategoryShowcase
-        categories={categories}
-        products={products}
-        categoryImages={categoryImages}
-        selectedCategory={selectedCategory}
-        selectedSubcategory={selectedSubcategory}
-        onSelect={(category, subcategory) => {
-          setCatalogOpen(true);
-          setSelectedCategory(category);
-          setSelectedSubcategory(subcategory);
-          requestAnimationFrame(() => {
-            requestAnimationFrame(() => {
-              const el = document.getElementById('catalogo');
-              if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
-            });
-          });
-        }}
-        searchQuery={searchQuery}
-        setSearchQuery={setSearchQuery}
-      />
+          {/* Categorías principales: 4 cards (Calzado, Indumentaria, Lencería, Bebés) + secundarias */}
+          <CategoryShowcase
+            categories={categories}
+            products={products}
+            categoryImages={categoryImages}
+            selectedCategory={selectedCategory}
+            selectedSubcategory={selectedSubcategory}
+            onSelect={(category, subcategory) => {
+              setCatalogOpen(true);
+              setSelectedCategory(category);
+              setSelectedSubcategory(subcategory);
+              requestAnimationFrame(() => {
+                requestAnimationFrame(() => {
+                  const el = document.getElementById('catalogo');
+                  if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                });
+              });
+            }}
+            searchQuery={searchQuery}
+            setSearchQuery={setSearchQuery}
+          />
 
-      {/* Trust Bar con beneficios */}
-      <TrustBar />
+          {/* Trust Bar con beneficios */}
+          <TrustBar />
+        </>
+      )}
 
-      {/* Catálogo: aparece recién cuando se eligió una categoría, hay una
-          búsqueda o se abrió el catálogo. */}
+      {/* Catálogo de Productos */}
       {showProductGrid && (
-        <main className="main-catalog-layout">
+        <main id="catalogo" className="main-catalog-layout">
           <CategoryNav
             categories={categories}
             selectedCategory={selectedCategory}
@@ -638,11 +741,39 @@ export default function Home() {
         product={detailProduct}
         isOpen={!!detailProduct}
         onClose={() => setDetailProduct(null)}
-        onAddToCart={handleAddToCart}
+        onAddToCart={(item, opts) => handleAddToCart(item, { silent: true, ...opts })}
         isWholesaleQualified={isWholesaleQualified}
+        relatedProducts={relatedProducts}
+        onSelectProduct={setDetailProduct}
+        cartCountForProduct={detailProduct ? cartItems.filter((i) => i.product.id === detailProduct.id).reduce((sum, i) => sum + i.quantity, 0) : 0}
+        onViewCart={() => setIsCartOpen(true)}
       />
 
       {/* Floating Toast Notification on Item Added */}
+      {/* Barra fija del carrito (solo celular): el total siempre a mano con indicador mayorista */}
+      {showCartBar && (
+        <div className="cart-sticky-bar" role="region" aria-label="Resumen del carrito">
+          <div className="cart-sticky-info">
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <strong>{totalCartItemsCount} {totalCartItemsCount === 1 ? 'prenda' : 'prendas'}</strong>
+              {hasMinQtyItem ? (
+                <span style={{ fontSize: '0.72rem', backgroundColor: '#ECFDF5', color: '#047857', border: '1px solid #A7F3D0', padding: '1px 6px', borderRadius: '4px', fontWeight: 800 }}>
+                  ✓ Mayorista
+                </span>
+              ) : (
+                <span style={{ fontSize: '0.72rem', backgroundColor: '#FEF3C7', color: '#92400E', border: '1px solid #FDE68A', padding: '1px 6px', borderRadius: '4px', fontWeight: 800 }}>
+                  Faltan {unitsNeededForMinQty} (x3)
+                </span>
+              )}
+            </div>
+            <span>${cartSubtotal.toLocaleString('es-AR')}</span>
+          </div>
+          <button type="button" className="cart-sticky-btn" onClick={() => setIsCartOpen(true)}>
+            Ver carrito 🛍️
+          </button>
+        </div>
+      )}
+
       {addedToast && (
         <div style={{
           position: 'fixed',
@@ -697,6 +828,9 @@ export default function Home() {
         onCheckout={handleCheckout}
         onRestoreCart={(items) => setCartItems(items)}
         currentUser={currentUser}
+        onOpenAuth={() => setIsAuthOpen(true)}
+        products={products}
+        onAddToCart={handleAddToCart}
       />
 
       {/* Auth Modal */}

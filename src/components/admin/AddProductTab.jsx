@@ -8,6 +8,7 @@ import { getProductColors, POPULAR_COLORS } from '@/lib/catalogData';
 
 const EMPTY_FORM = {
   name: '',
+  code: '',
   category: '',
   customCategory: '',
   subcategory: '',
@@ -345,6 +346,7 @@ export default function AddProductTab({ categories, onCreateProduct }) {
     try {
       const created = await onCreateProduct({
         name: form.name,
+        code: form.code.trim() || undefined,
         category: finalCategory,
         subcategory: finalSubcategory,
         description: form.description,
@@ -396,6 +398,20 @@ export default function AddProductTab({ categories, onCreateProduct }) {
         </div>
 
         <div className="form-group">
+          <label className="form-label" style={{ display: 'flex', justifyContent: 'space-between' }}>
+            <span>Código / Artículo (opcional)</span>
+            <span style={{ fontSize: '0.74rem', color: 'var(--text-muted)', fontWeight: 'normal' }}>Automático si se deja vacío</span>
+          </label>
+          <input
+            type="text"
+            className="form-input"
+            value={form.code}
+            onChange={update('code')}
+            placeholder="Ej: 0045, ART-120 (dejar vacío para auto)"
+          />
+        </div>
+
+        <div className="form-group">
           <label className="form-label">Precio mayorista *</label>
           <input type="number" className="form-input" value={form.wholesale_price} onChange={update('wholesale_price')} placeholder="Ej: 12000" />
         </div>
@@ -408,9 +424,11 @@ export default function AddProductTab({ categories, onCreateProduct }) {
             onChange={(e) => setForm((f) => ({ ...f, category: e.target.value, subcategory: '' }))}
           >
             <option value="">Elegir categoría existente...</option>
-            {categories.map((c) => (
-              <option key={c.id} value={c.id}>{c.name}</option>
-            ))}
+            {categories
+              .filter((c) => c.id !== 'all' && (c.name || c.id))
+              .map((c, idx) => (
+                <option key={`${c.id || c.name}-${idx}`} value={c.name || c.id}>{c.name || c.id}</option>
+              ))}
           </select>
           <input
             type="text"

@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react';
 import Image from 'next/image';
-import { ShoppingCart, Share2, Check, ChevronLeft, ChevronRight, Camera } from 'lucide-react';
+import { ShoppingCart, Share2, Check, ChevronLeft, ChevronRight, Camera, MessageCircle } from 'lucide-react';
 import { shareProduct } from '@/lib/shareProduct';
 import { getProductImages, getProductPrice, getProductPriceRange, getThumbUrl } from '@/lib/dataStore';
 
@@ -41,16 +41,63 @@ export default function ProductGrid({ products, onAddToCart, isWholesaleQualifie
 
   if (!products || products.length === 0) {
     return (
-      <div style={{ textAlign: 'center', padding: '60px 20px', background: 'var(--bg-card)', borderRadius: 'var(--radius-lg)' }}>
-        <p style={{ fontSize: '1.2rem', fontWeight: 600, color: 'var(--text-muted)' }}>
-          No se encontraron prendas para los filtros seleccionados.
+      <div style={{
+        textAlign: 'center',
+        padding: '50px 24px',
+        background: 'var(--bg-card)',
+        borderRadius: 'var(--radius-lg)',
+        border: '1px solid var(--border-color)',
+        maxWidth: '560px',
+        margin: '0 auto',
+        boxShadow: 'var(--shadow-sm)'
+      }}>
+        <div style={{
+          width: '56px',
+          height: '56px',
+          borderRadius: '50%',
+          backgroundColor: '#F3F4F6',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          margin: '0 auto 16px',
+          fontSize: '26px'
+        }}>
+          🔍
+        </div>
+        <h3 style={{ fontSize: '1.2rem', fontWeight: 800, color: 'var(--text-main)', margin: '0 0 8px 0' }}>
+          No encontramos lo que estás buscando
+        </h3>
+        <p style={{ fontSize: '0.92rem', color: 'var(--text-muted)', margin: '0 0 20px 0', lineHeight: 1.5 }}>
+          ¿Buscás algún modelo, curva de talles o artículo específico? Escribinos por WhatsApp y te lo conseguimos directo de fábrica o distribuidora.
         </p>
+        <a
+          href={`https://wa.me/5493412648035?text=${encodeURIComponent('¡Hola Dulce Valentín! Estoy buscando un artículo que no encuentro en el catálogo online. ¿Me pueden ayudar a conseguirlo?')}`}
+          target="_blank"
+          rel="noopener noreferrer"
+          style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: '8px',
+            backgroundColor: '#25D366',
+            color: '#FFFFFF',
+            padding: '12px 22px',
+            borderRadius: '12px',
+            fontWeight: 800,
+            fontSize: '0.92rem',
+            textDecoration: 'none',
+            boxShadow: '0 4px 12px rgba(37,211,102,0.3)',
+            transition: 'transform 0.15s ease'
+          }}
+        >
+          <MessageCircle size={18} /> Pedir por WhatsApp al 341-264-8035
+        </a>
       </div>
     );
   }
 
   const handleQuickAdd = (e, product) => {
     e.stopPropagation();
+    if (Number(product.stock) <= 0) return;
     const hasSizes = Array.isArray(product.sizes) && product.sizes.length > 0;
     // El agregado rapido no deja elegir talle: si el producto tiene precio
     // por talle, se toma el del primer talle de la lista (mismo criterio
@@ -294,8 +341,27 @@ function ProductGridCard({ product, onOpenDetail, onQuickAdd, onShare, isCopiedS
             </>
           )}
 
+          {/* Urgencia real: solo cuando el stock de verdad es bajo */}
+          {Number(product.stock) > 0 && Number(product.stock) <= 3 && (
+            <span className="card-badge-lowstock">
+              {Number(product.stock) === 1 ? '¡Queda 1!' : `¡Quedan ${Number(product.stock)}!`}
+            </span>
+          )}
+
           <div className="card-badges-topleft">
-            {product.badge_text ? (
+            {Number(product.stock) <= 0 ? (
+              <span
+                className="card-badge-offer"
+                style={{
+                  background: '#334155',
+                  color: '#FFFFFF',
+                  fontWeight: 800,
+                  boxShadow: '0 2px 6px rgba(0,0,0,0.25)'
+                }}
+              >
+                Sin Stock
+              </span>
+            ) : product.badge_text ? (
               <span
                 className="card-badge-offer"
                 style={{
@@ -313,7 +379,7 @@ function ProductGridCard({ product, onOpenDetail, onQuickAdd, onShare, isCopiedS
                 {product.is_offer && <span className="card-badge-offer">Oferta</span>}
               </>
             )}
-            {isTopSeller && <span className="card-badge-bestseller">🔥 Más Vendido</span>}
+            {Number(product.stock) > 0 && isTopSeller && <span className="card-badge-bestseller">🔥 Más Vendido</span>}
           </div>
 
           <button
@@ -342,7 +408,20 @@ function ProductGridCard({ product, onOpenDetail, onQuickAdd, onShare, isCopiedS
           </button>
         </div>
 
-        <h3 className="product-title-compact">
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '4px', margin: '4px 0 2px' }}>
+          {product.code ? (
+            <span style={{ fontSize: '0.72rem', fontWeight: 800, color: 'var(--accent-gold, #D97706)', letterSpacing: '0.02em' }}>
+              ART. #{product.code}
+            </span>
+          ) : <span />}
+          {product.category && (
+            <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)', opacity: 0.85, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+              {product.category}
+            </span>
+          )}
+        </div>
+
+        <h3 className="product-title-compact" style={{ marginTop: 0 }}>
           {product.name}
         </h3>
       </div>
@@ -358,8 +437,12 @@ function ProductGridCard({ product, onOpenDetail, onQuickAdd, onShare, isCopiedS
         <button
           onClick={(e) => onQuickAdd(e, product)}
           className="btn-add-cart-compact"
-          disabled={product.stock <= 0}
-          title={product.stock > 0 ? 'Agregar al Carrito' : 'Sin Stock'}
+          disabled={Number(product.stock) <= 0}
+          style={{
+            opacity: Number(product.stock) <= 0 ? 0.35 : 1,
+            cursor: Number(product.stock) <= 0 ? 'not-allowed' : 'pointer'
+          }}
+          title={Number(product.stock) > 0 ? 'Agregar al Carrito' : 'Sin Stock disponible'}
         >
           <ShoppingCart size={16} />
         </button>

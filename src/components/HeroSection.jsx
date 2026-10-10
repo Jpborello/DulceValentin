@@ -1,13 +1,9 @@
 'use client';
 
 import { useRef, useState, useEffect, useCallback } from 'react';
-import { ChevronLeft, ChevronRight, ArrowRight, MessageCircle } from 'lucide-react';
+import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { COMPANY_INFO } from '@/lib/companyInfo';
 import { getProductPriceRange, getThumbUrl } from '@/lib/dataStore';
-
-const WHATSAPP_URL = `https://wa.me/${COMPANY_INFO.phone.replace(/\D/g, '')}?text=${encodeURIComponent(
-  '¡Hola! Quiero hacer una consulta sobre productos de Dulce Valentín.'
-)}`;
 
 // Foto del frente del local (public/hero/). Hay dos tamaños para que el
 // celular no descargue la version grande.
@@ -142,16 +138,6 @@ export default function HeroSection({
               Venta por mayor de indumentaria, calzado, lencería y artículos para
               bebés. Local en Av. Pres. Perón 5349, Rosario, y envíos a todo el país.
             </p>
-            <div className="dvh-actions">
-              {onExploreCatalog && (
-                <button type="button" onClick={onExploreCatalog} className="dvh-btn dvh-btn--primary">
-                  Ver catálogo mayorista <ArrowRight size={18} aria-hidden="true" />
-                </button>
-              )}
-              <a href={WHATSAPP_URL} target="_blank" rel="noreferrer" className="dvh-btn dvh-btn--secondary">
-                <MessageCircle size={18} aria-hidden="true" /> Consultar por WhatsApp
-              </a>
-            </div>
           </div>
         </div>
       </section>

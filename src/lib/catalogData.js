@@ -318,16 +318,20 @@ export const getProductColorsForSize = (product, size) => {
  * Devuelve el stock disponible para una combinación específica de talle y color.
  */
 export const getProductStockForSizeColor = (product, size, color) => {
-  if (!product) return 0;
+  if (!product || product.is_active === false) return 0;
+  const totalStock = Number(product.stock);
+  if (isNaN(totalStock) || totalStock <= 0) return 0;
+
   if (size) {
     const details = getSizeDetails(product, size);
     if (color && details.colors.length > 0 && !details.colors.includes(color)) return 0;
+    let variantStock = details.stock;
     if (color && details.color_stock && details.color_stock[color] !== undefined) {
-      return details.color_stock[color];
+      variantStock = details.color_stock[color];
     }
-    return details.stock;
+    return Math.max(0, Math.min(totalStock, Number(variantStock) || 0));
   }
-  return Number(product.stock) || 0;
+  return Math.max(0, totalStock);
 };
 
 const ADULT_SIZES = ['S', 'M', 'L', 'XL', 'XXL'];

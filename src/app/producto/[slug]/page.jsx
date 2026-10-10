@@ -2,12 +2,14 @@ import { cache } from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
-import { MapPin, ArrowLeft, ShoppingCart } from 'lucide-react';
+import { MapPin } from 'lucide-react';
 import { supabase } from '@/lib/supabaseClient';
 import { getProductColors } from '@/lib/catalogData';
 import { buildProductSlug } from '@/lib/productSlug';
 import ShareProductButton from '@/components/ShareProductButton';
 import ProductPageGallery from '@/components/ProductPageGallery';
+import { ProductBuyButton, ProductBackButton, CartHeaderLink, RelatedProducts } from '@/components/ProductPageActions';
+import { slugify } from '@/lib/slugify';
 import { getProductPriceRange } from '@/lib/productPricing';
 
 const SITE_URL = 'https://www.dulcevalentin.com.ar';
@@ -88,10 +90,30 @@ export async function generateMetadata({ params }) {
   };
 }
 
+// Misma subcategoria primero, despues el resto de la categoria (con stock).
+async function getRelatedProducts(product) {
+  if (!product?.category) return [];
+  const { data } = await supabase
+    .from('products')
+    .select('id, name, image_url, price, wholesale_price, price_per_size, stock, category, subcategory')
+    .eq('is_active', true)
+    .eq('category', product.category)
+    .gt('stock', 0)
+    .neq('id', product.id)
+    .limit(40);
+  const list = data || [];
+  const same = list.filter((p) => product.subcategory && p.subcategory === product.subcategory);
+  const rest = list.filter((p) => !same.includes(p));
+  return [...same, ...rest].slice(0, 8);
+}
+
 export default async function ProductPage({ params }) {
   const { slug } = await params;
   const product = await getProduct(slug);
   if (!product) notFound();
+  // A donde vuelve el cliente si entro directo a este link (sin historial).
+  const categoryHref = product.category ? `/categoria/${slugify(product.category)}` : '/';
+  const relatedProducts = await getRelatedProducts(product);
 
   const priceRange = getProductPriceRange(product);
   const price = priceRange.min || product.wholesale_price || product.price;
@@ -132,7 +154,7 @@ export default async function ProductPage({ params }) {
 
       <header className="header-container">
         <div className="header-top">
-          📍 ROSARIO (SANTA FE) — CAMILO ALDAO 2715 ESQ. EX GODOY
+          📍 ROSARIO (SANTA FE) — PTE. PERÓN 5349/5305/5265 — Lunes a Sábado de 8 a 17 hs
         </div>
         <div className="header-content">
           <Link href="/" className="brand-logo-wrapper">
@@ -142,9 +164,10 @@ export default async function ProductPage({ params }) {
               <div className="brand-subtitle">Indumentaria Mayorista</div>
             </div>
           </Link>
-          <Link href="/" className="btn-secondary" style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
-            <ArrowLeft size={16} /> Ver todo el catálogo
-          </Link>
+          <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+            <ProductBackButton fallbackHref={categoryHref} label="Volver" />
+            <CartHeaderLink />
+          </div>
         </div>
       </header>
 
@@ -160,8 +183,26 @@ export default async function ProductPage({ params }) {
           <ProductPageGallery images={images} name={product.name} />
 
           <div className="product-detail-info">
-            <div className="product-category-name">
-              {product.category}{product.subcategory ? ` • ${product.subcategory}` : ''}
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', flexWrap: 'wrap', marginBottom: '4px' }}>
+              <div className="product-category-name" style={{ margin: 0 }}>
+                {product.category}{product.subcategory ? ` • ${product.subcategory}` : ''}
+              </div>
+              {product.code && (
+                <span style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  backgroundColor: 'rgba(217, 119, 6, 0.12)',
+                  color: 'var(--accent-gold, #D97706)',
+                  border: '1.5px solid rgba(217, 119, 6, 0.35)',
+                  padding: '3px 10px',
+                  borderRadius: '8px',
+                  fontSize: '0.82rem',
+                  fontWeight: 800,
+                  letterSpacing: '0.04em'
+                }}>
+                  ART. #{product.code}
+                </span>
+              )}
             </div>
             <h1 className="product-detail-title">{product.name}</h1>
 
@@ -214,17 +255,16 @@ export default async function ProductPage({ params }) {
             </div>
 
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px', marginTop: '18px' }}>
-              <Link
-                href={`/?producto=${encodeURIComponent(product.id)}`}
-                className="btn-primary"
-                style={{ justifyContent: 'center', backgroundColor: 'var(--accent-gold)', color: '#FFF' }}
-              >
-                <ShoppingCart size={18} /> Comprar este producto
-              </Link>
+              {/* Se compra desde esta misma pagina: antes este boton mandaba a
+                  la home y, al agregar, el cliente quedaba en la pantalla
+                  principal en vez de donde estaba mirando. */}
+              <ProductBuyButton product={product} fallbackHref={categoryHref} />
               <ShareProductButton product={{ id: product.id, name: product.name, wholesale_price: product.wholesale_price, price: product.price }} />
             </div>
           </div>
         </div>
+
+        <RelatedProducts products={relatedProducts} />
       </main>
 
       <footer style={{ background: 'var(--bg-surface-dark)', color: 'var(--text-on-dark)', padding: '28px 24px', marginTop: '20px' }}>

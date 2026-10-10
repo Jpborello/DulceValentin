@@ -72,7 +72,7 @@ async function resolveParams(segments) {
 async function getProductsForCategories(categoryIds) {
   const { data } = await supabase
     .from('products')
-    .select('id, name, category, subcategory, image_url, price, wholesale_price, price_per_size, stock, is_new')
+    .select('id, code, name, category, subcategory, image_url, price, wholesale_price, price_per_size, stock, is_new')
     .in('category', categoryIds)
     .eq('is_active', true)
     // Los marcados "Nuevo Ingreso" (is_new) van primero, y adentro de cada
@@ -172,7 +172,7 @@ export default async function CategoryPage({ params }) {
 
       <header className="header-container">
         <div className="header-top">
-          📍 ROSARIO (SANTA FE) — CAMILO ALDAO 2715 ESQ. EX GODOY
+          📍 ROSARIO (SANTA FE) — PTE. PERÓN 5349/5305/5265 — Lunes a Sábado de 8 a 17 hs
         </div>
         <div className="header-content">
           <Link href="/" className="brand-logo-wrapper">

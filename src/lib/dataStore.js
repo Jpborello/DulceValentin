@@ -416,7 +416,7 @@ class DataStore {
         const catMap = new Map();
 
         data
-          .filter(item => !item.id.startsWith('_config_'))
+          .filter(item => !item.id.startsWith('_config_') && item.id !== 'all' && normStr(item.name || item.id) !== 'todos los productos' && normStr(item.name || item.id) !== 'todos')
           .forEach(item => {
             const rawSubcats = Array.isArray(item.subcategories)
               ? item.subcategories
@@ -626,13 +626,15 @@ class DataStore {
     // categorias, vengan del catalogo de codigo o de Supabase — y el merge de
     // Supabase suma subcategorias pero nunca borra, asi que sin esto una
     // subcategoria dada de baja reaparece en cuanto la base la sigue teniendo.
-    const cleaned = Array.from(catMap.values()).map((c) => {
-      const catName = c.name || c.id;
-      const subs = (c.subcategories || [])
-        .filter((sub) => !isRetiredSubcategory(catName, sub))
-        .map((sub) => normalizeSubcategory(catName, sub));
-      return { ...c, subcategories: Array.from(new Set(subs)) };
-    });
+    const cleaned = Array.from(catMap.values())
+      .filter((c) => c.id !== 'all' && normStr(c.name || c.id) !== 'todos los productos' && normStr(c.name || c.id) !== 'todos')
+      .map((c) => {
+        const catName = c.name || c.id;
+        const subs = (c.subcategories || [])
+          .filter((sub) => !isRetiredSubcategory(catName, sub))
+          .map((sub) => normalizeSubcategory(catName, sub));
+        return { ...c, subcategories: Array.from(new Set(subs)) };
+      });
 
     return [
       { id: 'all', name: 'Todos los Productos', count: this.products.length },
@@ -1005,11 +1007,17 @@ class DataStore {
   async decrementStockAfterSale(id, qty) {
     if (!qty || qty <= 0) return true;
 
+    const prod = this.products.find(p => p.id === id);
+    if (!prod) return false;
+    const currentStock = Number(prod.stock) || 0;
+    if (currentStock <= 0) return false;
+
+    const newStock = Math.max(0, currentStock - qty);
     this.products = this.products.map(p => {
       if (p.id !== id) return p;
       return {
         ...p,
-        stock: Math.max(0, (p.stock || 0) - qty),
+        stock: newStock,
         sales_count: (p.sales_count || 0) + qty
       };
     });
@@ -1021,7 +1029,8 @@ class DataStore {
         const { data, error } = await supabase.rpc('decrement_product_stock', { p_product_id: id, p_qty: qty });
         if (error) {
           console.warn('Stock decrement warning:', error);
-          return true; // error de red/conexion: no le bloqueamos el pedido al cliente por esto
+          await supabase.from('products').update({ stock: newStock }).eq('id', id);
+          return true;
         }
         return data !== false;
       } catch (err) {
@@ -1442,13 +1451,27 @@ class DataStore {
     // pedido ya nace marcado con stock_issue y aparece resaltado en
     // Pedidos del admin, en vez de que el admin se entere solo si mira el
     // stock del producto por separado. Los items "fuera de catalogo"
-    // (cargados a mano, no existen en this.products) no tienen stock que
-    // chequear y se dejan pasar siempre.
+    // Validación estricta previa: si cualquier producto no tiene stock disponible, abortar inmediatamente
+    for (const item of cartItems) {
+      const prod = this.products.find(p => p.id === item.product?.id);
+      if (prod) {
+        const available = item.product?.selectedSize
+          ? getProductStockForSizeColor(prod, item.product.selectedSize, item.product.selectedColor)
+          : Number(prod.stock) || 0;
+        if (available <= 0 || item.quantity > available) {
+          throw new Error(`El producto "${prod.name}" ${item.product?.selectedSize ? `(Talle ${item.product.selectedSize})` : ''} no cuenta con stock suficiente disponible (disponibles: ${Math.max(0, available)}, solicitados: ${item.quantity}).`);
+        }
+      }
+    }
+
+    const deductedStock = {};
     const stockIssues = [];
     for (const item of cartItems) {
       if (this.products.some(p => p.id === item.product.id)) {
         const ok = await this.decrementStockAfterSale(item.product.id, item.quantity);
-        if (!ok) {
+        if (ok) {
+          deductedStock[item.product.id] = (deductedStock[item.product.id] || 0) + item.quantity;
+        } else {
           stockIssues.push({
             id: item.product.id,
             name: item.product.name,
@@ -1480,7 +1503,8 @@ class DataStore {
       created_at: new Date().toISOString(),
       status: 'pendiente',
       stock_issue: hasStockIssue,
-      stock_issue_detail: hasStockIssue ? stockIssues : null
+      stock_issue_detail: hasStockIssue ? stockIssues : null,
+      deducted_stock: deductedStock
     };
 
     // El pedido se guarda en Supabase ANTES de pedir los boletos: el
@@ -1644,30 +1668,44 @@ class DataStore {
     }
 
     // El stock se descuenta al CREAR el pedido, no al aprobar el pago, asi
-    // que si se cancela hay que devolverlo (solo la primera vez que pasa a
-    // cancelado, para no duplicar la devolucion si lo cancelan de nuevo).
-    if (newStatus === 'cancelado' && !wasAlreadyCancelled && existingOrder?.items) {
-      existingOrder.items.forEach((item) => {
-        if (item.product?.id && this.products.some((p) => p.id === item.product.id)) {
-          this.restoreStockAfterCancel(item.product.id, item.quantity);
-        }
-      });
+    // que si se cancela hay que devolverlo solo si fue efectivamente descontado.
+    if (newStatus === 'cancelado' && !wasAlreadyCancelled) {
+      if (existingOrder?.deducted_stock) {
+        Object.entries(existingOrder.deducted_stock).forEach(([prodId, qty]) => {
+          if (qty > 0 && this.products.some((p) => p.id === prodId)) {
+            this.restoreStockAfterCancel(prodId, qty);
+          }
+        });
+      } else if (existingOrder?.items && !existingOrder?.stock_issue) {
+        existingOrder.items.forEach((item) => {
+          if (item.product?.id && this.products.some((p) => p.id === item.product.id)) {
+            this.restoreStockAfterCancel(item.product.id, item.quantity);
+          }
+        });
+      }
     }
   }
 
   // Borra un pedido definitivamente (ej. pedidos de prueba). Si el pedido
-  // no estaba ya cancelado, devuelve el stock primero (mismo criterio que
-  // al cancelar) para no dejar unidades "perdidas" en el conteo.
+  // no estaba ya cancelado, devuelve el stock primero solo si fue descontado.
   async deleteOrder(orderId) {
     const existingOrder = this.orders.find((o) => o.id === orderId);
     if (!existingOrder) return;
 
-    if (existingOrder.status !== 'cancelado' && existingOrder.items) {
-      existingOrder.items.forEach((item) => {
-        if (item.product?.id && this.products.some((p) => p.id === item.product.id)) {
-          this.restoreStockAfterCancel(item.product.id, item.quantity);
-        }
-      });
+    if (existingOrder.status !== 'cancelado') {
+      if (existingOrder?.deducted_stock) {
+        Object.entries(existingOrder.deducted_stock).forEach(([prodId, qty]) => {
+          if (qty > 0 && this.products.some((p) => p.id === prodId)) {
+            this.restoreStockAfterCancel(prodId, qty);
+          }
+        });
+      } else if (existingOrder?.items && !existingOrder?.stock_issue) {
+        existingOrder.items.forEach((item) => {
+          if (item.product?.id && this.products.some((p) => p.id === item.product.id)) {
+            this.restoreStockAfterCancel(item.product.id, item.quantity);
+          }
+        });
+      }
     }
 
     this.orders = this.orders.filter((o) => o.id !== orderId);

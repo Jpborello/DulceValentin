@@ -36,6 +36,16 @@ export default function SearchBarSection({
     });
   };
 
+  const handleKeyDown = (e) => {
+    if (e.key === 'Enter') {
+      inputRef.current?.blur();
+      requestAnimationFrame(() => {
+        const el = document.getElementById('catalogo');
+        if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      });
+    }
+  };
+
   return (
     <section className="search-bar-section" aria-label="Búsqueda de productos">
       <div className="search-bar-container">
@@ -48,11 +58,12 @@ export default function SearchBarSection({
             ref={inputRef}
             type="text"
             className="search-main-input"
-            placeholder="¿Qué estás buscando?"
+            placeholder="¿Qué estás buscando? (ej. remeras, buzos, calzado...)"
             value={searchQuery}
             onChange={(e) => {
               if (setSearchQuery) setSearchQuery(e.target.value);
             }}
+            onKeyDown={handleKeyDown}
             aria-label="¿Qué estás buscando?"
             autoComplete="off"
             spellCheck="false"

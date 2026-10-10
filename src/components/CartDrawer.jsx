@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { X, Trash2, Plus, Minus, ShoppingBag, Truck, Store, Upload, CheckCircle2, UserCheck, Sparkles, Tag, Copy, Check, CreditCard, Clock, Edit3, RotateCcw, MessageCircle } from 'lucide-react';
 import { supabase } from '@/lib/supabaseClient';
 import { dataStore, getProductPrice } from '@/lib/dataStore';
+import { getProductStockForSizeColor } from '@/lib/catalogData';
 import useCloseOnBack from '@/lib/useCloseOnBack';
 import { compressImage } from '@/lib/compressImage';
 import { COMPANY_INFO } from '@/lib/companyInfo';
@@ -17,7 +18,9 @@ export default function CartDrawer({
   onCheckout, 
   onRestoreCart,
   currentUser,
-  onOpenAuth
+  onOpenAuth,
+  products = [],
+  onAddToCart
 }) {
   const handleClose = useCloseOnBack(isOpen, onClose);
   const [deliveryMethod, setDeliveryMethod] = useState('envio'); // 'envio' or 'retiro'
@@ -37,6 +40,10 @@ export default function CartDrawer({
   // que deja de ser instantaneo — este estado evita que un doble click
   // dispare dos pedidos mientras se espera esa confirmacion real.
   const [isSubmittingOrder, setIsSubmittingOrder] = useState(false);
+  // Errores del checkout en pantalla (antes eran alert() del navegador, que
+  // en el celular cortan la compra y parecen una falla de la pagina).
+  const [checkoutError, setCheckoutError] = useState('');
+  const [postalWarned, setPostalWarned] = useState(false);
   const [receiptImage, setReceiptImage] = useState(null);
   const [receiptUploaded, setReceiptUploaded] = useState(false);
   const [copiedAlias, setCopiedAlias] = useState(false);
@@ -138,21 +145,63 @@ Adjunto mi comprobante para coordinar el despacho. ¡Muchas gracias!`;
   // "3 x $") no cuentan para esta cuenta, pero tampoco la bloquean si son
   // los unicos productos en el carrito (no tiene sentido pedirle 3 medias
   // si las medias ya estan exceptuadas).
+  // La regla cuenta por PRODUCTO, no por renglon del carrito: 3 unidades del
+  // mismo articulo aunque sean de distinto talle o color (ej. 1 S negra +
+  // 1 M negra + 1 M blanca de la misma remera cumple). Antes se exigian 3
+  // del mismo talle y color.
   const minQtyQualifyingItems = cartItems.filter((item) => !item.product?.exempt_from_min3);
-  const hasMinQtyItem = minQtyQualifyingItems.length === 0 || minQtyQualifyingItems.some((item) => item.quantity >= 3);
-  const closestMinQtyItem = minQtyQualifyingItems.reduce(
-    (best, item) => (!best || item.quantity > best.quantity ? item : best),
-    null
-  );
-  const unitsNeededForMinQty = closestMinQtyItem ? Math.max(0, 3 - closestMinQtyItem.quantity) : 0;
+  const unitsByProduct = minQtyQualifyingItems.reduce((acc, item) => {
+    const id = item.product?.id;
+    if (!id) return acc;
+    if (!acc[id]) acc[id] = { total: 0, lines: [] };
+    acc[id].total += item.quantity;
+    acc[id].lines.push(item);
+    return acc;
+  }, {});
+  const productGroups = Object.values(unitsByProduct);
+  const hasMinQtyItem = minQtyQualifyingItems.length === 0 || productGroups.some((g) => g.total >= 3);
+  // El producto que esta mas cerca de cumplir, y dentro de el, el renglon
+  // (talle/color) con mas unidades: ahi suma el boton "completar x3".
+  const closestGroup = productGroups.reduce((best, g) => (!best || g.total > best.total ? g : best), null);
+  const closestMinQtyItem = closestGroup
+    ? closestGroup.lines.reduce((best, item) => (!best || item.quantity > best.quantity ? item : best), null)
+    : null;
+  const qualifyingCount = closestGroup ? closestGroup.total : (hasMinQtyItem ? 3 : 0);
+  const unitsNeededForMinQty = closestGroup ? Math.max(0, 3 - closestGroup.total) : (minQtyQualifyingItems.length > 0 ? 3 : 0);
+  const progressPercent = hasMinQtyItem ? 100 : Math.min(90, Math.round((qualifyingCount / 3) * 100));
   const canGenerateOrder = hasMinQtyItem;
+
+  // Candidatos para Cross-Selling / Upselling (accesorios económicos y de alta rotación)
+  const cartProductIds = new Set(cartItems.map((it) => it.product?.id));
+  const upsellCandidates = (products || [])
+    .filter((p) => {
+      if (!p || p.is_active === false || cartProductIds.has(p.id)) return false;
+      const stock = Number(p.stock);
+      if (isNaN(stock) || stock <= 0) return false;
+      return true;
+    })
+    .sort((a, b) => {
+      const isAccessory = (p) => {
+        const n = (p.name || '').toLowerCase();
+        return n.includes('babero') || n.includes('escarp') || n.includes('porta') || n.includes('babi') || n.includes('toall') || n.includes('cambia') || n.includes('pack');
+      };
+      const aAcc = isAccessory(a) ? 1 : 0;
+      const bAcc = isAccessory(b) ? 1 : 0;
+      if (aAcc !== bAcc) return bAcc - aAcc;
+
+      const priceA = a.unit_price != null ? a.unit_price : getProductPrice(a);
+      const priceB = b.unit_price != null ? b.unit_price : getProductPrice(b);
+      return priceA - priceB;
+    })
+    .slice(0, 3);
 
   const handleCreateOrder = async (e) => {
     e.preventDefault();
     if (cartItems.length === 0 || isSubmittingOrder) return;
+    setCheckoutError('');
 
     if (!hasMinQtyItem) {
-      alert(`Para acceder al precio mayorista necesitás llevar 3 unidades de un mismo artículo (no aplica a medias ni productos en pack). Agregá ${unitsNeededForMinQty} unidad${unitsNeededForMinQty === 1 ? '' : 'es'} más de "${closestMinQtyItem?.product?.name || 'algún producto'}", u otro, para continuar.`);
+      setCheckoutError(`Para acceder al precio mayorista necesitás 3 unidades de un mismo artículo. Sumá ${unitsNeededForMinQty} más de "${closestMinQtyItem?.product?.name || 'algún producto'}" (no aplica a medias ni packs).`);
       return;
     }
 
@@ -165,12 +214,13 @@ Adjunto mi comprobante para coordinar el despacho. ¡Muchas gracias!`;
     const floorApt = clientFloorApt;
 
     if (!name || !phone || !dni || !locality) {
-      alert('Por favor completá todos los datos personales requeridos (DNI, Teléfono, Nombre y Localidad).');
+      const missing = [!name && 'Nombre', !phone && 'Teléfono', !dni && 'DNI', !locality && 'Localidad'].filter(Boolean);
+      setCheckoutError(`Completá ${missing.length === 1 ? 'este dato' : 'estos datos'} para generar el pedido: ${missing.join(', ')}.`);
       return;
     }
 
     if (deliveryMethod === 'envio' && !address) {
-      alert('Para envío a domicilio necesitamos al menos la Dirección completa.');
+      setCheckoutError('Para envío a domicilio necesitamos la dirección completa (calle y número).');
       return;
     }
 
@@ -180,11 +230,27 @@ Adjunto mi comprobante para coordinar el despacho. ¡Muchas gracias!`;
     // poder finalizar). Si falta, se avisa y se deja seguir -- el pedido
     // queda marcado para que el admin lo pida antes de despachar (ver
     // OrdersTab.jsx).
-    if (deliveryMethod === 'envio' && !postalCode) {
-      const seguir = window.confirm(
-        'No cargaste el Código Postal. Podés continuar igual y te lo vamos a pedir antes de despachar el pedido, o cancelar para completarlo ahora. ¿Continuar sin Código Postal?'
-      );
-      if (!seguir) return;
+    if (deliveryMethod === 'envio' && !postalCode && !postalWarned) {
+      setPostalWarned(true);
+      setCheckoutError('No cargaste el Código Postal. Podés completarlo arriba, o tocar "Generar pedido" de nuevo para seguir sin él (te lo pedimos antes de despachar).');
+      return;
+    }
+
+    // Pre-validación de stock en vivo para evitar compras sin stock
+    for (const item of cartItems) {
+      const p = item.product;
+      const liveProduct = dataStore.getProductById(p.id) || p;
+      const available = p.selectedSize
+        ? getProductStockForSizeColor(liveProduct, p.selectedSize, p.selectedColor)
+        : (Number(liveProduct.stock) || 0);
+      if (available <= 0) {
+        setCheckoutError(`El producto "${p.name}" no cuenta con stock disponible en este momento. Por favor quitalo de tu carrito o consultanos por WhatsApp para conseguírtelo.`);
+        return;
+      }
+      if (item.quantity > available) {
+        setCheckoutError(`El producto "${p.name}" solo tiene ${available} unidades en stock (tenés ${item.quantity} en el carrito). Ajustá la cantidad para continuar.`);
+        return;
+      }
     }
 
     setIsSubmittingOrder(true);
@@ -203,6 +269,9 @@ Adjunto mi comprobante para coordinar el despacho. ¡Muchas gracias!`;
         voucherId: voucher?.id || null,
         voucherAmount: voucherDiscount
       });
+    } catch (err) {
+      setCheckoutError(err.message || 'Ocurrió un error al generar el pedido. Por favor verificá la disponibilidad de tus prendas.');
+      return;
     } finally {
       setIsSubmittingOrder(false);
     }
@@ -419,7 +488,7 @@ Adjunto mi comprobante para coordinar el despacho. ¡Muchas gracias!`;
 
               {/* Botón directo de WhatsApp para enviar el resumen del pedido */}
               <a 
-                href={getWhatsAppShareUrl(createdOrder || activeOrder || { id: completedOrderId, total_amount: cartTotal, items: cartItems.map(i => ({ ...i.product, quantity: i.quantity })) })}
+                href={getWhatsAppShareUrl(displayOrder || { id: completedOrderId, total_amount: finalTotal, items: cartItems.map(i => ({ ...i.product, quantity: i.quantity })) })}
                 target="_blank"
                 rel="noopener noreferrer"
                 style={{ 
@@ -661,9 +730,23 @@ Adjunto mi comprobante para coordinar el despacho. ¡Muchas gracias!`;
                 <h4 style={{ fontSize: '0.95rem', fontWeight: 700, marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '6px' }}>
                   <Upload size={16} /> Adjuntar Comprobante de Pago
                 </h4>
-                <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '12px' }}>
+                <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '8px' }}>
                   Si ya realizaste la transferencia o pago por Mercado Pago, podés subir la captura aquí:
                 </p>
+
+                <div style={{
+                  backgroundColor: '#EFF6FF',
+                  border: '1px solid #BFDBFE',
+                  borderRadius: '8px',
+                  padding: '8px 10px',
+                  fontSize: '0.78rem',
+                  color: '#1D4ED8',
+                  fontWeight: 600,
+                  marginBottom: '12px',
+                  lineHeight: '1.4'
+                }}>
+                  💡 <strong>¿Preferís transferir más tarde?</strong> Podés continuar y enviarnos el comprobante por WhatsApp al <strong>341-264-8035</strong> en cuanto te quede cómodo junto con tu N° de Pedido #{displayOrder.id}.
+                </div>
 
                 <input 
                   type="file" 
@@ -721,17 +804,20 @@ Adjunto mi comprobante para coordinar el despacho. ¡Muchas gracias!`;
               </div>
 
               <div style={{
-                backgroundColor: '#FFFBEB',
-                border: '1px solid #FDE68A',
+                backgroundColor: '#F0FDF4',
+                border: '1px solid #BBF7D0',
                 borderRadius: '10px',
                 padding: '12px 14px',
                 fontSize: '0.82rem',
                 fontWeight: 700,
-                color: '#B45309',
+                color: '#166534',
                 marginBottom: '12px',
-                textAlign: 'left'
+                textAlign: 'left',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px'
               }}>
-                ⚠️ Estamos teniendo unos inconvenientes con WhatsApp. Ponete en contacto mediante el Chat Online.
+                <span>💬 ¿Dudas con el pago o el envío? Escribinos o envianos tu comprobante directo a nuestro WhatsApp <strong>341-264-8035</strong>. ¡Te atendemos con la mejor onda!</span>
               </div>
 
               <button 
@@ -783,31 +869,139 @@ Adjunto mi comprobante para coordinar el despacho. ¡Muchas gracias!`;
             </div>
           ) : (
             <>
-              {/* MINIMO DE 3 UNIDADES DE UN ARTICULO (no aplica a medias / packs "3 x $") */}
-              {!hasMinQtyItem && (
-                <div style={{
-                  backgroundColor: '#FEF3C7',
-                  border: '1px solid #FDE68A',
-                  borderRadius: '10px',
-                  padding: '12px 14px',
-                  marginBottom: '16px'
-                }}>
+              {/* BARRA DE PROGRESO GAMIFICADA: DESBLOQUEO MAYORISTA + INCENTIVO SORTEO */}
+              <div style={{
+                backgroundColor: hasMinQtyItem ? '#ECFDF5' : '#FEF3C7',
+                border: `1.5px solid ${hasMinQtyItem ? '#A7F3D0' : '#FDE68A'}`,
+                borderRadius: '12px',
+                padding: '12px 14px',
+                marginBottom: '16px',
+                transition: 'all 0.3s ease'
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px' }}>
                   <span style={{
-                    fontSize: '0.82rem',
+                    fontSize: '0.84rem',
                     fontWeight: 800,
-                    color: '#B45309',
+                    color: hasMinQtyItem ? '#047857' : '#B45309',
                     display: 'flex',
                     alignItems: 'center',
-                    gap: '5px'
+                    gap: '6px'
                   }}>
-                    <Sparkles size={15} /> Llevá 3 unidades de un mismo artículo
+                    {hasMinQtyItem ? (
+                      <>
+                        <CheckCircle2 size={17} /> ¡Precio Mayorista Desbloqueado!
+                      </>
+                    ) : (
+                      <>
+                        <Sparkles size={16} /> Paso 1: Desbloqueá tu Pedido Mayorista
+                      </>
+                    )}
                   </span>
-                  <p style={{ fontSize: '0.75rem', color: '#92400E', marginTop: '6px', margin: 0, fontWeight: 600 }}>
-                    Para acceder al precio mayorista, al menos un artículo del pedido tiene que ser por 3 unidades (después, el resto lo podés llevar por unidad). Te falta{unitsNeededForMinQty === 1 ? '' : 'n'}{' '}
-                    <strong>{unitsNeededForMinQty} unidad{unitsNeededForMinQty === 1 ? '' : 'es'}</strong> más de <strong>{closestMinQtyItem?.product?.name || 'un producto'}</strong>, o elegí otro artículo y llevalo de a 3. No aplica a medias ni productos vendidos en pack.
-                  </p>
+                  <span style={{
+                    fontSize: '0.74rem',
+                    fontWeight: 800,
+                    padding: '2px 8px',
+                    borderRadius: '12px',
+                    backgroundColor: hasMinQtyItem ? '#059669' : '#D97706',
+                    color: '#FFFFFF'
+                  }}>
+                    {hasMinQtyItem ? '✓ Habilitado' : `${qualifyingCount}/3 unidades`}
+                  </span>
                 </div>
-              )}
+
+                {/* Barra de progreso visual */}
+                <div style={{
+                  width: '100%',
+                  height: '7px',
+                  backgroundColor: hasMinQtyItem ? '#D1FAE5' : '#FDE68A',
+                  borderRadius: '10px',
+                  overflow: 'hidden',
+                  marginBottom: '8px'
+                }}>
+                  <div style={{
+                    width: `${progressPercent}%`,
+                    height: '100%',
+                    backgroundColor: hasMinQtyItem ? '#10B981' : '#D97706',
+                    borderRadius: '10px',
+                    transition: 'width 0.4s ease'
+                  }} />
+                </div>
+
+                <p style={{
+                  fontSize: '0.76rem',
+                  color: hasMinQtyItem ? '#065F46' : '#92400E',
+                  margin: 0,
+                  fontWeight: 600,
+                  lineHeight: '1.4'
+                }}>
+                  {hasMinQtyItem ? (
+                    'Ya cumpliste con llevar 3 unidades de un artículo. ¡Ahora podés sumar cualquier otra prenda por unidad!'
+                  ) : (
+                    <>
+                      Para acceder al precio mayorista, tu primer artículo tiene que ser por 3 unidades (podés combinar talles y colores). Te falta{unitsNeededForMinQty === 1 ? '' : 'n'}{' '}
+                      <strong>{unitsNeededForMinQty} unidad{unitsNeededForMinQty === 1 ? '' : 'es'}</strong> de <strong>{closestMinQtyItem?.product?.name || 'un producto'}</strong>.
+                    </>
+                  )}
+                </p>
+
+                {/* Botón rápido para autocompletar la regla si falta poco */}
+                {!hasMinQtyItem && closestMinQtyItem && unitsNeededForMinQty > 0 && !(Number(closestMinQtyItem.product?.stock) < 3) && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setCheckoutError('');
+                      onUpdateQuantity(
+                        closestMinQtyItem.variantKey || closestMinQtyItem.product.id,
+                        closestMinQtyItem.quantity + unitsNeededForMinQty
+                      );
+                    }}
+                    style={{
+                      marginTop: '10px',
+                      width: '100%',
+                      padding: '9px 12px',
+                      borderRadius: '8px',
+                      border: 'none',
+                      background: 'linear-gradient(135deg, #D97706 0%, #B45309 100%)',
+                      color: '#FFF',
+                      fontWeight: 800,
+                      fontSize: '0.82rem',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: '6px',
+                      boxShadow: '0 2px 8px rgba(180, 83, 9, 0.25)'
+                    }}
+                  >
+                    <span>+ Sumar {unitsNeededForMinQty} de "{closestMinQtyItem.product?.name}" y Habilitar Compra</span>
+                  </button>
+                )}
+
+                {/* Barra Secundaria de Incentivo: Gran Sorteo Mayorista ($50.000) */}
+                {hasMinQtyItem && (
+                  <div style={{
+                    marginTop: '10px',
+                    paddingTop: '8px',
+                    borderTop: '1px dashed #A7F3D0',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    gap: '8px',
+                    fontSize: '0.75rem',
+                    color: '#047857',
+                    fontWeight: 700
+                  }}>
+                    {finalTotal >= 50000 ? (
+                      <span>🎟️ ¡Tu compra califica para el <strong>Gran Sorteo Mayorista</strong>!</span>
+                    ) : (
+                      <>
+                        <span>🎟️ Estás a <strong>${(50000 - finalTotal).toLocaleString('es-AR')}</strong> de entrar al Sorteo Mayorista</span>
+                        <span style={{ fontSize: '0.7rem', color: '#059669', opacity: 0.85 }}>Meta: $50.000</span>
+                      </>
+                    )}
+                  </div>
+                )}
+              </div>
 
               {/* STEP 1: CART ITEMS & REGISTRATION INPUTS */}
               <div style={{ marginBottom: '20px' }}>
@@ -877,6 +1071,101 @@ Adjunto mi comprobante para coordinar el despacho. ¡Muchas gracias!`;
                 })}
               </div>
 
+              {/* CROSS-SELLING / UPSELLING: Agregados populares para completar tu bulto */}
+              {upsellCandidates.length > 0 && !createdOrder && (
+                <div style={{
+                  backgroundColor: 'var(--bg-surface-elevated)',
+                  border: '1.5px dashed var(--border-color)',
+                  borderRadius: '12px',
+                  padding: '12px 14px',
+                  marginBottom: '20px'
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '10px' }}>
+                    <div>
+                      <div style={{ fontSize: '0.84rem', fontWeight: 800, color: 'var(--text-main)', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <Sparkles size={15} style={{ color: 'var(--accent-gold)' }} />
+                        <span>Agregados populares para completar tu bulto</span>
+                      </div>
+                      <div style={{ fontSize: '0.73rem', color: 'var(--text-muted)', fontWeight: 600 }}>
+                        Accesorios de alta rotación para sumar con 1 solo toque:
+                      </div>
+                    </div>
+                  </div>
+
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: '8px' }}>
+                    {upsellCandidates.map((p) => {
+                      const price = p.unit_price != null ? p.unit_price : getProductPrice(p);
+                      const img = p.image_url || '/logo.png';
+                      return (
+                        <div
+                          key={p.id}
+                          style={{
+                            backgroundColor: 'var(--bg-card)',
+                            border: '1px solid var(--border-color)',
+                            borderRadius: '10px',
+                            padding: '8px',
+                            display: 'flex',
+                            flexDirection: 'column',
+                            justifyContent: 'space-between'
+                          }}
+                        >
+                          <div style={{ display: 'flex', gap: '8px', alignItems: 'center', marginBottom: '8px' }}>
+                            <img
+                              src={img}
+                              alt={p.name}
+                              style={{ width: '38px', height: '38px', objectFit: 'cover', borderRadius: '6px', flexShrink: 0 }}
+                              onError={(e) => { e.target.src = '/logo.png'; }}
+                            />
+                            <div style={{ minWidth: 0, flex: 1 }}>
+                              <div style={{
+                                fontSize: '0.74rem',
+                                fontWeight: 700,
+                                color: 'var(--text-main)',
+                                whiteSpace: 'nowrap',
+                                overflow: 'hidden',
+                                textOverflow: 'ellipsis'
+                              }}>
+                                {p.name}
+                              </div>
+                              <div style={{ fontSize: '0.82rem', fontWeight: 900, color: '#059669' }}>
+                                ${price.toLocaleString('es-AR')}
+                              </div>
+                            </div>
+                          </div>
+
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (onAddToCart) {
+                                onAddToCart(p, { quantity: 1 });
+                              }
+                            }}
+                            style={{
+                              width: '100%',
+                              padding: '6px 8px',
+                              borderRadius: '6px',
+                              border: 'none',
+                              backgroundColor: 'var(--text-main)',
+                              color: 'var(--bg-page)',
+                              fontSize: '0.74rem',
+                              fontWeight: 800,
+                              cursor: 'pointer',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              gap: '4px',
+                              transition: 'transform 0.1s ease'
+                            }}
+                          >
+                            <Plus size={13} /> Agregar
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
               {/* Delivery Option */}
               <div style={{ marginBottom: '20px' }}>
                 <h4 style={{ fontSize: '0.9rem', fontWeight: 700, marginBottom: '8px' }}>Método de Entrega</h4>
@@ -896,7 +1185,7 @@ Adjunto mi comprobante para coordinar el despacho. ¡Muchas gracias!`;
                       color: deliveryMethod === 'envio' ? 'var(--bg-page)' : 'var(--text-main)'
                     }}
                   >
-                    <Truck size={18} /> Envío a Domicilio
+                    <Truck size={18} /> Envío a Domicilio / Transporte
                   </button>
 
                   <button 
@@ -914,8 +1203,30 @@ Adjunto mi comprobante para coordinar el despacho. ¡Muchas gracias!`;
                       color: deliveryMethod === 'retiro' ? 'var(--bg-page)' : 'var(--text-main)'
                     }}
                   >
-                    <Store size={18} /> Retiro por Sucursal
+                    <Store size={18} /> Retiro por Sucursal (Gratis)
                   </button>
+                </div>
+
+                {/* Explicativo de Envíos transparente */}
+                <div style={{
+                  marginTop: '10px',
+                  backgroundColor: 'var(--bg-surface-elevated)',
+                  border: '1px solid var(--border-color)',
+                  borderRadius: '10px',
+                  padding: '10px 12px',
+                  fontSize: '0.76rem',
+                  color: 'var(--text-muted)',
+                  lineHeight: '1.45'
+                }}>
+                  {deliveryMethod === 'envio' ? (
+                    <div>
+                      📦 <strong>¿Cómo coordinamos el envío?</strong> Despachamos a todo el país desde Rosario por expresos, encomiendas y transportes (Andreani, Vía Cargo, etc.). El costo de flete se abona en destino al recibir o retirar en sucursal/terminal (la opción más económica y sin sobreprecios). Ni bien generes tu pedido, te contactamos por WhatsApp para definir el transporte más conveniente para tu ciudad.
+                    </div>
+                  ) : (
+                    <div>
+                      📍 <strong>Retiro en Rosario sin cargo:</strong> Te esperamos en Av. Pte. Perón 5349/5305/5265 de Lunes a Sábados de 8:00 a 17:00 hs. Podés retirar ni bien te avisemos que tu pedido está armado.
+                    </div>
+                  )}
                 </div>
               </div>
 
@@ -1053,6 +1364,18 @@ Adjunto mi comprobante para coordinar el despacho. ¡Muchas gracias!`;
               )}
             </div>
 
+            {checkoutError && (
+              <div
+                role="alert"
+                style={{
+                  background: '#FEF2F2', border: '1px solid #FECACA', color: '#B91C1C', borderRadius: '10px',
+                  padding: '10px 12px', fontSize: '0.84rem', fontWeight: 600, marginBottom: '10px', lineHeight: 1.4
+                }}
+              >
+                {checkoutError}
+              </div>
+            )}
+
             <button
               onClick={handleCreateOrder}
               className="btn-hero-primary"
@@ -1066,9 +1389,28 @@ Adjunto mi comprobante para coordinar el despacho. ¡Muchas gracias!`;
               {isSubmittingOrder
                 ? 'Generando pedido...'
                 : !hasMinQtyItem
-                  ? `Necesitás 3 unidades de un artículo (faltan ${unitsNeededForMinQty})`
-                  : 'Generar Pedido & Subir Comprobante'}
+                  ? `Completá 3 unidades para habilitar (faltan ${unitsNeededForMinQty})`
+                  : `✓ Generar Pedido Mayorista ($${finalTotal.toLocaleString('es-AR')})`}
             </button>
+
+            {/* Sellos de Confianza y Garantía */}
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: '10px',
+              marginTop: '10px',
+              fontSize: '0.73rem',
+              color: 'var(--text-muted)',
+              fontWeight: 600,
+              flexWrap: 'wrap'
+            }}>
+              <span>🔒 Pedido directo de fábrica</span>
+              <span>•</span>
+              <span>📍 Local en Rosario</span>
+              <span>•</span>
+              <span>💬 Coordinación por WhatsApp</span>
+            </div>
           </div>
         )}
       </div>

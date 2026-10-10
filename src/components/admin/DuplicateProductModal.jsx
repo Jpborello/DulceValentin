@@ -496,9 +496,11 @@ export default function DuplicateProductModal({ product, categories = [], onClos
                 }}
               >
                 <option value="">Elegir categoría...</option>
-                {categories.map((c) => (
-                  <option key={c.id || c.name} value={c.name || c.id}>{c.name || c.id}</option>
-                ))}
+                {categories
+                  .filter((c) => c.id !== 'all' && (c.name || c.id))
+                  .map((c, idx) => (
+                    <option key={`${c.id || c.name}-${idx}`} value={c.name || c.id}>{c.name || c.id}</option>
+                  ))}
               </select>
               <input
                 type="text"
