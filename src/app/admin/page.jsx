@@ -227,14 +227,16 @@ export default function AdminPage() {
   const fetchMpTransfers = async () => {
     setMpLoading(true);
     try {
-      const res = await fetch('/api/mercadopago/transfers');
+      const res = await adminFetch('/api/mercadopago/transfers');
       const data = await res.json();
       if (data.success) {
         setMpTransfers(data.transfers || []);
         setMpConfigured(data.configured || false);
       }
     } catch (e) {
-      console.error('Error fetching MP transfers:', e);
+      // warn y no error: si se corta la conexion (ej. se reinicia el server
+      // local) no tiene sentido que Next tape el panel con su overlay rojo.
+      console.warn('Error fetching MP transfers:', e);
     } finally {
       setMpLoading(false);
     }

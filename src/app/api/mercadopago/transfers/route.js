@@ -1,6 +1,11 @@
 import { NextResponse } from 'next/server';
+import { requireAdmin } from '@/lib/adminAuth';
 
-export async function GET() {
+// Solo para el panel: devuelve nombre, DNI y monto de los pagadores.
+export async function GET(req) {
+  const denied = await requireAdmin(req);
+  if (denied) return denied;
+
   const mpAccessToken = process.env.MERCADOPAGO_ACCESS_TOKEN;
 
   // Sin token configurado: no hay integracion activa, no se muestran datos
