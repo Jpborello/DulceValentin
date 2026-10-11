@@ -30,11 +30,6 @@ const FAQ_ITEMS = [
   {
     question: '¿Cómo hago un pedido?',
     answer: 'Podés armarlo directo en nuestro catálogo web, o escribirnos por WhatsApp y te ayudamos a armarlo.'
-  },
-  {
-    question: '¿Participo de algún sorteo si compro por mayor?',
-    answer:
-      'Sí — registrándote con tu WhatsApp en el Club Mayorista, participás del sorteo en cada compra de $50.000 o más.'
   }
 ];
 
