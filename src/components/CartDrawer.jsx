@@ -37,6 +37,7 @@ export default function CartDrawer({
   const [clientAddress, setClientAddress] = useState('');
   const [clientPostalCode, setClientPostalCode] = useState('');
   const [clientFloorApt, setClientFloorApt] = useState('');
+  const [customerNotes, setCustomerNotes] = useState('');
 
   // Datos de la compra anterior en este dispositivo: el cliente que vuelve
   // no tiene que tipear todo de nuevo (es la mayor friccion del checkout).
@@ -296,7 +297,8 @@ Adjunto mi comprobante para coordinar el despacho. ¡Muchas gracias!`;
         floorApt,
         isRegistered: Boolean(currentUser),
         deliveryMethod: deliveryMethod === 'envio' ? 'Envío a Domicilio / Transporte' : 'Retiro por Sucursal (Pte. Perón 5349/5305/5265)',
-        useVoucher: Boolean(voucher)
+        useVoucher: Boolean(voucher),
+        customerNotes
       });
     } catch (err) {
       setCheckoutError(err.message || 'Ocurrió un error al generar el pedido. Por favor verificá la disponibilidad de tus prendas.');
@@ -1382,6 +1384,17 @@ Adjunto mi comprobante para coordinar el despacho. ¡Muchas gracias!`;
                     </div>
                   )}
                 </div>
+
+                {/* Aclaraciones del cliente: quedan en el pedido y el admin
+                    las ve al lado en Órdenes y en la comanda impresa. */}
+                <textarea
+                  value={customerNotes}
+                  onChange={(e) => setCustomerNotes(e.target.value.slice(0, 500))}
+                  placeholder="Aclaraciones para tu pedido (opcional): horario de retiro, transporte que preferís, etc."
+                  rows={2}
+                  className="form-input"
+                  style={{ fontSize: '0.85rem', padding: '8px 10px', width: '100%', marginTop: '10px', resize: 'vertical' }}
+                />
               </div>
             </>
           )}

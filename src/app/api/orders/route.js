@@ -97,6 +97,8 @@ export async function POST(req) {
   const postalCode = clean(client.postalCode, 20);
   const floorApt = clean(client.floorApt, 60);
   const deliveryMethod = clean(body.deliveryMethod, 120) || 'Envío a Domicilio / Transporte';
+  // Aclaraciones del cliente (talles a cambiar, horario de retiro, etc.).
+  const customerNotes = clean(body.customerNotes, 500) || null;
   const isPickup = deliveryMethod.toLowerCase().includes('retiro');
 
   const missing = [!name && 'Nombre', !dni && 'DNI', !locality && 'Localidad'].filter(Boolean);
@@ -264,7 +266,8 @@ export async function POST(req) {
     discount_applied: discountApplied,
     voucher_id: voucher?.id || null,
     stock_issue: false,
-    stock_issue_detail: null
+    stock_issue_detail: null,
+    customer_notes: customerNotes
   };
 
   const { error: insertErr } = await supabaseAdmin.from('orders').insert(order);

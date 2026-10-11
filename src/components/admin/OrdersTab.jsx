@@ -6,6 +6,7 @@ import { dataStore } from '@/lib/dataStore';
 import { getProductColors } from '@/lib/catalogData';
 import { COMPANY_INFO } from '@/lib/companyInfo';
 import { adminFetch } from '@/lib/adminFetch';
+import OrderNotesCell from '@/components/admin/OrderNotesCell';
 
 // Techo de repeticiones del timbre para que no suene para siempre si
 // el pedido se queda sin atender (10 veces cada 6s = 1 minuto de aviso).
@@ -832,6 +833,7 @@ export default function OrdersTab({ orders, mpTransfers, mpConfigured, mpLoading
               <th>Monto Total</th>
               <th>Estado Pago</th>
               <th>Comprobante</th>
+              <th>Notas</th>
               <th>Detalle / Imprimir</th>
             </tr>
           </thead>
@@ -907,6 +909,11 @@ export default function OrdersTab({ orders, mpTransfers, mpConfigured, mpLoading
                     ) : (
                       <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontStyle: 'italic' }}>Sin comprobante</span>
                     )}
+                  </td>
+
+                  {/* Notas: aclaraciones del cliente + anotador interno */}
+                  <td>
+                    <OrderNotesCell key={`${ord.id}-${ord.admin_notes_updated_at || ''}`} order={ord} />
                   </td>
 
                   {/* Ver Detalle: siempre disponible, sin importar el estado del pago.
@@ -1732,6 +1739,15 @@ export default function OrdersTab({ orders, mpTransfers, mpConfigured, mpLoading
                 </>
               )}
             </div>
+
+            {/* Notas del pedido: lo que aclaro el cliente + anotaciones internas */}
+            {(selectedPrintOrder.customer_notes || selectedPrintOrder.admin_notes) && (
+              <div style={{ border: '2px dashed #000', borderRadius: '6px', padding: '8px 10px', margin: '10px 0', fontSize: '0.9rem', whiteSpace: 'pre-wrap' }}>
+                <strong>NOTAS DEL PEDIDO:</strong>
+                {selectedPrintOrder.customer_notes && <div>• Cliente: {selectedPrintOrder.customer_notes}</div>}
+                {selectedPrintOrder.admin_notes && <div>• Interno: {selectedPrintOrder.admin_notes}</div>}
+              </div>
+            )}
 
             {/* Itemized Table for Warehouse Assembly */}
             <div className="items-section">

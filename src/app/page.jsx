@@ -324,7 +324,8 @@ export default function Home() {
         postalCode: clientDetails?.postalCode || '',
         floorApt: clientDetails?.floorApt || '',
         deliveryMethod: clientDetails?.deliveryMethod || 'Envío a Domicilio',
-        useVoucher: Boolean(clientDetails?.useVoucher)
+        useVoucher: Boolean(clientDetails?.useVoucher),
+        customerNotes: clientDetails?.customerNotes || ''
       });
     } catch (err) {
       // Si cambio algun precio desde que se agrego al carrito, el servidor

@@ -1820,7 +1820,8 @@ class DataStore {
           floorApt: clientDetails.floorApt
         },
         deliveryMethod: clientDetails.deliveryMethod,
-        useVoucher: Boolean(clientDetails.useVoucher)
+        useVoucher: Boolean(clientDetails.useVoucher),
+        customerNotes: clientDetails.customerNotes || ''
       })
     });
 
@@ -1906,6 +1907,25 @@ class DataStore {
       this.saveProductsToLocalStorage();
     }
     this.clearActiveOrder();
+  }
+
+  // Anotador interno del admin en un pedido. Devuelve { ok, error }.
+  async updateOrderAdminNotes(orderId, notes) {
+    const clean = String(notes || '').trim().slice(0, 1000) || null;
+    const updatedAt = new Date().toISOString();
+    if (supabase) {
+      const { data, error } = await supabase
+        .from('orders')
+        .update({ admin_notes: clean, admin_notes_updated_at: updatedAt })
+        .eq('id', orderId)
+        .select('id');
+      if (error || !Array.isArray(data) || data.length === 0) {
+        return { ok: false, error: error || new Error('No se actualizó ninguna fila') };
+      }
+    }
+    this.orders = this.orders.map((o) => (o.id === orderId ? { ...o, admin_notes: clean, admin_notes_updated_at: updatedAt } : o));
+    this.notify();
+    return { ok: true, error: null };
   }
 
   updateOrderReceipt(orderId, receiptUrl) {
