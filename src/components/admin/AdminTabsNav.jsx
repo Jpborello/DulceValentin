@@ -1,6 +1,6 @@
 'use client';
 
-import { BarChart3, Package, DollarSign, Image as ImageIcon, Layers, Users, Sparkles, FolderPlus, FileSpreadsheet, CreditCard, MessageSquare, PlusCircle, Megaphone, NotebookPen } from 'lucide-react';
+import { BarChart3, Package, DollarSign, Image as ImageIcon, Layers, Users, Sparkles, FolderPlus, FileSpreadsheet, CreditCard, MessageSquare, PlusCircle, Megaphone, NotebookPen, UserCog } from 'lucide-react';
 
 export default function AdminTabsNav({ activeTab, onTabChange }) {
   const tabs = [
@@ -17,6 +17,7 @@ export default function AdminTabsNav({ activeTab, onTabChange }) {
     { id: 'banners', label: 'Banners del Inicio', icon: Megaphone },
     { id: 'orders', label: 'Órdenes & Comprobantes', icon: Layers },
     { id: 'clients', label: 'Ranking de Clientes', icon: Users },
+    { id: 'staff', label: 'Personal y Comisiones', icon: UserCog },
     { id: 'raffle', label: '🎰 Sorteo en Vivo', icon: Sparkles }
   ];
 

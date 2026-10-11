@@ -846,6 +846,11 @@ export default function OrdersTab({ orders, mpTransfers, mpConfigured, mpLoading
                 <tr key={ord.id} style={ord.stock_issue ? { backgroundColor: 'rgba(239, 68, 68, 0.06)' } : undefined}>
                   <td style={{ fontWeight: 800 }}>
                     {ord.id}
+                    {ord.channel === 'local' && (
+                      <div style={{ marginTop: '4px', fontSize: '0.68rem', fontWeight: 800, color: '#6D28D9' }}>
+                        🏪 Venta en local{ord.payment_method ? ` · ${ord.payment_method === 'efectivo' ? 'Efectivo' : 'Transferencia'}` : ''}
+                      </div>
+                    )}
                     {ord.stock_issue && (
                       <div
                         title={`Sin stock suficiente para: ${(ord.stock_issue_detail || []).map(i => `${i.name} (pidió ${i.requested})`).join(', ')}`}
@@ -893,6 +898,8 @@ export default function OrdersTab({ orders, mpTransfers, mpConfigured, mpLoading
                       <option value="aprobado">🟢 Aprobado / Pagado</option>
                       <option value="enviado">🔵 Enviado / Despachado</option>
                       <option value="cancelado">🔴 Cancelado</option>
+                      {ord.channel === 'local' && <option value="pendiente_cobro">🟣 Por cobrar (local)</option>}
+                      {ord.channel === 'local' && <option value="cobrado">✅ Cobrado (local)</option>}
                     </select>
                   </td>
 

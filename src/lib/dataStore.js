@@ -2155,6 +2155,8 @@ class DataStore {
 
     // 2. Aggregate metrics from all orders
     this.orders.forEach(order => {
+      // Ventas del local sin cliente identificado no son un cliente del ranking.
+      if (order.channel === 'local' && !order.client_phone) return;
       const key = normalizePhone(order.client_phone) || order.client_name;
       if (!key) return;
       if (!clientMap[key]) {
@@ -2217,7 +2219,8 @@ class DataStore {
     const startOfWeek = new Date(now.getTime() - (7 * 24 * 60 * 60 * 1000)).getTime();
     const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1).getTime();
 
-    const paidOrders = this.orders.filter(o => o.status === 'aprobado' || o.status === 'enviado');
+    // 'cobrado' = venta del local cobrada en la caja.
+    const paidOrders = this.orders.filter(o => o.status === 'aprobado' || o.status === 'enviado' || o.status === 'cobrado');
 
     const ordersSince = (sinceTs) => paidOrders.filter(o => new Date(o.created_at).getTime() >= sinceTs);
     const sumOrdersSince = (sinceTs) => ordersSince(sinceTs).reduce((sum, o) => sum + (o.total_amount || 0), 0);

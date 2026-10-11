@@ -21,6 +21,7 @@ import RaffleTab from '@/components/admin/RaffleTab';
 import WhatsAppTab from '@/components/admin/WhatsAppTab';
 import BannersTab from '@/components/admin/BannersTab';
 import SuppliersTab from '@/components/admin/SuppliersTab';
+import StaffTab from '@/components/admin/StaffTab';
 
 // Pestana "WhatsApp CRM & IA" (bandeja del chat web + bot). Necesita
 // SUPABASE_SERVICE_ROLE_KEY cargada en el servidor (.env.local y Vercel):
@@ -31,6 +32,9 @@ export default function AdminPage() {
   // Admin Authentication State with Supabase Auth
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [adminUser, setAdminUser] = useState(null);
+  // Rol del usuario logueado (tabla staff): solo "admin" usa el panel; las
+  // vendedoras y la caja trabajan en /caja. 'unknown' = todavia cargando.
+  const [staffRole, setStaffRole] = useState('unknown');
   const [loginEmail, setLoginEmail] = useState('');
   const [loginPassword, setLoginPassword] = useState('');
   const [loginError, setLoginError] = useState('');
@@ -188,6 +192,27 @@ export default function AdminPage() {
       };
     }
   }, []);
+
+  useEffect(() => {
+    if (!adminUser?.id || !supabase) {
+      setStaffRole('unknown');
+      return;
+    }
+    let cancelled = false;
+    supabase
+      .from('staff')
+      .select('role, active')
+      .eq('auth_user_id', adminUser.id)
+      .maybeSingle()
+      .then(({ data, error }) => {
+        if (cancelled) return;
+        // Sin tabla staff (antes de la migracion de roles): se mantiene el
+        // acceso como antes.
+        if (error) setStaffRole('admin');
+        else setStaffRole(data?.role === 'admin' && data.active ? 'admin' : 'other');
+      });
+    return () => { cancelled = true; };
+  }, [adminUser?.id]);
 
   const handleAdminLogin = async (e) => {
     e.preventDefault();
@@ -647,6 +672,21 @@ export default function AdminPage() {
   }
 
   // RENDER FULL ADMIN DASHBOARD IF AUTHENTICATED WITH SUPABASE AUTH
+  if (staffRole === 'other') {
+    return (
+      <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' }}>
+        <div style={{ maxWidth: '420px', textAlign: 'center', backgroundColor: 'var(--bg-card)', borderRadius: '16px', padding: '28px', boxShadow: 'var(--shadow-sm)' }}>
+          <h2 style={{ fontSize: '1.2rem', fontWeight: 800, marginBottom: '8px' }}>Este panel es solo para administración</h2>
+          <p style={{ fontSize: '0.9rem', color: 'var(--text-muted)', marginBottom: '18px' }}>Tu usuario es de ventas o caja: trabajá desde la Caja.</p>
+          <div style={{ display: 'flex', gap: '8px', justifyContent: 'center' }}>
+            <a href="/caja" className="btn-primary" style={{ textDecoration: 'none' }}>Ir a la Caja</a>
+            <button type="button" onClick={handleAdminLogout} className="btn-secondary">Salir</button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div style={{ paddingBottom: '60px' }}>
       <AdminHeader
@@ -962,6 +1002,10 @@ export default function AdminPage() {
           mpLoading={mpLoading}
           onFetchMpTransfers={fetchMpTransfers}
         />
+      )}
+
+      {activeTab === 'staff' && (
+        <StaffTab />
       )}
 
       {activeTab === 'banners' && (
