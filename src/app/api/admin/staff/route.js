@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { requireAdmin } from '@/lib/adminAuth';
+import { FEATURES } from '@/lib/features';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://revrbrrzlnweuxwhpgei.supabase.co';
 const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -13,6 +14,7 @@ const pct = (v) => Math.min(100, Math.max(0, Number(v) || 0));
 // Personal (solo admin). Las cuentas se crean desde aca (el registro publico
 // de usuarios tiene que estar desactivado en Supabase Auth).
 export async function GET(req) {
+  if (!FEATURES.POS) return NextResponse.json({ error: 'No disponible.' }, { status: 404 });
   const denied = await requireAdmin(req, supabaseAdmin);
   if (denied) return denied;
   const { data, error } = await supabaseAdmin
@@ -25,6 +27,7 @@ export async function GET(req) {
 
 // POST { name, email, password, role, commission_pct } -> crea la cuenta.
 export async function POST(req) {
+  if (!FEATURES.POS) return NextResponse.json({ error: 'No disponible.' }, { status: 404 });
   const denied = await requireAdmin(req, supabaseAdmin);
   if (denied) return denied;
 
@@ -62,6 +65,7 @@ export async function POST(req) {
 
 // PATCH { id, name?, role?, commission_pct?, active?, password? }
 export async function PATCH(req) {
+  if (!FEATURES.POS) return NextResponse.json({ error: 'No disponible.' }, { status: 404 });
   const denied = await requireAdmin(req, supabaseAdmin);
   if (denied) return denied;
 

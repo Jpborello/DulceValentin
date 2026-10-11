@@ -7,6 +7,7 @@ import { adminFetch } from '@/lib/adminFetch';
 import { dataStore } from '@/lib/dataStore';
 import { getProductColorsForSize } from '@/lib/catalogData';
 import { getProductPrice } from '@/lib/productPricing';
+import { FEATURES } from '@/lib/features';
 
 // Caja del local (2026-10). Vendedoras arman ventas a su nombre (quedan
 // "pendientes de cobro"); la cajera las cobra en efectivo o transferencia.
@@ -473,7 +474,22 @@ function Report({ me }) {
 }
 
 // ---------------------------------------------------------------- Página
-export default function CajaPage() {
+// Caja apagada hasta que se contrate (ver src/lib/features.js).
+export default function CajaPageGate() {
+  if (!FEATURES.POS) {
+    return (
+      <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px', textAlign: 'center' }}>
+        <div>
+          <h1 style={{ fontSize: '1.3rem', fontWeight: 800, marginBottom: '6px' }}>Caja no disponible</h1>
+          <p style={{ color: 'var(--text-muted)' }}>Esta función todavía no está habilitada.</p>
+        </div>
+      </div>
+    );
+  }
+  return <CajaPage />;
+}
+
+function CajaPage() {
   const [checking, setChecking] = useState(true);
   const [me, setMe] = useState(null);
   const [sellers, setSellers] = useState([]);

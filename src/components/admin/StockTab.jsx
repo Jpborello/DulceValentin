@@ -9,6 +9,7 @@ import SafeImg from '@/components/admin/SafeImg';
 import DuplicateProductModal from '@/components/admin/DuplicateProductModal';
 import CategoryEditModal from '@/components/admin/CategoryEditModal';
 import BarcodeLabelsModal from '@/components/admin/BarcodeLabelsModal';
+import { FEATURES } from '@/lib/features';
 import { Barcode } from 'lucide-react';
 
 export default function StockTab({ products, categories = [], searchFilter, setSearchFilter, onUpdateStock, onUpdateSizesColors, onToggleActive, onUpdateDetails, onCreateProduct, onDeleteProduct }) {
@@ -348,14 +349,14 @@ export default function StockTab({ products, categories = [], searchFilter, setS
                     >
                       <Settings2 size={13} /> Talles/Colores
                     </button>
-                    <button
+                    {FEATURES.BARCODE_LABELS && <button
                       onClick={() => setLabelsProduct(p)}
                       className="btn-secondary"
                       style={{ padding: '6px 10px', fontSize: '0.78rem', display: 'inline-flex', alignItems: 'center', gap: '5px' }}
                       title="Imprimir etiquetas con código de barras"
                     >
                       <Barcode size={13} /> Etiquetas
-                    </button>
+                    </button>}
                     {onCreateProduct && (
                       <button
                         onClick={() => setDuplicatingProduct(p)}

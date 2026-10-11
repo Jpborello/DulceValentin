@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
+import { FEATURES } from '@/lib/features';
 
 // Personal del local (tabla staff): admin, cajera, vendedora. Las rutas
 // /api/pos/* reciben el token de la sesion de Supabase en Authorization y
@@ -14,6 +15,8 @@ export const deny = (status, error) => NextResponse.json({ error }, { status });
 // Devuelve { staff } o { response } con el error listo para devolver.
 // roles: lista de roles permitidos (por defecto, todos).
 export async function getStaff(req, roles = ['admin', 'cajera', 'vendedora']) {
+  // Caja apagada hasta que se contrate (ver src/lib/features.js).
+  if (!FEATURES.POS) return { response: deny(404, 'No disponible.') };
   if (!supabaseAdmin) return { response: deny(503, 'Servicio no disponible.') };
 
   const header = req.headers.get('authorization') || '';
