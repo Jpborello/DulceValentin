@@ -275,10 +275,18 @@ export async function POST(req) {
     return fail(500, 'No pudimos guardar tu pedido. No se te cobró nada: probá de nuevo o escribinos por WhatsApp.');
   }
 
-  // Boletos del sorteo: solo clientes que ya estaban en el Club (registrados
-  // o que ya compraron antes con ese telefono).
+  // Boletos del sorteo: solo con el sorteo activo (se prende/apaga desde el
+  // panel) y para clientes que ya estaban en el Club (registrados o que ya
+  // compraron antes con ese telefono).
+  const { data: raffleConfig } = await supabaseAdmin
+    .from('categories')
+    .select('name')
+    .eq('id', '_config_raffle_enabled')
+    .maybeSingle();
+  const raffleEnabled = raffleConfig?.name === 'true';
+
   let raffleTickets = [];
-  if (isRegistered && total >= RAFFLE_STEP) {
+  if (raffleEnabled && isRegistered && total >= RAFFLE_STEP) {
     const { data: ticketNums, error: ticketErr } = await supabaseAdmin.rpc('assign_raffle_tickets', {
       p_order_id: orderId,
       p_count: Math.floor(total / RAFFLE_STEP),

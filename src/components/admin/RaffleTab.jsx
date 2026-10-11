@@ -1,7 +1,63 @@
 'use client';
 
-import { useState } from 'react';
-import { Sparkles, Trophy, Ticket, RefreshCw, Play, Volume2, Users } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { Sparkles, Trophy, Ticket, RefreshCw, Play, Volume2, Users, Power, Loader2 } from 'lucide-react';
+import { dataStore } from '@/lib/dataStore';
+
+// Interruptor del Sorteo Mayorista. Apagado: la tienda no muestra nada del
+// sorteo (barra del carrito, boletos en la confirmacion, pregunta frecuente)
+// y /api/orders no asigna boletos. Los boletos ya entregados se conservan.
+function RaffleSwitch() {
+  const [enabled, setEnabled] = useState(() => dataStore.isRaffleEnabled());
+  const [isSaving, setIsSaving] = useState(false);
+  const [error, setError] = useState('');
+
+  useEffect(() => dataStore.subscribe(() => {
+    setEnabled(dataStore.isRaffleEnabled());
+  }), []);
+
+  const toggle = async () => {
+    setIsSaving(true);
+    setError('');
+    const res = await dataStore.setRaffleEnabled(!enabled);
+    setIsSaving(false);
+    if (!res.ok) setError('No se pudo guardar. Revisá la conexión o volvé a iniciar sesión.');
+  };
+
+  return (
+    <div style={{
+      display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '14px', flexWrap: 'wrap',
+      padding: '14px 18px', marginBottom: '24px', borderRadius: '12px',
+      backgroundColor: enabled ? '#ECFDF5' : 'var(--bg-surface-elevated)',
+      border: `1px solid ${enabled ? '#A7F3D0' : 'var(--border-color)'}`
+    }}>
+      <div>
+        <div style={{ fontWeight: 800, fontSize: '0.95rem', color: enabled ? '#047857' : 'var(--text-main)' }}>
+          {enabled ? '🎟️ Sorteo ACTIVO en la tienda' : 'Sorteo DESACTIVADO'}
+        </div>
+        <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: '2px' }}>
+          {enabled
+            ? 'Los clientes ven el sorteo y reciben boletos por cada $50.000 de compra.'
+            : 'No se muestra nada del sorteo en la tienda y no se entregan boletos nuevos.'}
+        </div>
+        {error && <div style={{ fontSize: '0.78rem', color: '#B91C1C', fontWeight: 700, marginTop: '4px' }}>{error}</div>}
+      </div>
+      <button
+        type="button"
+        onClick={toggle}
+        disabled={isSaving}
+        style={{
+          display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '9px 16px', borderRadius: '10px',
+          border: 'none', cursor: 'pointer', fontWeight: 800, fontSize: '0.85rem', color: '#FFFFFF',
+          backgroundColor: enabled ? '#DC2626' : '#059669', opacity: isSaving ? 0.7 : 1
+        }}
+      >
+        {isSaving ? <Loader2 size={16} className="animate-spin" /> : <Power size={16} />}
+        {enabled ? 'Desactivar sorteo' : 'Activar sorteo'}
+      </button>
+    </div>
+  );
+}
 
 export default function RaffleTab({ tickets }) {
   const [isSpinning, setIsSpinning] = useState(false);
@@ -35,6 +91,8 @@ export default function RaffleTab({ tickets }) {
 
   return (
     <div>
+      <RaffleSwitch />
+
       <div style={{ textAlign: 'center', marginBottom: '30px' }}>
         <span style={{ 
           display: 'inline-flex', 

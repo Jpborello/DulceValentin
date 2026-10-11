@@ -22,7 +22,10 @@ export default function CartDrawer({
   currentUser,
   onOpenAuth,
   products = [],
-  onAddToCart
+  onAddToCart,
+  // Sorteo activo (se prende/apaga desde el panel): si esta apagado no se
+  // muestra nada del sorteo en el carrito ni en la confirmacion.
+  raffleEnabled = false
 }) {
   const handleClose = useCloseOnBack(isOpen, onClose);
   const [deliveryMethod, setDeliveryMethod] = useState('envio'); // 'envio' or 'retiro'
@@ -625,7 +628,7 @@ Adjunto mi comprobante para coordinar el despacho. ¡Muchas gracias!`;
                       Tu(s) Boleto(s): <strong>{displayOrder.raffle_tickets.join(', ')}</strong>
                     </div>
                   </div>
-                ) : !displayOrder.is_registered ? (
+                ) : raffleEnabled && !displayOrder.is_registered ? (
                   <div style={{
                     marginTop: '12px',
                     backgroundColor: '#FFFBEB',
@@ -1025,7 +1028,7 @@ Adjunto mi comprobante para coordinar el despacho. ¡Muchas gracias!`;
                 )}
 
                 {/* Barra Secundaria de Incentivo: Gran Sorteo Mayorista ($50.000) */}
-                {hasMinQtyItem && (
+                {raffleEnabled && hasMinQtyItem && (
                   <div style={{
                     marginTop: '10px',
                     paddingTop: '8px',

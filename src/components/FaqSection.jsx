@@ -33,14 +33,21 @@ const FAQ_ITEMS = [
   }
 ];
 
+// Solo se muestra con el sorteo activo (se prende/apaga desde el panel).
+const RAFFLE_FAQ = {
+  question: '¿Participo de algún sorteo si compro por mayor?',
+  answer:
+    'Sí — registrándote con tu WhatsApp en el Club Mayorista, participás del sorteo en cada compra de $50.000 o más.'
+};
+
 // Schema FAQPage: tiene que reflejar EXACTAMENTE el texto visible de abajo
 // (Google penaliza si no coincide), por eso se arma desde el mismo array en
 // vez de escribirlo aparte a mano. Es lo que mas ayuda a que ChatGPT/
 // Perplexity/Google AI Overviews puedan citar estas respuestas tal cual.
-const faqJsonLd = {
+const buildFaqJsonLd = (items) => ({
   '@context': 'https://schema.org',
   '@type': 'FAQPage',
-  mainEntity: FAQ_ITEMS.map((item) => ({
+  mainEntity: items.map((item) => ({
     '@type': 'Question',
     name: item.question,
     acceptedAnswer: {
@@ -48,9 +55,11 @@ const faqJsonLd = {
       text: item.answer
     }
   }))
-};
+});
 
-export default function FaqSection() {
+export default function FaqSection({ showRaffle = false }) {
+  const items = showRaffle ? [...FAQ_ITEMS, RAFFLE_FAQ] : FAQ_ITEMS;
+  const faqJsonLd = buildFaqJsonLd(items);
   return (
     <section className="faq-section" id="preguntas-frecuentes" aria-labelledby="faq-title">
       <script
@@ -68,7 +77,7 @@ export default function FaqSection() {
       {/* <details>/<summary> nativos: el texto queda en el HTML aunque este
           colapsado (bueno para SEO/GEO) y no necesita JS para funcionar. */}
       <div className="faq-list">
-        {FAQ_ITEMS.map((item, idx) => (
+        {items.map((item, idx) => (
           <details key={idx} className="faq-item">
             <summary className="faq-question">{item.question}</summary>
             <p className="faq-answer">{item.answer}</p>

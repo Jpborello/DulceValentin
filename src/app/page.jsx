@@ -38,6 +38,9 @@ export default function Home() {
   // Arranca con los banners por defecto (igual en server y cliente, para no
   // romper la hidratacion) y se actualiza con los guardados al montar.
   const [promoBanners, setPromoBanners] = useState(() => DEFAULT_PROMO_BANNERS.map((b) => ({ ...b })));
+  // Sorteo activo: arranca apagado (igual en server y cliente) y se toma del
+  // store al montar.
+  const [raffleEnabled, setRaffleEnabled] = useState(false);
   const [selectedSizeFilter, setSelectedSizeFilter] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
   const [catalogOpen, setCatalogOpen] = useState(false);
@@ -63,6 +66,7 @@ export default function Home() {
       setCurrentUser(dataStore.currentUser);
       setCategoryImages(dataStore.getCategoryImages());
       setPromoBanners(dataStore.getPromoBanners());
+      setRaffleEnabled(dataStore.isRaffleEnabled());
       if (prods && prods.length > 0) {
         setIsLoading(false);
       }
@@ -752,7 +756,7 @@ export default function Home() {
 
       {/* Preguntas Frecuentes: siempre visible (no depende de si esta abierto
           el catalogo), con schema FAQPage para SEO/GEO. */}
-      <FaqSection />
+      <FaqSection showRaffle={raffleEnabled} />
 
       {/* Product Detail Modal */}
       <ProductDetailModal
@@ -838,6 +842,7 @@ export default function Home() {
 
       {/* Shopping Cart Drawer */}
       <CartDrawer
+        raffleEnabled={raffleEnabled}
         isOpen={isCartOpen}
         onClose={() => setIsCartOpen(false)}
         cartItems={cartItems}

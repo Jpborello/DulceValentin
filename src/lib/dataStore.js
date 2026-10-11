@@ -146,6 +146,14 @@ class DataStore {
       } catch (e) {}
     }
 
+    // Sorteo Mayorista: se prende y apaga desde el panel (pestaña Sorteo en
+    // Vivo). Apagado = no se muestra nada del sorteo en la tienda y
+    // /api/orders no asigna boletos. Fila _config_raffle_enabled.
+    this.raffleEnabled = false;
+    if (typeof window !== 'undefined') {
+      try { this.raffleEnabled = localStorage.getItem('dulcevalentin_raffle_enabled') === 'true'; } catch (e) {}
+    }
+
     // Copia local de los ultimos datos de transferencia conocidos, solo para
     // mostrar algo mientras carga la base. La fuente de verdad es Supabase
     // (filas _config_* de categories): fetchCategoriesFromSupabase la pisa.
@@ -473,6 +481,13 @@ class DataStore {
           try {
             localStorage.setItem('dulcevalentin_category_images', JSON.stringify(this.categoryImages));
           } catch (e) {}
+        }
+
+        // Sorteo activo/desactivado
+        const raffleRow = data.find(item => item.id === '_config_raffle_enabled');
+        this.raffleEnabled = raffleRow?.name === 'true';
+        if (typeof window !== 'undefined') {
+          try { localStorage.setItem('dulcevalentin_raffle_enabled', String(this.raffleEnabled)); } catch (e) {}
         }
 
         // Banners del home
@@ -1036,6 +1051,33 @@ class DataStore {
 
   getCategoryImages() {
     return { ...this.categoryImages };
+  }
+
+  isRaffleEnabled() {
+    return this.raffleEnabled === true;
+  }
+
+  // Prende/apaga el sorteo (solo el admin puede escribir en categories).
+  async setRaffleEnabled(enabled) {
+    const value = Boolean(enabled);
+    const previous = this.raffleEnabled;
+    this.raffleEnabled = value;
+    this.notify();
+    if (!supabase) return { ok: true, error: null };
+    const { error } = await supabase.from('categories').upsert({
+      id: '_config_raffle_enabled',
+      name: String(value),
+      subcategories: []
+    });
+    if (error) {
+      this.raffleEnabled = previous;
+      this.notify();
+      return { ok: false, error };
+    }
+    if (typeof window !== 'undefined') {
+      try { localStorage.setItem('dulcevalentin_raffle_enabled', String(value)); } catch (e) {}
+    }
+    return { ok: true, error: null };
   }
 
   getPromoBanners() {
