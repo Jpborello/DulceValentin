@@ -876,7 +876,17 @@ export default function Home() {
             <h4 style={{ fontSize: '1.1rem', fontWeight: 700, marginBottom: '16px', color: 'var(--accent-gold-light)' }}>Contacto Directo</h4>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', fontSize: '0.9rem', color: '#D6C8B5' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>🕒 Lunes a Sábado de 8 a 17 hs</div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><MapPin size={16} /> Pte. Perón 5349/5305/5265 (Rosario - Santa Fe)</div>
+              {/* Un local por rubro, cada uno en su numero (Rosario - Santa Fe). */}
+              {[
+                ['Pte. Perón 5349', 'Local de Ropa'],
+                ['Pte. Perón 5305', 'Local exclusivo de bebé y calzados'],
+                ['Pte. Perón 5264', 'Medias, Lencería, Blanquería, Bazar']
+              ].map(([address, label]) => (
+                <div key={address} style={{ display: 'flex', alignItems: 'flex-start', gap: '8px' }}>
+                  <MapPin size={16} style={{ flexShrink: 0, marginTop: '2px' }} />
+                  <span><strong style={{ color: '#F3E9DC' }}>{address}</strong> — {label}</span>
+                </div>
+              ))}
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><Store size={16} /> Atención Lunes a Sábado de 8:00 a 17:00 hs</div>
               <Link href="/pedido" style={{ display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--accent-gold-light)', fontWeight: 700, textDecoration: 'none' }}>
                 <PackageSearch size={16} /> Rastreá tu Pedido
