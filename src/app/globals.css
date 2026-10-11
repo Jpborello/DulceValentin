@@ -4621,3 +4621,88 @@ button {
   body.has-cart-bar .webchat-fab-button { bottom: 146px !important; }
   body.has-cart-bar { padding-bottom: 70px; }
 }
+
+/* ===== Banners del home: Promociones de la semana / Reventón del sábado ===== */
+.dv-promos {
+  width: 100%;
+  max-width: 1320px;
+  margin: 32px auto 40px;
+  padding: 0 24px;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 18px;
+  box-sizing: border-box;
+}
+
+.dv-promo {
+  position: relative;
+  display: block;
+  min-height: 220px;
+  border-radius: 18px;
+  overflow: hidden;
+  text-decoration: none;
+  color: #FFFFFF;
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.18);
+  isolation: isolate;
+}
+
+a.dv-promo { transition: transform 0.2s ease, box-shadow 0.2s ease; }
+a.dv-promo:hover { transform: translateY(-3px); box-shadow: 0 14px 34px rgba(0, 0, 0, 0.24); }
+a.dv-promo:focus-visible { outline: 3px solid var(--accent-gold); outline-offset: 3px; }
+
+.dv-promo-img,
+.dv-promo-fallback {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  z-index: -2;
+}
+
+.dv-promo-fallback--0 { background: linear-gradient(135deg, #EC6FA6 0%, #A8175A 100%); }
+.dv-promo-fallback--1 { background: linear-gradient(135deg, #E11D2E 0%, #7C2D12 100%); }
+
+.dv-promo-scrim {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background: linear-gradient(180deg, rgba(0, 0, 0, 0) 25%, rgba(0, 0, 0, 0.72) 100%);
+}
+
+.dv-promo-copy {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  padding: 20px 22px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.dv-promo-title {
+  font-family: var(--font-display);
+  font-size: clamp(1.6rem, 3vw, 2.2rem);
+  line-height: 1.05;
+  text-shadow: 0 2px 10px rgba(0, 0, 0, 0.35);
+}
+
+.dv-promo-text {
+  font-size: 0.95rem;
+  line-height: 1.4;
+  opacity: 0.95;
+  max-width: 46ch;
+}
+
+.dv-promo-cta {
+  margin-top: 4px;
+  font-size: 0.85rem;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+}
+
+@media (max-width: 640px) {
+  .dv-promos { padding: 0 16px; margin: 24px auto 28px; gap: 14px; }
+  .dv-promo { min-height: 180px; }
+}

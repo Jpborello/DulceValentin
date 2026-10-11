@@ -76,6 +76,28 @@ export {
 };
 
 // In-Memory / LocalStorage State Manager with Supabase Mirror
+
+export const DEFAULT_PROMO_BANNERS = [
+  { id: 'promos', title: 'Promociones de la semana', text: 'Precios especiales por tiempo limitado. ¡Aprovechalos!', image_url: '', link: '', active: true },
+  { id: 'reventon', title: 'Reventón del sábado', text: 'Todos los sábados, liquidamos prendas a precios increíbles.', image_url: '', link: '', active: true }
+];
+
+// Siempre 2 banners con todos los campos, aunque la base traiga datos viejos
+// o incompletos.
+export function normalizePromoBanners(list) {
+  return DEFAULT_PROMO_BANNERS.map((def, i) => {
+    const b = (Array.isArray(list) && (list.find((x) => x && x.id === def.id) || list[i])) || {};
+    return {
+      id: def.id,
+      title: String(b.title ?? def.title).slice(0, 80),
+      text: String(b.text ?? def.text).slice(0, 240),
+      image_url: String(b.image_url ?? '').slice(0, 500),
+      link: String(b.link ?? '').slice(0, 300),
+      active: b.active !== false
+    };
+  });
+}
+
 class DataStore {
   constructor() {
     this.products = [...INITIAL_PRODUCTS].map(p => ({ sales_count: 0, ...p }));
@@ -109,6 +131,18 @@ class DataStore {
         if (cachedCatImgs && typeof cachedCatImgs === 'object') {
           this.categoryImages = { ...this.categoryImages, ...cachedCatImgs };
         }
+      } catch (e) {}
+    }
+
+    // Los 2 banners del home ("Promociones de la semana" y "Reventón del
+    // sábado"), editables desde el panel (pestaña Banners). Se guardan en la
+    // fila _config_promo_banners de la tabla categories, como el resto de la
+    // configuracion del sitio.
+    this.promoBanners = DEFAULT_PROMO_BANNERS.map((b) => ({ ...b }));
+    if (typeof window !== 'undefined') {
+      try {
+        const cachedBanners = JSON.parse(localStorage.getItem('dulcevalentin_promo_banners') || 'null');
+        if (Array.isArray(cachedBanners) && cachedBanners.length > 0) this.promoBanners = normalizePromoBanners(cachedBanners);
       } catch (e) {}
     }
 
@@ -438,6 +472,20 @@ class DataStore {
         if (typeof window !== 'undefined') {
           try {
             localStorage.setItem('dulcevalentin_category_images', JSON.stringify(this.categoryImages));
+          } catch (e) {}
+        }
+
+        // Banners del home
+        const bannersRow = data.find(item => item.id === '_config_promo_banners');
+        if (bannersRow?.name) {
+          try {
+            const parsed = JSON.parse(bannersRow.name);
+            if (Array.isArray(parsed)) {
+              this.promoBanners = normalizePromoBanners(parsed);
+              if (typeof window !== 'undefined') {
+                try { localStorage.setItem('dulcevalentin_promo_banners', JSON.stringify(this.promoBanners)); } catch (e) {}
+              }
+            }
           } catch (e) {}
         }
 
@@ -988,6 +1036,28 @@ class DataStore {
 
   getCategoryImages() {
     return { ...this.categoryImages };
+  }
+
+  getPromoBanners() {
+    return this.promoBanners.map((b) => ({ ...b }));
+  }
+
+  // Guarda los 2 banners del home (solo el admin: la tabla categories solo
+  // acepta escrituras de usuarios autenticados). Devuelve { ok, error }.
+  async setPromoBanners(banners) {
+    const clean = normalizePromoBanners(banners);
+    this.promoBanners = clean;
+    if (typeof window !== 'undefined') {
+      try { localStorage.setItem('dulcevalentin_promo_banners', JSON.stringify(clean)); } catch (e) {}
+    }
+    this.notify();
+    if (!supabase) return { ok: true, error: null };
+    const { error } = await supabase.from('categories').upsert({
+      id: '_config_promo_banners',
+      name: JSON.stringify(clean),
+      subcategories: []
+    });
+    return { ok: !error, error };
   }
 
   // Asigna o quita una etiqueta personalizada a un producto (para carrusel de Liquidación / Nuevos Ingresos)

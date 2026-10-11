@@ -19,6 +19,8 @@ import OrdersTab from '@/components/admin/OrdersTab';
 import ClientsTab from '@/components/admin/ClientsTab';
 import RaffleTab from '@/components/admin/RaffleTab';
 import WhatsAppTab from '@/components/admin/WhatsAppTab';
+import BannersTab from '@/components/admin/BannersTab';
+import SuppliersTab from '@/components/admin/SuppliersTab';
 
 // Pestana "WhatsApp CRM & IA" (bandeja del chat web + bot). Necesita
 // SUPABASE_SERVICE_ROLE_KEY cargada en el servidor (.env.local y Vercel):
@@ -960,6 +962,14 @@ export default function AdminPage() {
           mpLoading={mpLoading}
           onFetchMpTransfers={fetchMpTransfers}
         />
+      )}
+
+      {activeTab === 'banners' && (
+        <BannersTab />
+      )}
+
+      {activeTab === 'suppliers' && (
+        <SuppliersTab products={products} />
       )}
 
       {activeTab === 'clients' && (

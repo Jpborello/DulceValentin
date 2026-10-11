@@ -14,10 +14,9 @@ const AuthModal = dynamic(() => import('@/components/AuthModal'), { ssr: false }
 const ProductDetailModal = dynamic(() => import('@/components/ProductDetailModal'), { ssr: false });
 
 import WholesaleBanner from '@/components/WholesaleBanner';
-import ClubMayoristaBanner from '@/components/ClubMayoristaBanner';
 import TrustBar from '@/components/TrustBar';
 import FaqSection from '@/components/FaqSection';
-import { dataStore, CATEGORIES, getProductPrice } from '@/lib/dataStore';
+import { dataStore, CATEGORIES, getProductPrice, DEFAULT_PROMO_BANNERS } from '@/lib/dataStore';
 import { getProductStockForSizeColor } from '@/lib/catalogData';
 import { getSearchScores } from '@/lib/searchUtils';
 import { evaluateWholesaleRule } from '@/lib/cartStorage';
@@ -36,6 +35,9 @@ export default function Home() {
   const [searchQuery, setSearchQuery] = useState('');
   const [quickFilter, setQuickFilter] = useState('all');
   const [categoryImages, setCategoryImages] = useState(() => dataStore.getCategoryImages());
+  // Arranca con los banners por defecto (igual en server y cliente, para no
+  // romper la hidratacion) y se actualiza con los guardados al montar.
+  const [promoBanners, setPromoBanners] = useState(() => DEFAULT_PROMO_BANNERS.map((b) => ({ ...b })));
   const [selectedSizeFilter, setSelectedSizeFilter] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
   const [catalogOpen, setCatalogOpen] = useState(false);
@@ -60,6 +62,7 @@ export default function Home() {
       setCategories(dataStore.getCategories());
       setCurrentUser(dataStore.currentUser);
       setCategoryImages(dataStore.getCategoryImages());
+      setPromoBanners(dataStore.getPromoBanners());
       if (prods && prods.length > 0) {
         setIsLoading(false);
       }
@@ -490,15 +493,6 @@ export default function Home() {
   // Leerlo directo en el render rompia la hidratacion: el server mostraba
   // un producto destacado/oferta distinto al que ya tenia cacheado el
   // navegador, y React tiraba "Hydration failed" en el <h3> del carousel.
-  const featuredOffer = products.find((p) => p.is_featured && p.is_active !== false) || null;
-  const promoProducts = products.filter((p) => p.badge_text && p.is_active !== false && p.id !== featuredOffer?.id);
-  const offers = products.filter((p) => p.is_offer && p.is_active !== false && p.id !== featuredOffer?.id);
-  // Nuevos ingresos para el carrusel del hero: los marcados "Nuevo Ingreso"
-  // con stock y foto, del codigo mas alto (lo ultimo cargado) para abajo.
-  const newArrivals = products
-    .filter((p) => p.is_new && p.is_active !== false && (p.stock ?? 1) > 0 && p.image_url)
-    .sort((a, b) => (parseInt(b.code, 10) || 0) - (parseInt(a.code, 10) || 0))
-    .slice(0, 10);
 
   // "También te puede interesar" del detalle: misma subcategoria primero,
   // despues el resto de la categoria. Solo productos con stock.
@@ -540,8 +534,9 @@ export default function Home() {
         onOpenAuth={() => setIsAuthOpen(true)}
         currentUser={currentUser}
         onLogout={handleLogout}
-        onOpenCatalog={() => {
+        onOpenCatalog={(filter = 'all') => {
           setCatalogOpen(true);
+          setQuickFilter(filter);
           requestAnimationFrame(() => {
             requestAnimationFrame(() => {
               const el = document.getElementById('catalogo');
@@ -590,14 +585,8 @@ export default function Home() {
         </div>
       )}
 
-      {/* Hero Section con Carrusel de Ofertas y Promociones */}
-      <HeroSection
-        offers={offers}
-        featuredOffer={featuredOffer}
-        newArrivals={newArrivals}
-        promoProducts={promoProducts}
-        onOpenDetail={setDetailProduct}
-      />
+      {/* Hero + los 2 banners editables (Promociones de la semana / Reventón del sábado) */}
+      <HeroSection banners={promoBanners} />
 
       {/* Buscador Central: justo debajo del Hero */}
       <div id="buscador-principal">
@@ -616,9 +605,6 @@ export default function Home() {
           para que en móviles el cliente vea los resultados inmediatamente sin scroll infinito */}
       {!hasSearch && (
         <>
-          {/* Club Mayorista: banner de retención */}
-          <ClubMayoristaBanner currentUser={currentUser} onOpenAuth={() => setIsAuthOpen(true)} />
-
           {/* Categorías principales: 4 cards (Calzado, Indumentaria, Lencería, Bebés) + secundarias */}
           <CategoryShowcase
             categories={categories}

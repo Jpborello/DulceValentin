@@ -1,6 +1,6 @@
 'use client';
 
-import { BarChart3, Package, DollarSign, Image as ImageIcon, Layers, Users, Sparkles, FolderPlus, FileSpreadsheet, CreditCard, MessageSquare, PlusCircle } from 'lucide-react';
+import { BarChart3, Package, DollarSign, Image as ImageIcon, Layers, Users, Sparkles, FolderPlus, FileSpreadsheet, CreditCard, MessageSquare, PlusCircle, Megaphone, NotebookPen } from 'lucide-react';
 
 export default function AdminTabsNav({ activeTab, onTabChange }) {
   const tabs = [
@@ -9,10 +9,12 @@ export default function AdminTabsNav({ activeTab, onTabChange }) {
     { id: 'settings', label: '💳 Alias de Transferencia', icon: CreditCard },
     { id: 'newProduct', label: '➕ Nuevo Producto', icon: PlusCircle },
     { id: 'stock', label: 'Control de Stock', icon: Package },
+    { id: 'suppliers', label: 'Anotador de Proveedores', icon: NotebookPen },
     { id: 'prices', label: 'Cambio de Precios', icon: DollarSign },
     { id: 'bulk', label: 'Carga Masiva (CSV)', icon: FileSpreadsheet },
     { id: 'categories', label: 'Categorías & Subcategorías', icon: FolderPlus },
     { id: 'images', label: 'Gestión de Imágenes', icon: ImageIcon },
+    { id: 'banners', label: 'Banners del Inicio', icon: Megaphone },
     { id: 'orders', label: 'Órdenes & Comprobantes', icon: Layers },
     { id: 'clients', label: 'Ranking de Clientes', icon: Users },
     { id: 'raffle', label: '🎰 Sorteo en Vivo', icon: Sparkles }

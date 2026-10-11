@@ -15,11 +15,12 @@ export default function Header({
   onOpenCatalog
 }) {
   // #catalogo solo existe con el catalogo abierto: sin esto el link no hacia nada.
-  const handleCatalogClick = (e) => {
+  // filter: 'all' | 'offers' | 'top' (filtros rapidos del catalogo).
+  const handleCatalogClick = (e, filter = 'all') => {
     if (!onOpenCatalog) return;
     e.preventDefault();
     setMobileMenuOpen(false);
-    onOpenCatalog();
+    onOpenCatalog(filter);
   };
 
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -51,8 +52,8 @@ export default function Header({
         {/* Desktop Nav Links */}
         <nav className="header-nav">
           <a href="#catalogo" onClick={handleCatalogClick} className="nav-link">Catálogo</a>
-          <a href="#ofertas" className="nav-link">Ofertas</a>
-          <a href="#destacados" className="nav-link">Más Vendidos</a>
+          <a href="#catalogo" onClick={(e) => handleCatalogClick(e, 'offers')} className="nav-link">Ofertas</a>
+          <a href="#catalogo" onClick={(e) => handleCatalogClick(e, 'top')} className="nav-link">Más Vendidos</a>
           <Link href="/pedido" className="nav-link">Mis Pedidos</Link>
         </nav>
 
@@ -100,8 +101,8 @@ export default function Header({
           gap: '12px'
         }}>
           <a href="#catalogo" onClick={handleCatalogClick} className="nav-link">Catálogo Completo</a>
-          <a href="#ofertas" onClick={() => setMobileMenuOpen(false)} className="nav-link">Ofertas Especiales</a>
-          <a href="#destacados" onClick={() => setMobileMenuOpen(false)} className="nav-link">Productos de Alta Rotación</a>
+          <a href="#catalogo" onClick={(e) => handleCatalogClick(e, 'offers')} className="nav-link">Ofertas Especiales</a>
+          <a href="#catalogo" onClick={(e) => handleCatalogClick(e, 'top')} className="nav-link">Productos de Alta Rotación</a>
           <Link href="/pedido" onClick={() => setMobileMenuOpen(false)} className="nav-link">Mis Pedidos / Repetir un pedido</Link>
         </div>
       )}

@@ -1,17 +1,7 @@
 'use client';
 
 import { useRef } from 'react';
-import { Search, X, Sparkles } from 'lucide-react';
-
-const POPULAR_SEARCHES = [
-  'Remeras',
-  'Calzado',
-  'Lencería',
-  'Bebés',
-  'Buzos',
-  'Pantalones',
-  'Ofertas'
-];
+import { Search, X } from 'lucide-react';
 
 export default function SearchBarSection({
   searchQuery = '',
@@ -25,15 +15,6 @@ export default function SearchBarSection({
     if (setSearchQuery) setSearchQuery('');
     if (onClear) onClear();
     if (inputRef.current) inputRef.current.focus();
-  };
-
-  const handleTagClick = (tag) => {
-    if (setSearchQuery) setSearchQuery(tag);
-    // Desplazar suavemente hacia el catálogo de resultados si hay algo escrito
-    requestAnimationFrame(() => {
-      const el = document.getElementById('catalogo');
-      if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    });
   };
 
   const handleKeyDown = (e) => {
@@ -80,26 +61,6 @@ export default function SearchBarSection({
               <X size={18} />
             </button>
           )}
-        </div>
-
-        {/* Sugerencias rápidas */}
-        <div className="search-quick-tags">
-          <span className="search-quick-label">
-            <Sparkles size={13} style={{ marginRight: '4px', verticalAlign: 'middle' }} />
-            Búsquedas populares:
-          </span>
-          <div className="search-tags-scroll">
-            {POPULAR_SEARCHES.map((tag) => (
-              <button
-                key={tag}
-                type="button"
-                className={`search-tag-chip ${searchQuery.toLowerCase() === tag.toLowerCase() ? 'active' : ''}`}
-                onClick={() => handleTagClick(tag)}
-              >
-                {tag}
-              </button>
-            ))}
-          </div>
         </div>
 
         {/* Indicador de resultados cuando hay búsqueda activa */}
