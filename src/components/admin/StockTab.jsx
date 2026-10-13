@@ -9,6 +9,7 @@ import SafeImg from '@/components/admin/SafeImg';
 import DuplicateProductModal from '@/components/admin/DuplicateProductModal';
 import CategoryEditModal from '@/components/admin/CategoryEditModal';
 import BarcodeLabelsModal from '@/components/admin/BarcodeLabelsModal';
+import StockHistoryModal from '@/components/admin/StockHistoryModal';
 import { FEATURES } from '@/lib/features';
 import { Barcode } from 'lucide-react';
 
@@ -26,6 +27,7 @@ export default function StockTab({ products, categories = [], searchFilter, setS
   const [editingProduct, setEditingProduct] = useState(null);
   const [categoryProduct, setCategoryProduct] = useState(null);
   const [labelsProduct, setLabelsProduct] = useState(null);
+  const [historyProduct, setHistoryProduct] = useState(null);
 
   const criticalCount = products.filter(p => p.stock > 0 && p.stock <= 5).length;
   const outOfStockCount = products.filter(p => p.stock <= 0).length;
@@ -311,6 +313,14 @@ export default function StockTab({ products, categories = [], searchFilter, setS
                       }}>
                         {p.stock_loaded ?? '—'}
                       </div>
+                      <button
+                        type="button"
+                        onClick={() => setHistoryProduct(p)}
+                        style={{ display: 'block', margin: '3px auto 0', background: 'none', border: 'none', padding: 0, fontSize: '0.68rem', fontWeight: 700, color: 'var(--accent-gold)', textDecoration: 'underline', cursor: 'pointer' }}
+                        title="Ver de dónde sale el número y corregirlo"
+                      >
+                        historial
+                      </button>
                     </div>
                     <div>
                       <div style={{ fontSize: '0.68rem', fontWeight: 700, color: 'var(--text-muted)', marginBottom: '2px' }}>Queda</div>
@@ -419,6 +429,10 @@ export default function StockTab({ products, categories = [], searchFilter, setS
           onClose={() => setEditingProduct(null)}
           onSave={onUpdateDetails}
         />
+      )}
+
+      {historyProduct && (
+        <StockHistoryModal product={historyProduct} onClose={() => setHistoryProduct(null)} />
       )}
 
       {labelsProduct && (
