@@ -9,8 +9,9 @@ const WebChatWidget = dynamic(() => import('@/components/WebChatWidget'), { ssr:
 export default function FloatingWidgets() {
   const pathname = usePathname();
 
-  // No mostrar los widgets flotantes dentro del panel de administración
-  if (pathname && pathname.startsWith('/admin')) {
+  // No mostrar los widgets flotantes (son para clientes) en las pantallas
+  // internas: panel de administración, caja y ventas de vendedoras.
+  if (pathname && ['/admin', '/caja', '/ventas'].some((p) => pathname.startsWith(p))) {
     return null;
   }
 
