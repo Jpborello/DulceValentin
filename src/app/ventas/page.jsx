@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import { Users, Plus, Wallet, HandCoins, Loader2, LogOut, X, Download, CloudOff, ChevronLeft, ChevronRight, Save, Banknote, Receipt, Calculator, Trophy, TrendingUp, TrendingDown } from 'lucide-react';
+import { Users, Plus, Wallet, HandCoins, Loader2, LogOut, X, Download, CloudOff, ChevronLeft, ChevronRight, Save, Banknote, Receipt, Calculator, Trophy, TrendingUp, TrendingDown, History } from 'lucide-react';
 import { supabase } from '@/lib/supabaseClient';
 import { adminFetch } from '@/lib/adminFetch';
 
@@ -415,20 +415,35 @@ function CashCountModal({ date, cash, onClose, onSaved }) {
 }
 
 // ---------------------------------------------------------------- Historial de una vendedora
-function DetailModal({ seller, period, date, onClose, onChanged }) {
-  const [detail, setDetail] = useState(null);
+// Rangos del historial: el periodo que se esta viendo, ultimos 7/30 dias o todo.
+const HISTORY_RANGES = { period: 'Este período', d7: 'Últimos 7 días', d30: 'Últimos 30 días', all: 'Todo' };
+const daysAgo = (n) => {
+  const t = new Date(`${todayAR()}T12:00:00`);
+  t.setDate(t.getDate() - n);
+  return t.toISOString().slice(0, 10);
+};
+
+function DetailModal({ seller, periodFrom, periodTo, onClose, onChanged }) {
+  const [range, setRange] = useState('period');
+  const [hist, setHist] = useState(null);
   const [error, setError] = useState('');
 
+  const bounds = range === 'period' ? { from: periodFrom, to: periodTo }
+    : range === 'd7' ? { from: daysAgo(6), to: todayAR() }
+    : range === 'd30' ? { from: daysAgo(29), to: todayAR() }
+    : { from: null, to: todayAR() };
+
   const load = useCallback(async () => {
+    setError('');
     try {
-      const data = await api('GET', null, `?period=${period}&date=${date}&sellerId=${seller.id}`);
-      setDetail(data.detail);
+      const q = `?history=1&sellerId=${seller.id}${bounds.from ? `&from=${bounds.from}` : ''}&to=${bounds.to}`;
+      setHist(await api('GET', null, q));
     } catch (err) {
       setError(err.message);
     }
-  }, [period, date, seller.id]);
+  }, [seller.id, bounds.from, bounds.to]);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => { setHist(null); load(); }, [load]);
 
   const voidEntry = async (kind, entry) => {
     const label = { sale: 'la venta', advance: 'el vale', payout: 'el pago' }[kind];
@@ -465,20 +480,57 @@ function DetailModal({ seller, period, date, onClose, onChanged }) {
   const Section = ({ title, rows, kind, dayKey }) => (
     <>
       <h4 style={{ fontWeight: 800, margin: '14px 0 6px' }}>{title} ({rows.filter((r) => !r.voided_at).length})</h4>
-      {rows.length === 0 ? <p style={{ fontSize: '0.84rem', color: 'var(--text-muted)' }}>Nada en el período.</p> : (
+      {rows.length === 0 ? <p style={{ fontSize: '0.84rem', color: 'var(--text-muted)' }}>Nada en este rango.</p> : (
         <table className="admin-table"><tbody>{rows.map((r) => <Row key={`${kind}${r.id}`} entry={r} kind={kind} day={r[dayKey]} />)}</tbody></table>
       )}
     </>
   );
 
+  const n = hist?.numbers;
+  const days = hist?.advancesByDay || [];
   return (
-    <Modal title={seller.name} subtitle={`Vendió ${money(seller.total)} · comisión ${money(seller.commission)} · vales ${money(seller.advances)} · pagado ${money(seller.paid)} · saldo ${money(seller.balance)}`} onClose={onClose} maxWidth="720px">
+    <Modal title={`Historial de ${seller.name}`} subtitle={`Saldo pendiente hoy: ${money(seller.balance)}`} onClose={onClose} maxWidth="760px">
+      <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginBottom: '12px' }}>
+        {Object.entries(HISTORY_RANGES).map(([id, label]) => (
+          <button key={id} type="button" onClick={() => setRange(id)} className={`admin-tab-btn ${range === id ? 'active' : ''}`} style={{ padding: '6px 10px', fontSize: '0.8rem' }}>{label}</button>
+        ))}
+      </div>
       {error && <div role="alert" style={{ color: '#B91C1C', fontWeight: 600 }}>{error}</div>}
-      {!detail ? <Loader2 className="animate-spin" /> : (
+      {!hist ? <Loader2 className="animate-spin" /> : (
         <>
-          <Section title="Ventas" rows={detail.sales} kind="sale" dayKey="sale_date" />
-          <Section title="Vales / adelantos" rows={detail.advances} kind="advance" dayKey="advance_date" />
-          <Section title="Pagos" rows={detail.payouts} kind="payout" dayKey="paid_date" />
+          <p style={{ fontSize: '0.84rem', marginBottom: '10px' }}>
+            {range === 'all' ? 'Desde el principio' : `${fmtDate(hist.from)} al ${fmtDate(hist.to)}`}: vendió <strong>{money(n.total)}</strong> ({n.salesCount} ventas) · comisión <strong>{money(n.commission)}</strong> · vales <strong>{money(n.advances)}</strong> · pagado <strong>{money(n.paid)}</strong>
+          </p>
+
+          {/* Vales por dia */}
+          <div style={{ border: '1px solid var(--border-color)', borderRadius: '10px', padding: '10px 12px', marginBottom: '6px' }}>
+            <h4 style={{ fontWeight: 800, marginBottom: '6px', display: 'flex', alignItems: 'center', gap: '6px' }}><HandCoins size={16} /> Vales por día</h4>
+            {days.length === 0 ? (
+              <p style={{ fontSize: '0.84rem', color: 'var(--text-muted)' }}>No pidió vales en este rango.</p>
+            ) : (
+              <table className="admin-table">
+                <thead><tr><th>Día</th><th>Vales</th><th>Monto del día</th></tr></thead>
+                <tbody>
+                  {days.map((d) => (
+                    <tr key={d.date}>
+                      <td>{fmtDate(d.date)}</td>
+                      <td>{d.count}</td>
+                      <td style={{ fontWeight: 800 }}>{money(d.total)}</td>
+                    </tr>
+                  ))}
+                  <tr>
+                    <td style={{ fontWeight: 800 }}>Total</td>
+                    <td style={{ fontWeight: 800 }}>{days.reduce((t, d) => t + d.count, 0)}</td>
+                    <td style={{ fontWeight: 900 }}>{money(days.reduce((t, d) => t + d.total, 0))}</td>
+                  </tr>
+                </tbody>
+              </table>
+            )}
+          </div>
+
+          <Section title="Vales / adelantos (detalle)" rows={hist.detail.advances} kind="advance" dayKey="advance_date" />
+          <Section title="Ventas" rows={hist.detail.sales} kind="sale" dayKey="sale_date" />
+          <Section title="Pagos" rows={hist.detail.payouts} kind="payout" dayKey="paid_date" />
         </>
       )}
     </Modal>
@@ -727,6 +779,9 @@ export default function VentasPage() {
                       </button>
                     </div>
                   )}
+                  <button type="button" onClick={stop(() => setDetailSeller(s))} className="btn-secondary" style={{ width: '100%', marginTop: '6px', justifyContent: 'center', display: 'inline-flex', alignItems: 'center', gap: '5px', padding: '7px 4px', fontSize: '0.84rem' }}>
+                    <History size={15} /> Historial (ventas, vales y pagos)
+                  </button>
                 </div>
               ))}
             </div>
@@ -737,7 +792,7 @@ export default function VentasPage() {
               Para dar de alta o de baja vendedoras: <a href="/admin" style={{ fontWeight: 700, textDecoration: 'underline' }}>Panel de admin → Vendedoras</a>.
             </p>
             <p style={{ fontSize: '0.76rem', color: 'var(--text-muted)', marginTop: '8px' }}>
-              <Wallet size={12} style={{ display: 'inline', verticalAlign: 'middle' }} /> “Saldo pendiente” = todas las comisiones − vales − pagos (acumulado, se arrastra de un período al otro). La comisión de cada día se calcula con el % de ese día. Tocá la tarjeta para cargar una venta; el nombre abre el historial con los recibos <Receipt size={12} style={{ display: 'inline', verticalAlign: 'middle' }} />. Nada se borra: todo se anula con motivo.
+              <Wallet size={12} style={{ display: 'inline', verticalAlign: 'middle' }} /> “Saldo pendiente” = todas las comisiones − vales − pagos (acumulado, se arrastra de un período al otro). La comisión de cada día se calcula con el % de ese día. Tocá la tarjeta para cargar una venta; “Historial” muestra los vales por día, las ventas y los pagos con sus recibos <Receipt size={12} style={{ display: 'inline', verticalAlign: 'middle' }} />. Nada se borra: todo se anula con motivo.
             </p>
           </>
         )}
@@ -745,7 +800,7 @@ export default function VentasPage() {
         {entry && <EntryModal kind={entry.kind} seller={entry.seller} date={date} onClose={() => setEntry(null)} onSaved={afterSave} />}
         {payoutSeller && data && <PayoutModal seller={payoutSeller} data={data} onClose={() => setPayoutSeller(null)} onSaved={afterSave} />}
         {showCash && data?.cash && <CashCountModal date={date} cash={data.cash} onClose={() => { setShowCash(false); load(); }} onSaved={(queued) => { if (queued) afterSave(true); }} />}
-        {detailSeller && <DetailModal seller={detailSeller} period={period} date={date} onClose={() => setDetailSeller(null)} onChanged={load} />}
+        {detailSeller && data && <DetailModal seller={detailSeller} periodFrom={data.from} periodTo={data.to} onClose={() => setDetailSeller(null)} onChanged={load} />}
       </div>
     </div>
   );

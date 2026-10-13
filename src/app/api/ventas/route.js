@@ -124,6 +124,7 @@ async function getUserId(req) {
 // GET
 //   ?list=sellers                         -> todas las vendedoras (panel)
 //   ?payoutId=N                           -> datos para el recibo de un pago
+//   ?history=1&sellerId=uuid[&from&to]    -> historial de una vendedora
 //   ?period=day|week|month&date=YYYY-MM-DD[&sellerId=uuid]
 export async function GET(req) {
   if (!db) return fail(503, 'Servicio no disponible.');
@@ -161,6 +162,41 @@ export async function GET(req) {
     } catch {
       return fail(500, 'No se pudo armar el recibo.');
     }
+  }
+
+  // Historial de una vendedora en un rango libre (from/to; sin from = desde
+  // el principio): ventas, vales (con resumen por dia) y pagos.
+  if (searchParams.get('history') === '1') {
+    const sid = searchParams.get('sellerId');
+    if (!uuidRe.test(String(sid || ''))) return fail(400, 'Falta la vendedora.');
+    const hTo = isDate(searchParams.get('to')) ? searchParams.get('to') : todayAR();
+    const hFrom = isDate(searchParams.get('from')) ? searchParams.get('from') : '2000-01-01';
+    let ledger;
+    try {
+      ledger = await loadLedger(hTo);
+    } catch {
+      return fail(500, 'No se pudo cargar el historial.');
+    }
+    const mine = (rows, key) => rows.filter((x) => x.seller_id === sid && inRange(x[key], hFrom, hTo)).reverse(); // mas nuevo primero
+    const advances = mine(ledger.advances, 'advance_date');
+    const byDay = {};
+    for (const a of advances) {
+      if (a.voided_at) continue;
+      const d = (byDay[a.advance_date] ||= { date: a.advance_date, count: 0, total: 0 });
+      d.count += 1;
+      d.total = round2(d.total + Number(a.amount));
+    }
+    return NextResponse.json({
+      from: hFrom,
+      to: hTo,
+      numbers: sellerNumbers(ledger, sid, hFrom, hTo),
+      advancesByDay: Object.values(byDay).sort((a, b) => (a.date < b.date ? 1 : -1)),
+      detail: {
+        sales: mine(ledger.sales, 'sale_date'),
+        advances,
+        payouts: mine(ledger.payouts, 'paid_date')
+      }
+    });
   }
 
   const period = ['day', 'week', 'month'].includes(searchParams.get('period')) ? searchParams.get('period') : 'day';
