@@ -177,7 +177,11 @@ export async function GET(req) {
     } catch {
       return fail(500, 'No se pudo cargar el historial.');
     }
-    const mine = (rows, key) => rows.filter((x) => x.seller_id === sid && inRange(x[key], hFrom, hTo)).reverse(); // mas nuevo primero
+    // Mas nuevo primero: por el dia del registro y, dentro del dia, por hora
+    // de carga (un vale de un dia anterior cargado hoy va en su dia).
+    const mine = (rows, key) => rows
+      .filter((x) => x.seller_id === sid && inRange(x[key], hFrom, hTo))
+      .sort((a, b) => (a[key] === b[key] ? (a.created_at < b.created_at ? 1 : -1) : (a[key] < b[key] ? 1 : -1)));
     const advances = mine(ledger.advances, 'advance_date');
     const byDay = {};
     for (const a of advances) {
