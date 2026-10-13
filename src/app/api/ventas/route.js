@@ -66,6 +66,19 @@ export async function GET(req) {
   if (denied) return denied;
 
   const { searchParams } = new URL(req.url);
+
+  // Lista completa de vendedoras (activas y dadas de baja) para el panel.
+  if (searchParams.get('list') === 'sellers') {
+    const { data, error } = await db
+      .from('staff')
+      .select('id, name, active, created_at')
+      .eq('role', 'vendedora')
+      .order('active', { ascending: false })
+      .order('name');
+    if (error) return fail(500, 'No se pudieron cargar las vendedoras.');
+    return NextResponse.json({ sellers: data || [] });
+  }
+
   const period = ['day', 'week', 'month'].includes(searchParams.get('period')) ? searchParams.get('period') : 'day';
   const date = isDate(searchParams.get('date')) ? searchParams.get('date') : todayAR();
   const sellerId = searchParams.get('sellerId');
@@ -130,6 +143,7 @@ export async function GET(req) {
 
 // POST { action, ... }
 //   addSeller   { name }
+//   rename      { sellerId, name }
 //   setActive   { sellerId, active }
 //   addSale     { clientRef, sellerId, date, amount, method, note }
 //   addAdvance  { clientRef, sellerId, date, amount, note }
@@ -157,6 +171,15 @@ export async function POST(req) {
       const { data, error } = await db.from('staff').insert({ name, role: 'vendedora' }).select('id, name, active').single();
       if (error) return fail(500, 'No se pudo agregar.');
       return NextResponse.json({ seller: data });
+    }
+
+    case 'rename': {
+      if (!(await assertSeller(body.sellerId))) return fail(404, 'Vendedora no encontrada.');
+      const name = String(body.name || '').trim().slice(0, 80);
+      if (!name) return fail(400, 'Poné el nombre.');
+      const { error } = await db.from('staff').update({ name }).eq('id', body.sellerId);
+      if (error) return fail(500, 'No se pudo guardar.');
+      return NextResponse.json({ success: true });
     }
 
     case 'setActive': {

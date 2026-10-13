@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import { Users, Plus, Wallet, HandCoins, Loader2, LogOut, X, Download, CloudOff, ChevronLeft, ChevronRight, UserPlus, Save } from 'lucide-react';
+import { Users, Plus, Wallet, HandCoins, Loader2, LogOut, X, Download, CloudOff, ChevronLeft, ChevronRight, Save } from 'lucide-react';
 import { supabase } from '@/lib/supabaseClient';
 import { adminFetch } from '@/lib/adminFetch';
 
@@ -277,7 +277,6 @@ export default function VentasPage() {
   const [pctDrafts, setPctDrafts] = useState({});
   const [entry, setEntry] = useState(null);   // { kind, seller }
   const [detailSeller, setDetailSeller] = useState(null);
-  const [newSeller, setNewSeller] = useState('');
   const [queueSize, setQueueSize] = useState(0);
   const [notice, setNotice] = useState('');
 
@@ -323,18 +322,6 @@ export default function VentasPage() {
     try {
       await api('POST', { action: 'setPct', sellerId: seller.id, date, pct });
       setPctDrafts((p) => { const c = { ...p }; delete c[seller.id]; return c; });
-      load();
-    } catch (err) {
-      window.alert(err.message);
-    }
-  };
-
-  const addSeller = async (e) => {
-    e.preventDefault();
-    if (!newSeller.trim()) return;
-    try {
-      await api('POST', { action: 'addSeller', name: newSeller });
-      setNewSeller('');
       load();
     } catch (err) {
       window.alert(err.message);
@@ -413,11 +400,21 @@ export default function VentasPage() {
 
             {/* Vendedoras */}
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '12px' }}>
-              {data.sellers.length === 0 && <p style={{ color: 'var(--text-muted)' }}>Todavía no hay vendedoras. Agregalas abajo.</p>}
+              {data.sellers.length === 0 && <p style={{ color: 'var(--text-muted)' }}>Todavía no hay vendedoras. Dalas de alta desde el panel de admin → Vendedoras.</p>}
               {data.sellers.map((s) => (
-                <div key={s.id} style={{ backgroundColor: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: '14px', padding: '14px', opacity: s.active ? 1 : 0.6 }}>
+                <div
+                  key={s.id}
+                  role={s.active ? 'button' : undefined}
+                  tabIndex={s.active ? 0 : undefined}
+                  aria-label={s.active ? `Cargar una venta de ${s.name}` : undefined}
+                  // Tocar la tarjeta abre la carga de una venta; los botones e
+                  // inputs de adentro frenan el click para no abrirla.
+                  onClick={() => s.active && setEntry({ kind: 'sale', seller: s })}
+                  onKeyDown={(e) => { if (s.active && (e.key === 'Enter' || e.key === ' ') && e.target === e.currentTarget) { e.preventDefault(); setEntry({ kind: 'sale', seller: s }); } }}
+                  style={{ backgroundColor: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: '14px', padding: '14px', opacity: s.active ? 1 : 0.6, cursor: s.active ? 'pointer' : 'default' }}
+                >
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: '8px' }}>
-                    <button type="button" onClick={() => setDetailSeller(s)} style={{ background: 'none', border: 'none', padding: 0, fontSize: '1.05rem', fontWeight: 900, cursor: 'pointer', color: 'var(--text-main)', textDecoration: 'underline' }}>{s.name}</button>
+                    <button type="button" onClick={(e) => { e.stopPropagation(); setDetailSeller(s); }} title="Ver historial" style={{ background: 'none', border: 'none', padding: 0, fontSize: '1.05rem', fontWeight: 900, cursor: 'pointer', color: 'var(--text-main)', textDecoration: 'underline' }}>{s.name}</button>
                     <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>{s.salesCount} venta{s.salesCount === 1 ? '' : 's'}</span>
                   </div>
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '4px 12px', fontSize: '0.86rem', marginBottom: '10px' }}>
@@ -431,7 +428,7 @@ export default function VentasPage() {
 
                   {/* % del dia */}
                   {period === 'day' && (
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '10px', fontSize: '0.82rem' }}>
+                    <div onClick={(e) => e.stopPropagation()} style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '10px', fontSize: '0.82rem', cursor: 'default' }}>
                       <span style={{ fontWeight: 700 }}>% comisión del día:</span>
                       <input
                         type="number" inputMode="decimal" min="0" max="100" step="0.5"
@@ -449,10 +446,10 @@ export default function VentasPage() {
 
                   {s.active && (
                     <div style={{ display: 'flex', gap: '8px' }}>
-                      <button type="button" onClick={() => setEntry({ kind: 'sale', seller: s })} className="btn-primary" style={{ flex: 1, justifyContent: 'center', display: 'inline-flex', alignItems: 'center', gap: '5px', padding: '8px' }}>
+                      <button type="button" onClick={(e) => { e.stopPropagation(); setEntry({ kind: 'sale', seller: s }); }} className="btn-primary" style={{ flex: 1, justifyContent: 'center', display: 'inline-flex', alignItems: 'center', gap: '5px', padding: '8px' }}>
                         <Plus size={15} /> Venta
                       </button>
-                      <button type="button" onClick={() => setEntry({ kind: 'advance', seller: s })} className="btn-secondary" style={{ flex: 1, justifyContent: 'center', display: 'inline-flex', alignItems: 'center', gap: '5px', padding: '8px' }}>
+                      <button type="button" onClick={(e) => { e.stopPropagation(); setEntry({ kind: 'advance', seller: s }); }} className="btn-secondary" style={{ flex: 1, justifyContent: 'center', display: 'inline-flex', alignItems: 'center', gap: '5px', padding: '8px' }}>
                         <HandCoins size={15} /> Vale
                       </button>
                     </div>
@@ -461,12 +458,11 @@ export default function VentasPage() {
               ))}
             </div>
 
-            <form onSubmit={addSeller} style={{ display: 'flex', gap: '8px', marginTop: '18px', maxWidth: '420px' }}>
-              <input value={newSeller} onChange={(e) => setNewSeller(e.target.value)} placeholder="Nombre de la nueva vendedora" className="form-input" style={{ flex: 1 }} />
-              <button type="submit" className="btn-secondary" style={{ display: 'inline-flex', alignItems: 'center', gap: '5px' }}><UserPlus size={15} /> Agregar</button>
-            </form>
+            <p style={{ fontSize: '0.8rem', marginTop: '18px' }}>
+              Para dar de alta o de baja vendedoras: <a href="/admin" style={{ fontWeight: 700, textDecoration: 'underline' }}>Panel de admin → Vendedoras</a>.
+            </p>
             <p style={{ fontSize: '0.76rem', color: 'var(--text-muted)', marginTop: '10px' }}>
-              <Wallet size={12} style={{ display: 'inline', verticalAlign: 'middle' }} /> “A pagar” = comisión − vales. La comisión de cada día se calcula con el % de ese día. Nada se borra: las ventas y vales se anulan con motivo desde el detalle (tocá el nombre).
+              <Wallet size={12} style={{ display: 'inline', verticalAlign: 'middle' }} /> “A pagar” = comisión − vales. La comisión de cada día se calcula con el % de ese día. Tocá la tarjeta de una vendedora para cargar una venta; tocá su nombre para ver el historial. Nada se borra: las ventas y vales se anulan con motivo desde el historial.
             </p>
           </>
         )}
