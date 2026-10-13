@@ -162,8 +162,10 @@ function SaveButton({ busy, amount, onSave, label = 'Guardar' }) {
 }
 
 // ---------------------------------------------------------------- Recibo
-async function openReceipt(payoutId) {
-  const win = window.open('', '_blank', 'width=420,height=700');
+// preOpened: ventana abierta en el momento del click. Si se abre despues de
+// esperar al servidor, Chrome la bloquea como ventana emergente.
+async function openReceipt(payoutId, preOpened = null) {
+  const win = preOpened || window.open('', '_blank', 'width=420,height=700');
   if (win) win.document.write('<p style="font-family:sans-serif;padding:20px">Armando el recibo…</p>');
   try {
     const r = await api('GET', null, `?payoutId=${payoutId}`);
@@ -296,6 +298,7 @@ function PayoutModal({ seller, data, onClose, onSaved }) {
     }
     setBusy(true);
     setError('');
+    const receiptWin = window.open('', '_blank', 'width=420,height=700');
     try {
       const { queued, data: res } = await sendOrQueue({
         action: 'addPayout',
@@ -310,8 +313,10 @@ function PayoutModal({ seller, data, onClose, onSaved }) {
       });
       onSaved(queued);
       onClose();
-      if (!queued && res?.payoutId) openReceipt(res.payoutId);
+      if (!queued && res?.payoutId) openReceipt(res.payoutId, receiptWin);
+      else if (receiptWin) receiptWin.close();
     } catch (err) {
+      if (receiptWin) receiptWin.close();
       setError(err.message);
     } finally {
       setBusy(false);
