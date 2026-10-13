@@ -2,10 +2,15 @@ import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { requireAdmin } from '@/lib/adminAuth';
 
-// /ventas (2026-10): ventas, comisiones y vales de las vendedoras. Solo
-// admin. Los totales se calculan aca, siempre desde los registros (nunca se
-// guardan totales que se puedan desfasar). Ventas y vales no se editan ni se
-// borran: se anulan con motivo (lo garantiza un trigger en la base).
+// /ventas (2026-10): ventas, comisiones, vales, liquidaciones y arqueo de
+// caja de las vendedoras. Solo admin. Los totales y saldos se calculan aca,
+// siempre desde los registros (nunca se guardan totales que se puedan
+// desfasar). Nada se edita ni se borra: se anula con motivo (lo garantiza
+// un trigger en la base).
+//
+//   Comision de un dia = ventas del dia x % vigente ese dia
+//   Saldo de una vendedora = comisiones - vales - pagos (todo, hasta la fecha)
+//   Efectivo esperado del dia = ventas en efectivo - vales en efectivo - pagos en efectivo
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://revrbrrzlnweuxwhpgei.supabase.co';
 const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -16,6 +21,7 @@ const isDate = (s) => /^\d{4}-\d{2}-\d{2}$/.test(String(s || ''));
 const todayAR = () => new Date().toLocaleString('sv-SE', { timeZone: 'America/Argentina/Buenos_Aires' }).slice(0, 10);
 const uuidRe = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const round2 = (n) => Math.round(n * 100) / 100;
+const METHODS = ['efectivo', 'transferencia'];
 
 // Fechas como 'YYYY-MM-DD' operadas en UTC (son dias calendario, sin hora).
 const addDays = (d, n) => {
@@ -40,6 +46,74 @@ function periodRange(period, date) {
   return { from: date, to: date };
 }
 
+// El periodo anterior equivalente (para comparar).
+function previousRange(period, from) {
+  if (period === 'month') {
+    const d = new Date(`${from}T00:00:00Z`);
+    d.setUTCMonth(d.getUTCMonth() - 1);
+    return periodRange('month', d.toISOString().slice(0, 10));
+  }
+  return periodRange(period, addDays(from, period === 'week' ? -7 : -1));
+}
+
+// % vigente de un dia: el ultimo cargado con fecha <= ese dia (rates viene
+// ordenado por fecha ascendente).
+function pctForDay(rates, sellerId, day) {
+  let pct = 0;
+  for (const r of rates) {
+    if (r.seller_id === sellerId && r.effective_date <= day) pct = Number(r.pct);
+  }
+  return pct;
+}
+
+const sum = (rows) => rows.reduce((t, x) => t + Number(x.amount), 0);
+const inRange = (d, from, to) => d >= from && d <= to;
+
+function commissionOf(sales, rates, sellerId) {
+  const byDay = {};
+  for (const x of sales) byDay[x.sale_date] = (byDay[x.sale_date] || 0) + Number(x.amount);
+  let total = 0;
+  for (const [day, amount] of Object.entries(byDay)) total += amount * pctForDay(rates, sellerId, day) / 100;
+  return total;
+}
+
+// Trae todo lo necesario hasta la fecha "to" (los volumenes son chicos).
+async function loadLedger(to) {
+  const [sales, advances, payouts, rates] = await Promise.all([
+    db.from('seller_sales').select('*').lte('sale_date', to).order('created_at', { ascending: true }),
+    db.from('seller_advances').select('*').lte('advance_date', to).order('created_at', { ascending: true }),
+    db.from('seller_payouts').select('*').lte('paid_date', to).order('created_at', { ascending: true }),
+    db.from('seller_commission_rates').select('seller_id, effective_date, pct').lte('effective_date', to).order('effective_date', { ascending: true })
+  ]);
+  if (sales.error || advances.error || payouts.error || rates.error) throw new Error('ledger');
+  return { sales: sales.data || [], advances: advances.data || [], payouts: payouts.data || [], rates: rates.data || [] };
+}
+
+// Numeros de una vendedora en un rango + su saldo acumulado hasta "to".
+function sellerNumbers(ledger, sellerId, from, to) {
+  const live = (rows) => rows.filter((x) => x.seller_id === sellerId && !x.voided_at);
+  const sales = live(ledger.sales);
+  const advances = live(ledger.advances);
+  const payouts = live(ledger.payouts);
+  const pSales = sales.filter((x) => inRange(x.sale_date, from, to));
+  const pAdv = advances.filter((x) => inRange(x.advance_date, from, to));
+  const pPay = payouts.filter((x) => inRange(x.paid_date, from, to));
+  const total = sum(pSales);
+  const cash = sum(pSales.filter((x) => x.payment_method === 'efectivo'));
+  const commission = commissionOf(pSales, ledger.rates, sellerId);
+  const balance = commissionOf(sales, ledger.rates, sellerId) - sum(advances) - sum(payouts);
+  return {
+    salesCount: pSales.length,
+    total: round2(total),
+    cash: round2(cash),
+    transfer: round2(total - cash),
+    commission: round2(commission),
+    advances: round2(sum(pAdv)),
+    paid: round2(sum(pPay)),
+    balance: round2(balance) // > 0: se le debe; < 0: debe ella (vales de mas)
+  };
+}
+
 async function getUserId(req) {
   const header = req.headers.get('authorization') || '';
   const token = header.toLowerCase().startsWith('bearer ') ? header.slice(7).trim() : '';
@@ -47,19 +121,10 @@ async function getUserId(req) {
   return data?.user?.id || null;
 }
 
-// % vigente de cada dia del rango para cada vendedora (el ultimo cargado con
-// fecha <= ese dia).
-function pctForDay(rates, sellerId, day) {
-  let pct = 0;
-  for (const r of rates) {
-    if (r.seller_id === sellerId && r.effective_date <= day) pct = Number(r.pct);
-  }
-  return pct; // rates viene ordenado por fecha ascendente
-}
-
-// GET ?period=day|week|month&date=YYYY-MM-DD[&sellerId=uuid]
-//   Sin sellerId: resumen de todas las vendedoras activas.
-//   Con sellerId: ademas, el detalle de ventas y vales del periodo.
+// GET
+//   ?list=sellers                         -> todas las vendedoras (panel)
+//   ?payoutId=N                           -> datos para el recibo de un pago
+//   ?period=day|week|month&date=YYYY-MM-DD[&sellerId=uuid]
 export async function GET(req) {
   if (!db) return fail(503, 'Servicio no disponible.');
   const denied = await requireAdmin(req, db);
@@ -67,7 +132,6 @@ export async function GET(req) {
 
   const { searchParams } = new URL(req.url);
 
-  // Lista completa de vendedoras (activas y dadas de baja) para el panel.
   if (searchParams.get('list') === 'sellers') {
     const { data, error } = await db
       .from('staff')
@@ -79,10 +143,31 @@ export async function GET(req) {
     return NextResponse.json({ sellers: data || [] });
   }
 
+  if (searchParams.get('payoutId')) {
+    const { data: payout } = await db.from('seller_payouts').select('*').eq('id', searchParams.get('payoutId')).maybeSingle();
+    if (!payout) return fail(404, 'No se encontró el pago.');
+    const { data: seller } = await db.from('staff').select('id, name').eq('id', payout.seller_id).maybeSingle();
+    try {
+      const ledger = await loadLedger(payout.paid_date > (payout.period_to || '') ? payout.paid_date : payout.period_to);
+      const from = payout.period_from || payout.paid_date;
+      const to = payout.period_to || payout.paid_date;
+      const numbers = sellerNumbers(ledger, payout.seller_id, from, to);
+      // Saldo justo despues de este pago (pagos/vales hasta ese momento).
+      const upTo = (rows, dateKey) => rows.filter((x) => x.seller_id === payout.seller_id && !x.voided_at && (x[dateKey] < payout.paid_date || (x[dateKey] === payout.paid_date && x.created_at <= payout.created_at)));
+      const salesUpTo = ledger.sales.filter((x) => x.seller_id === payout.seller_id && !x.voided_at && x.sale_date <= payout.paid_date);
+      const balanceAfter = commissionOf(salesUpTo, ledger.rates, payout.seller_id) - sum(upTo(ledger.advances, 'advance_date')) - sum(upTo(ledger.payouts, 'paid_date'));
+      const advancesList = ledger.advances.filter((x) => x.seller_id === payout.seller_id && !x.voided_at && inRange(x.advance_date, from, to));
+      return NextResponse.json({ payout, seller, from, to, numbers, advances: advancesList, balanceAfter: round2(balanceAfter) });
+    } catch {
+      return fail(500, 'No se pudo armar el recibo.');
+    }
+  }
+
   const period = ['day', 'week', 'month'].includes(searchParams.get('period')) ? searchParams.get('period') : 'day';
   const date = isDate(searchParams.get('date')) ? searchParams.get('date') : todayAR();
   const sellerId = searchParams.get('sellerId');
   const { from, to } = periodRange(period, date);
+  const prev = previousRange(period, from);
 
   const { data: sellers, error: sellersErr } = await db
     .from('staff')
@@ -91,64 +176,76 @@ export async function GET(req) {
     .order('name');
   if (sellersErr) return fail(500, 'No se pudieron cargar las vendedoras.');
 
-  const [salesRes, advRes, ratesRes] = await Promise.all([
-    db.from('seller_sales').select('*').gte('sale_date', from).lte('sale_date', to).order('created_at', { ascending: true }),
-    db.from('seller_advances').select('*').gte('advance_date', from).lte('advance_date', to).order('created_at', { ascending: true }),
-    db.from('seller_commission_rates').select('seller_id, effective_date, pct').lte('effective_date', to).order('effective_date', { ascending: true })
-  ]);
-  if (salesRes.error || advRes.error || ratesRes.error) return fail(500, 'No se pudieron cargar las ventas.');
+  let ledger;
+  try {
+    ledger = await loadLedger(to);
+  } catch {
+    return fail(500, 'No se pudieron cargar las ventas.');
+  }
 
-  const sales = salesRes.data || [];
-  const advances = advRes.data || [];
-  const rates = ratesRes.data || [];
-
+  const touched = (id) => [ledger.sales, ledger.advances, ledger.payouts].some((rows) => rows.some((x) => x.seller_id === id && !x.voided_at));
   const summary = (sellers || [])
-    .filter((s) => s.active || sales.some((x) => x.seller_id === s.id) || advances.some((x) => x.seller_id === s.id))
+    .filter((s) => s.active || touched(s.id))
     .map((s) => {
-      const mySales = sales.filter((x) => x.seller_id === s.id && !x.voided_at);
-      const myAdv = advances.filter((x) => x.seller_id === s.id && !x.voided_at);
-      // Comision dia por dia, con el % vigente de cada dia.
-      const byDay = {};
-      for (const x of mySales) byDay[x.sale_date] = (byDay[x.sale_date] || 0) + Number(x.amount);
-      let commission = 0;
-      for (const [day, amount] of Object.entries(byDay)) commission += amount * pctForDay(rates, s.id, day) / 100;
-      const total = mySales.reduce((t, x) => t + Number(x.amount), 0);
-      const cash = mySales.filter((x) => x.payment_method === 'efectivo').reduce((t, x) => t + Number(x.amount), 0);
-      const advTotal = myAdv.reduce((t, x) => t + Number(x.amount), 0);
+      const n = sellerNumbers(ledger, s.id, from, to);
+      const prevSales = ledger.sales.filter((x) => x.seller_id === s.id && !x.voided_at && inRange(x.sale_date, prev.from, prev.to));
       return {
         id: s.id,
         name: s.name,
         active: s.active,
-        pct: pctForDay(rates, s.id, to),          // % vigente al ultimo dia del periodo
-        pctSetToday: rates.some((r) => r.seller_id === s.id && r.effective_date === to),
-        salesCount: mySales.length,
-        total: round2(total),
-        cash: round2(cash),
-        transfer: round2(total - cash),
-        commission: round2(commission),
-        advances: round2(advTotal),
-        toPay: round2(commission - advTotal)
+        pct: pctForDay(ledger.rates, s.id, to), // % vigente al ultimo dia del periodo
+        pctSetToday: ledger.rates.some((r) => r.seller_id === s.id && r.effective_date === to),
+        prevTotal: round2(sum(prevSales)),
+        ...n
       };
     });
 
-  const body = { period, date, from, to, sellers: summary };
+  // Caja del dia (solo en la vista Dia): efectivo esperado y ultimo arqueo.
+  let cash = null;
+  if (period === 'day') {
+    const live = (rows, key) => rows.filter((x) => !x.voided_at && x[key] === date && x.payment_method === 'efectivo');
+    const salesCash = sum(live(ledger.sales, 'sale_date'));
+    const advCash = sum(live(ledger.advances, 'advance_date'));
+    const payCash = sum(live(ledger.payouts, 'paid_date'));
+    const { data: counts } = await db.from('cash_counts').select('*').eq('count_date', date).is('voided_at', null).order('created_at', { ascending: false }).limit(1);
+    cash = {
+      salesCash: round2(salesCash),
+      advancesCash: round2(advCash),
+      payoutsCash: round2(payCash),
+      expected: round2(salesCash - advCash - payCash),
+      lastCount: counts?.[0] || null
+    };
+  }
+
+  const body = { period, date, from, to, prev, sellers: summary, cash };
   if (sellerId) {
+    const mine = (rows, key) => rows.filter((x) => x.seller_id === sellerId && inRange(x[key], from, to));
     body.detail = {
-      sales: sales.filter((x) => x.seller_id === sellerId),
-      advances: advances.filter((x) => x.seller_id === sellerId)
+      sales: mine(ledger.sales, 'sale_date'),
+      advances: mine(ledger.advances, 'advance_date'),
+      payouts: mine(ledger.payouts, 'paid_date')
     };
   }
   return NextResponse.json(body);
 }
 
+// Montos en pesos enteros (sin puntos ni comas: el "1.500" se confundia).
+function parseAmount(v, { allowZero = false } = {}) {
+  const n = Number(v);
+  if (!Number.isInteger(n) || n < (allowZero ? 0 : 1) || n > 1000000000) return null;
+  return n;
+}
+
 // POST { action, ... }
-//   addSeller   { name }
-//   rename      { sellerId, name }
-//   setActive   { sellerId, active }
-//   addSale     { clientRef, sellerId, date, amount, method, note }
-//   addAdvance  { clientRef, sellerId, date, amount, note }
-//   setPct      { sellerId, date, pct }
-//   void        { kind: 'sale' | 'advance', id, reason }
+//   addSeller    { name }
+//   rename       { sellerId, name }
+//   setActive    { sellerId, active }
+//   addSale      { clientRef, sellerId, date, amount, method, note }
+//   addAdvance   { clientRef, sellerId, date, amount, method, note }
+//   addPayout    { clientRef, sellerId, date, amount, method, periodFrom, periodTo, note }
+//   addCashCount { clientRef, date, openingFloat, counted, note }
+//   setPct       { sellerId, date, pct }
+//   void         { kind: 'sale' | 'advance' | 'payout' | 'cashcount', id, reason }
 export async function POST(req) {
   if (!db) return fail(503, 'Servicio no disponible.');
   const denied = await requireAdmin(req, db);
@@ -157,6 +254,8 @@ export async function POST(req) {
   const body = await req.json().catch(() => ({}));
   const userId = await getUserId(req);
   const note = String(body.note ?? '').trim().slice(0, 300) || null;
+  const today = todayAR();
+  const dateOk = (d) => (isDate(d) ? d : today);
 
   const assertSeller = async (id) => {
     if (!uuidRe.test(String(id || ''))) return null;
@@ -190,34 +289,72 @@ export async function POST(req) {
     }
 
     case 'addSale':
-    case 'addAdvance': {
+    case 'addAdvance':
+    case 'addPayout': {
       if (!uuidRe.test(String(body.clientRef || ''))) return fail(400, 'Falta la referencia del registro.');
       if (!(await assertSeller(body.sellerId))) return fail(404, 'Vendedora no encontrada.');
-      const amount = round2(Number(body.amount));
-      if (!Number.isFinite(amount) || amount <= 0 || amount > 100000000) return fail(400, 'Poné un monto válido.');
-      const date = isDate(body.date) ? body.date : todayAR();
-      if (date > addDays(todayAR(), 1)) return fail(400, 'La fecha no puede ser futura.');
+      const amount = parseAmount(body.amount);
+      if (amount === null) return fail(400, 'Poné el monto en pesos, sin puntos ni comas (ej: 15000).');
+      if (!METHODS.includes(body.method)) return fail(400, 'Elegí efectivo o transferencia.');
+      const date = dateOk(body.date);
+      if (date > addDays(today, 1)) return fail(400, 'La fecha no puede ser futura.');
 
-      const isSale = body.action === 'addSale';
-      if (isSale && !['efectivo', 'transferencia'].includes(body.method)) return fail(400, 'Elegí efectivo o transferencia.');
-      const table = isSale ? 'seller_sales' : 'seller_advances';
-      const row = isSale
-        ? { client_ref: body.clientRef, seller_id: body.sellerId, sale_date: date, amount, payment_method: body.method, note, created_by: userId }
-        : { client_ref: body.clientRef, seller_id: body.sellerId, advance_date: date, amount, note, created_by: userId };
+      let table;
+      let row;
+      if (body.action === 'addSale') {
+        table = 'seller_sales';
+        row = { sale_date: date, payment_method: body.method };
+      } else if (body.action === 'addAdvance') {
+        table = 'seller_advances';
+        row = { advance_date: date, payment_method: body.method };
+      } else {
+        table = 'seller_payouts';
+        row = {
+          paid_date: date,
+          payment_method: body.method,
+          period_from: isDate(body.periodFrom) ? body.periodFrom : null,
+          period_to: isDate(body.periodTo) ? body.periodTo : null
+        };
+      }
+      Object.assign(row, { client_ref: body.clientRef, seller_id: body.sellerId, amount, note, created_by: userId });
 
       // Idempotente: si ese clientRef ya se guardo (reintento), no se duplica.
       const { error } = await db.from(table).upsert(row, { onConflict: 'client_ref', ignoreDuplicates: true });
       if (error) return fail(500, 'No se pudo guardar.');
+      if (body.action === 'addPayout') {
+        const { data: saved } = await db.from('seller_payouts').select('id').eq('client_ref', body.clientRef).maybeSingle();
+        return NextResponse.json({ success: true, payoutId: saved?.id || null });
+      }
       return NextResponse.json({ success: true });
+    }
+
+    case 'addCashCount': {
+      if (!uuidRe.test(String(body.clientRef || ''))) return fail(400, 'Falta la referencia del registro.');
+      const counted = parseAmount(body.counted, { allowZero: true });
+      const opening = parseAmount(body.openingFloat ?? 0, { allowZero: true });
+      if (counted === null || opening === null) return fail(400, 'Poné los montos en pesos, sin puntos ni comas.');
+      const date = dateOk(body.date);
+      // El esperado lo calcula el servidor (no se confia en el navegador).
+      const live = async (table, key) => {
+        const { data } = await db.from(table).select('amount').eq(key, date).eq('payment_method', 'efectivo').is('voided_at', null);
+        return sum(data || []);
+      };
+      const movement = (await live('seller_sales', 'sale_date')) - (await live('seller_advances', 'advance_date')) - (await live('seller_payouts', 'paid_date'));
+      const expected = round2(opening + movement);
+      const difference = round2(counted - expected);
+      const { error } = await db.from('cash_counts').upsert({
+        client_ref: body.clientRef, count_date: date, opening_float: opening, counted, expected, difference, note, created_by: userId
+      }, { onConflict: 'client_ref', ignoreDuplicates: true });
+      if (error) return fail(500, 'No se pudo guardar el arqueo.');
+      return NextResponse.json({ success: true, expected, difference });
     }
 
     case 'setPct': {
       if (!(await assertSeller(body.sellerId))) return fail(404, 'Vendedora no encontrada.');
       const pct = Number(body.pct);
       if (!Number.isFinite(pct) || pct < 0 || pct > 100) return fail(400, 'El % tiene que estar entre 0 y 100.');
-      const date = isDate(body.date) ? body.date : todayAR();
       const { error } = await db.from('seller_commission_rates').upsert(
-        { seller_id: body.sellerId, effective_date: date, pct: round2(pct), set_at: new Date().toISOString(), set_by: userId },
+        { seller_id: body.sellerId, effective_date: dateOk(body.date), pct: round2(pct), set_at: new Date().toISOString(), set_by: userId },
         { onConflict: 'seller_id,effective_date' }
       );
       if (error) return fail(500, 'No se pudo guardar el %.');
@@ -225,7 +362,8 @@ export async function POST(req) {
     }
 
     case 'void': {
-      const table = body.kind === 'advance' ? 'seller_advances' : 'seller_sales';
+      const table = { sale: 'seller_sales', advance: 'seller_advances', payout: 'seller_payouts', cashcount: 'cash_counts' }[body.kind];
+      if (!table) return fail(400, 'Tipo inválido.');
       const reason = String(body.reason || '').trim().slice(0, 300);
       if (!reason) return fail(400, 'Indicá el motivo de la anulación.');
       const { data, error } = await db

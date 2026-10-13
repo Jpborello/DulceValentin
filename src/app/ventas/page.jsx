@@ -1,16 +1,17 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import { Users, Plus, Wallet, HandCoins, Loader2, LogOut, X, Download, CloudOff, ChevronLeft, ChevronRight, Save } from 'lucide-react';
+import { Users, Plus, Wallet, HandCoins, Loader2, LogOut, X, Download, CloudOff, ChevronLeft, ChevronRight, Save, Banknote, Receipt, Calculator, Trophy, TrendingUp, TrendingDown } from 'lucide-react';
 import { supabase } from '@/lib/supabaseClient';
 import { adminFetch } from '@/lib/adminFetch';
 
-// /ventas (2026-10): ventas, comisiones y vales de las vendedoras. Solo la
-// dueña (admin). Ventas y vales se anulan con motivo, nunca se borran. Si se
-// corta internet, lo cargado queda en una cola en este navegador y se manda
-// solo cuando vuelve la conexion (con un id propio, asi nunca se duplica).
+// /ventas (2026-10): ventas, comisiones, vales, liquidaciones y arqueo de
+// caja de las vendedoras. Solo la dueña (admin). Nada se borra: se anula con
+// motivo. Si se corta internet, lo cargado queda en una cola en este
+// navegador y se manda solo cuando vuelve la conexion (con un id propio, asi
+// nunca se duplica).
 
-const money = (n) => `$${Number(n || 0).toLocaleString('es-AR', { maximumFractionDigits: 2 })}`;
+const money = (n) => `${Number(n) < 0 ? '−' : ''}$${Math.abs(Number(n || 0)).toLocaleString('es-AR', { maximumFractionDigits: 2 })}`;
 const todayAR = () => new Date().toLocaleString('sv-SE', { timeZone: 'America/Argentina/Buenos_Aires' }).slice(0, 10);
 const fmtDate = (d) => new Date(`${d}T12:00:00`).toLocaleDateString('es-AR', { weekday: 'short', day: 'numeric', month: 'short' });
 const shiftDate = (d, period, dir) => {
@@ -20,7 +21,9 @@ const shiftDate = (d, period, dir) => {
   return t.toISOString().slice(0, 10);
 };
 const PERIODS = { day: 'Día', week: 'Semana', month: 'Mes' };
+const METHOD_LABEL = { efectivo: 'Efectivo', transferencia: 'Transferencia' };
 const QUEUE_KEY = 'dv_ventas_queue';
+const BIG_AMOUNT = 1000000; // por encima de esto se pide confirmar
 
 const readQueue = () => {
   try { return JSON.parse(localStorage.getItem(QUEUE_KEY) || '[]'); } catch { return []; }
@@ -44,11 +47,10 @@ async function api(method, body, query = '') {
   return data;
 }
 
-// Manda un alta (venta o vale); si no hay conexion la deja en cola.
+// Manda un alta; si no hay conexion la deja en cola.
 async function sendOrQueue(payload) {
   try {
-    await api('POST', payload);
-    return { queued: false };
+    return { queued: false, data: await api('POST', payload) };
   } catch (err) {
     if (err.status) throw err; // el servidor contesto con un error: no se encola
     writeQueue([...readQueue(), payload]);
@@ -65,7 +67,6 @@ async function flushQueue() {
       await api('POST', item);
     } catch (err) {
       if (!err.status) remaining.push(item); // sigue sin conexion
-      // si el servidor lo rechazo (ej. dato invalido) se descarta para no trabar la cola
     }
   }
   writeQueue(remaining);
@@ -73,8 +74,8 @@ async function flushQueue() {
 }
 
 function exportCsv(data) {
-  const rows = [['Vendedora', 'Ventas', 'Total', 'Efectivo', 'Transferencia', '% comisión', 'Comisión', 'Vales', 'A pagar']];
-  data.sellers.forEach((s) => rows.push([s.name, s.salesCount, s.total, s.cash, s.transfer, s.pct, s.commission, s.advances, s.toPay]));
+  const rows = [['Vendedora', 'Ventas', 'Total', 'Efectivo', 'Transferencia', '% comisión', 'Comisión', 'Vales', 'Pagado', 'Saldo pendiente']];
+  data.sellers.forEach((s) => rows.push([s.name, s.salesCount, s.total, s.cash, s.transfer, s.pct, s.commission, s.advances, s.paid, s.balance]));
   const csv = rows.map((r) => r.map((v) => `"${String(v).replace(/"/g, '""')}"`).join(';')).join('\n');
   const blob = new Blob([`﻿${csv}`], { type: 'text/csv;charset=utf-8' });
   const a = document.createElement('a');
@@ -82,6 +83,123 @@ function exportCsv(data) {
   a.download = `ventas_${data.from}_a_${data.to}.csv`;
   a.click();
   URL.revokeObjectURL(a.href);
+}
+
+// ---------------------------------------------------------------- Monto entero
+// Solo digitos: "1.500" o "1,5" se confundian (Mica quedo con $1.000.001,5).
+function AmountInput({ value, onChange, placeholder = 'Monto', autoFocus = false, label }) {
+  const raw = String(value ?? '');
+  const hasSeparator = /[.,\s]/.test(raw);
+  const invalid = raw !== '' && !/^\d+$/.test(raw);
+  const parsed = /^\d+$/.test(raw) ? Number(raw) : null;
+  return (
+    <div style={{ marginBottom: '10px' }}>
+      {label && <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 700, color: 'var(--text-muted)', marginBottom: '4px' }}>{label}</label>}
+      <input
+        type="text"
+        inputMode="numeric"
+        autoComplete="off"
+        autoFocus={autoFocus}
+        value={raw}
+        onChange={(e) => onChange(e.target.value.trim())}
+        placeholder={placeholder}
+        className="form-input"
+        style={{ width: '100%', fontSize: '1.25rem', fontWeight: 800, borderColor: invalid ? '#DC2626' : undefined }}
+      />
+      <div style={{ fontSize: '0.76rem', marginTop: '3px', fontWeight: 600, color: invalid ? '#B91C1C' : 'var(--text-muted)' }}>
+        {invalid
+          ? (hasSeparator ? '⚠️ Escribí el número entero, sin puntos ni comas. Ej: 15000' : '⚠️ Solo números.')
+          : parsed !== null ? `= ${money(parsed)}` : 'Número entero, sin puntos ni comas. Ej: 15000'}
+      </div>
+    </div>
+  );
+}
+const amountOk = (v) => /^\d+$/.test(String(v ?? '')) && Number(v) > 0;
+
+function MethodToggle({ value, onChange }) {
+  return (
+    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginBottom: '10px' }}>
+      {Object.entries(METHOD_LABEL).map(([id, label]) => (
+        <button key={id} type="button" onClick={() => onChange(id)}
+          style={{ padding: '10px', borderRadius: '10px', fontWeight: 800, cursor: 'pointer', border: value === id ? '2px solid var(--text-main)' : '1px solid var(--border-color)', backgroundColor: value === id ? 'var(--text-main)' : 'var(--bg-card)', color: value === id ? 'var(--bg-page)' : 'var(--text-main)' }}>
+          {label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function Modal({ title, subtitle, onClose, children, maxWidth = '400px' }) {
+  return (
+    <div className="modal-backdrop active" onClick={onClose}>
+      <div className="modal-box" style={{ maxWidth, maxHeight: '90vh', overflowY: 'auto' }} onClick={(e) => e.stopPropagation()}>
+        <button type="button" onClick={onClose} className="qty-btn" style={{ position: 'absolute', top: '14px', right: '14px' }} aria-label="Cerrar"><X size={18} /></button>
+        <h3 style={{ fontSize: '1.1rem', fontWeight: 800, marginBottom: '2px' }}>{title}</h3>
+        {subtitle && <p style={{ fontSize: '0.84rem', color: 'var(--text-muted)', marginBottom: '14px' }}>{subtitle}</p>}
+        {children}
+      </div>
+    </div>
+  );
+}
+
+// Boton de guardar con confirmacion en dos pasos para montos muy altos.
+function SaveButton({ busy, amount, onSave, label = 'Guardar' }) {
+  const [confirming, setConfirming] = useState(false);
+  useEffect(() => { setConfirming(false); }, [amount]);
+  const big = Number(amount) > BIG_AMOUNT;
+  return (
+    <>
+      {confirming && (
+        <div role="alert" style={{ fontSize: '0.84rem', fontWeight: 700, color: '#92400E', backgroundColor: '#FFFBEB', border: '1px solid #FDE68A', borderRadius: '8px', padding: '8px 10px', marginBottom: '8px' }}>
+          ¿Seguro que son {money(amount)}? Tocá de nuevo para confirmar.
+        </div>
+      )}
+      <button type="button" disabled={busy} onClick={() => { if (big && !confirming) { setConfirming(true); return; } onSave(); }} className="btn-primary" style={{ width: '100%', justifyContent: 'center', padding: '11px', display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+        {busy ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />} {confirming ? 'Sí, guardar' : label}
+      </button>
+    </>
+  );
+}
+
+// ---------------------------------------------------------------- Recibo
+async function openReceipt(payoutId) {
+  const win = window.open('', '_blank', 'width=420,height=700');
+  if (win) win.document.write('<p style="font-family:sans-serif;padding:20px">Armando el recibo…</p>');
+  try {
+    const r = await api('GET', null, `?payoutId=${payoutId}`);
+    const n = r.numbers;
+    const period = r.from === r.to ? fmtDate(r.from) : `${fmtDate(r.from)} al ${fmtDate(r.to)}`;
+    const lines = [
+      `RECIBO DE PAGO — Dulce Valentín`,
+      `Vendedora: ${r.seller?.name || ''}`,
+      `Fecha de pago: ${fmtDate(r.payout.paid_date)}`,
+      `Período: ${period}`,
+      ``,
+      `Ventas: ${n.salesCount} — ${money(n.total)} (efectivo ${money(n.cash)} / transferencia ${money(n.transfer)})`,
+      `Comisión del período: ${money(n.commission)}`,
+      `Vales del período: ${money(n.advances)}`,
+      ...(r.advances || []).map((a) => `   • ${fmtDate(a.advance_date)}: ${money(a.amount)}${a.note ? ` (${a.note})` : ''}`),
+      ``,
+      `PAGADO: ${money(r.payout.amount)} en ${METHOD_LABEL[r.payout.payment_method] || r.payout.payment_method}${r.payout.note ? ` — ${r.payout.note}` : ''}`,
+      `Saldo después de este pago: ${money(r.balanceAfter)}${r.balanceAfter < 0 ? ' (a descontar)' : r.balanceAfter > 0 ? ' (pendiente)' : ''}`,
+      r.payout.voided_at ? `*** PAGO ANULADO: ${r.payout.void_reason} ***` : ''
+    ].filter((l) => l !== null);
+    const text = lines.join('\n');
+    const esc = (s) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;');
+    if (!win) return;
+    win.document.open();
+    win.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>Recibo ${esc(r.seller?.name || '')}</title>
+<style>body{font-family:Arial,sans-serif;max-width:380px;margin:16px auto;padding:0 12px;color:#000}pre{white-space:pre-wrap;font-family:inherit;font-size:14px;line-height:1.5}
+.btns{display:flex;gap:8px;margin:14px 0}.btns a,.btns button{flex:1;padding:10px;border-radius:8px;border:none;font-weight:bold;font-size:14px;cursor:pointer;text-align:center;text-decoration:none}
+.p{background:#111;color:#fff}.w{background:#25D366;color:#fff}.f{margin-top:30px;border-top:1px solid #000;padding-top:6px;font-size:12px}@media print{.btns{display:none}}</style></head><body>
+<pre>${esc(text)}</pre><div class="f">Firma vendedora</div>
+<div class="btns"><button class="p" onclick="window.print()">Imprimir</button><a class="w" target="_blank" href="https://wa.me/?text=${encodeURIComponent(text)}">Enviar por WhatsApp</a></div>
+</body></html>`);
+    win.document.close();
+  } catch (err) {
+    if (win) win.close();
+    window.alert(err.message);
+  }
 }
 
 // ---------------------------------------------------------------- Login
@@ -115,7 +233,7 @@ function Login({ onLogged }) {
   );
 }
 
-// ---------------------------------------------------------------- Alta de venta / vale
+// ---------------------------------------------------------------- Venta / vale
 function EntryModal({ kind, seller, date, onClose, onSaved }) {
   const [amount, setAmount] = useState('');
   const [method, setMethod] = useState('efectivo');
@@ -124,26 +242,23 @@ function EntryModal({ kind, seller, date, onClose, onSaved }) {
   const [error, setError] = useState('');
   const isSale = kind === 'sale';
 
-  const save = async (e) => {
-    e.preventDefault();
-    const value = Number(String(amount).replace(',', '.'));
-    if (!Number.isFinite(value) || value <= 0) {
-      setError('Poné un monto válido.');
+  const save = async () => {
+    if (!amountOk(amount)) {
+      setError('Poné el monto en pesos, sin puntos ni comas (ej: 15000).');
       return;
     }
     setBusy(true);
     setError('');
     try {
-      const payload = {
+      const { queued } = await sendOrQueue({
         action: isSale ? 'addSale' : 'addAdvance',
         clientRef: crypto.randomUUID(),
         sellerId: seller.id,
         date,
-        amount: value,
-        note,
-        ...(isSale ? { method } : {})
-      };
-      const { queued } = await sendOrQueue(payload);
+        amount: Number(amount),
+        method,
+        note
+      });
       onSaved(queued);
       onClose();
     } catch (err) {
@@ -154,33 +269,147 @@ function EntryModal({ kind, seller, date, onClose, onSaved }) {
   };
 
   return (
-    <div className="modal-backdrop active" onClick={onClose}>
-      <form className="modal-box" style={{ maxWidth: '380px' }} onClick={(e) => e.stopPropagation()} onSubmit={save}>
-        <button type="button" onClick={onClose} className="qty-btn" style={{ position: 'absolute', top: '14px', right: '14px' }}><X size={18} /></button>
-        <h3 style={{ fontSize: '1.1rem', fontWeight: 800, marginBottom: '2px' }}>{isSale ? 'Nueva venta' : 'Nuevo vale / adelanto'}</h3>
-        <p style={{ fontSize: '0.84rem', color: 'var(--text-muted)', marginBottom: '14px' }}>{seller.name} · {fmtDate(date)}</p>
-        <input type="number" inputMode="decimal" min="0" step="0.01" autoFocus value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="Monto $" className="form-input" style={{ width: '100%', fontSize: '1.3rem', fontWeight: 800, marginBottom: '10px' }} />
-        {isSale && (
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginBottom: '10px' }}>
-            {[['efectivo', 'Efectivo'], ['transferencia', 'Transferencia']].map(([id, label]) => (
-              <button key={id} type="button" onClick={() => setMethod(id)}
-                style={{ padding: '10px', borderRadius: '10px', fontWeight: 800, cursor: 'pointer', border: method === id ? '2px solid var(--text-main)' : '1px solid var(--border-color)', backgroundColor: method === id ? 'var(--text-main)' : 'var(--bg-card)', color: method === id ? 'var(--bg-page)' : 'var(--text-main)' }}>
-                {label}
-              </button>
-            ))}
-          </div>
-        )}
-        <input value={note} onChange={(e) => setNote(e.target.value)} placeholder={isSale ? 'Nota (opcional)' : 'Motivo (opcional)'} className="form-input" style={{ width: '100%', marginBottom: '12px' }} />
-        {error && <div role="alert" style={{ color: '#B91C1C', fontSize: '0.84rem', fontWeight: 600, marginBottom: '10px' }}>{error}</div>}
-        <button type="submit" disabled={busy} className="btn-primary" style={{ width: '100%', justifyContent: 'center', padding: '11px', display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
-          {busy ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />} Guardar
-        </button>
-      </form>
-    </div>
+    <Modal title={isSale ? 'Nueva venta' : 'Nuevo vale / adelanto'} subtitle={`${seller.name} · ${fmtDate(date)}`} onClose={onClose}>
+      <AmountInput value={amount} onChange={setAmount} placeholder="Monto $" autoFocus />
+      {!isSale && <div style={{ fontSize: '0.78rem', fontWeight: 700, color: 'var(--text-muted)', marginBottom: '4px' }}>¿Cómo se le dio?</div>}
+      <MethodToggle value={method} onChange={setMethod} />
+      <input value={note} onChange={(e) => setNote(e.target.value)} placeholder={isSale ? 'Nota (opcional)' : 'Motivo (opcional)'} className="form-input" style={{ width: '100%', marginBottom: '12px' }} />
+      {error && <div role="alert" style={{ color: '#B91C1C', fontSize: '0.84rem', fontWeight: 600, marginBottom: '10px' }}>{error}</div>}
+      <SaveButton busy={busy} amount={amount} onSave={save} />
+    </Modal>
   );
 }
 
-// ---------------------------------------------------------------- Detalle de una vendedora
+// ---------------------------------------------------------------- Liquidar
+function PayoutModal({ seller, data, onClose, onSaved }) {
+  const suggested = Math.max(0, Math.round(seller.balance));
+  const [amount, setAmount] = useState(suggested > 0 ? String(suggested) : '');
+  const [method, setMethod] = useState('efectivo');
+  const [note, setNote] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+
+  const save = async () => {
+    if (!amountOk(amount)) {
+      setError('Poné el monto en pesos, sin puntos ni comas (ej: 15000).');
+      return;
+    }
+    setBusy(true);
+    setError('');
+    try {
+      const { queued, data: res } = await sendOrQueue({
+        action: 'addPayout',
+        clientRef: crypto.randomUUID(),
+        sellerId: seller.id,
+        date: data.to > todayAR() ? todayAR() : data.to,
+        amount: Number(amount),
+        method,
+        periodFrom: data.from,
+        periodTo: data.to,
+        note
+      });
+      onSaved(queued);
+      onClose();
+      if (!queued && res?.payoutId) openReceipt(res.payoutId);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const rest = amountOk(amount) ? seller.balance - Number(amount) : seller.balance;
+  return (
+    <Modal title={`Liquidar a ${seller.name}`} subtitle={`Período ${data.from === data.to ? fmtDate(data.from) : `${fmtDate(data.from)} al ${fmtDate(data.to)}`}`} onClose={onClose}>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: '3px 12px', fontSize: '0.86rem', marginBottom: '12px', padding: '10px', borderRadius: '10px', backgroundColor: 'var(--bg-surface-elevated)' }}>
+        <span>Comisión del período</span><strong>{money(seller.commission)}</strong>
+        <span>Vales del período</span><span>− {money(seller.advances)}</span>
+        <span>Ya pagado en el período</span><span>− {money(seller.paid)}</span>
+        <span style={{ fontWeight: 800 }}>Saldo pendiente (acumulado)</span><strong>{money(seller.balance)}</strong>
+      </div>
+      {seller.balance <= 0 && (
+        <div style={{ fontSize: '0.8rem', fontWeight: 700, color: '#92400E', marginBottom: '10px' }}>
+          {seller.balance < 0 ? `Tiene vales por encima de la comisión: debe ${money(-seller.balance)}, que se descuenta de lo próximo.` : 'No tiene saldo pendiente.'}
+        </div>
+      )}
+      <AmountInput value={amount} onChange={setAmount} label="Monto que le pagás" autoFocus />
+      <MethodToggle value={method} onChange={setMethod} />
+      <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="Nota (opcional)" className="form-input" style={{ width: '100%', marginBottom: '8px' }} />
+      <div style={{ fontSize: '0.8rem', marginBottom: '10px' }}>Saldo después del pago: <strong>{money(rest)}</strong></div>
+      {error && <div role="alert" style={{ color: '#B91C1C', fontSize: '0.84rem', fontWeight: 600, marginBottom: '10px' }}>{error}</div>}
+      <SaveButton busy={busy} amount={amount} onSave={save} label="Registrar pago y ver recibo" />
+    </Modal>
+  );
+}
+
+// ---------------------------------------------------------------- Arqueo
+function CashCountModal({ date, cash, onClose, onSaved }) {
+  const [opening, setOpening] = useState(cash.lastCount ? String(Math.round(cash.lastCount.opening_float)) : '0');
+  const [counted, setCounted] = useState('');
+  const [note, setNote] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const [result, setResult] = useState(null);
+
+  const okOpening = /^\d+$/.test(opening);
+  const expected = (okOpening ? Number(opening) : 0) + cash.expected;
+  const diff = /^\d+$/.test(counted) ? Number(counted) - expected : null;
+
+  const save = async () => {
+    if (!okOpening || !/^\d+$/.test(counted)) {
+      setError('Poné los montos en pesos, sin puntos ni comas.');
+      return;
+    }
+    setBusy(true);
+    setError('');
+    try {
+      const { queued, data: res } = await sendOrQueue({ action: 'addCashCount', clientRef: crypto.randomUUID(), date, openingFloat: Number(opening), counted: Number(counted), note });
+      if (queued) {
+        onSaved(true);
+        onClose();
+      } else {
+        setResult(res);
+        onSaved(false);
+      }
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Modal title="Arqueo de caja" subtitle={fmtDate(date)} onClose={onClose}>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: '3px 12px', fontSize: '0.86rem', marginBottom: '12px', padding: '10px', borderRadius: '10px', backgroundColor: 'var(--bg-surface-elevated)' }}>
+        <span>Ventas en efectivo</span><strong>{money(cash.salesCash)}</strong>
+        <span>Vales en efectivo</span><span>− {money(cash.advancesCash)}</span>
+        <span>Pagos a vendedoras en efectivo</span><span>− {money(cash.payoutsCash)}</span>
+      </div>
+      {result ? (
+        <div style={{ padding: '12px', borderRadius: '10px', textAlign: 'center', fontWeight: 800, backgroundColor: result.difference === 0 ? '#ECFDF5' : '#FEF2F2', color: result.difference === 0 ? '#047857' : '#B91C1C' }}>
+          {result.difference === 0 ? '✓ La caja cierra justo' : result.difference > 0 ? `Sobran ${money(result.difference)}` : `Faltan ${money(-result.difference)}`}
+          <div style={{ fontSize: '0.8rem', fontWeight: 600, marginTop: '4px' }}>Esperado {money(result.expected)}</div>
+        </div>
+      ) : (
+        <>
+          <AmountInput value={opening} onChange={setOpening} label="Fondo inicial (cambio con que abrió la caja)" />
+          <div style={{ fontSize: '0.86rem', fontWeight: 700, marginBottom: '8px' }}>Efectivo esperado: {money(expected)}</div>
+          <AmountInput value={counted} onChange={setCounted} label="Efectivo contado en la caja" autoFocus />
+          {diff !== null && (
+            <div style={{ fontWeight: 800, marginBottom: '10px', color: diff === 0 ? '#047857' : '#B91C1C' }}>
+              {diff === 0 ? 'Cierra justo' : diff > 0 ? `Sobran ${money(diff)}` : `Faltan ${money(-diff)}`}
+            </div>
+          )}
+          <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="Nota (opcional)" className="form-input" style={{ width: '100%', marginBottom: '12px' }} />
+          {error && <div role="alert" style={{ color: '#B91C1C', fontSize: '0.84rem', fontWeight: 600, marginBottom: '10px' }}>{error}</div>}
+          <SaveButton busy={busy} amount={counted} onSave={save} label="Guardar arqueo" />
+        </>
+      )}
+    </Modal>
+  );
+}
+
+// ---------------------------------------------------------------- Historial de una vendedora
 function DetailModal({ seller, period, date, onClose, onChanged }) {
   const [detail, setDetail] = useState(null);
   const [error, setError] = useState('');
@@ -197,7 +426,8 @@ function DetailModal({ seller, period, date, onClose, onChanged }) {
   useEffect(() => { load(); }, [load]);
 
   const voidEntry = async (kind, entry) => {
-    const reason = window.prompt(`Motivo para anular ${kind === 'sale' ? 'la venta' : 'el vale'} de ${money(entry.amount)}:`);
+    const label = { sale: 'la venta', advance: 'el vale', payout: 'el pago' }[kind];
+    const reason = window.prompt(`Motivo para anular ${label} de ${money(entry.amount)}:`);
     if (!reason || !reason.trim()) return;
     try {
       await api('POST', { action: 'void', kind, id: entry.id, reason });
@@ -208,59 +438,69 @@ function DetailModal({ seller, period, date, onClose, onChanged }) {
     }
   };
 
-  const toggleActive = async () => {
-    if (seller.active && !window.confirm(`¿Dar de baja a ${seller.name}? No se borra nada: deja de aparecer en la lista diaria.`)) return;
-    try {
-      await api('POST', { action: 'setActive', sellerId: seller.id, active: !seller.active });
-      onChanged();
-      onClose();
-    } catch (err) {
-      window.alert(err.message);
-    }
-  };
-
-  const Row = ({ entry, kind }) => {
+  const Row = ({ entry, kind, day }) => {
     const voided = Boolean(entry.voided_at);
-    const day = kind === 'sale' ? entry.sale_date : entry.advance_date;
     return (
       <tr style={{ opacity: voided ? 0.5 : 1 }}>
         <td style={{ fontSize: '0.8rem', whiteSpace: 'nowrap' }}>{fmtDate(day)} {new Date(entry.created_at).toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })}</td>
         <td style={{ fontWeight: 800, textDecoration: voided ? 'line-through' : 'none' }}>{money(entry.amount)}</td>
-        {kind === 'sale' && <td style={{ fontSize: '0.8rem' }}>{entry.payment_method === 'efectivo' ? 'Efectivo' : 'Transferencia'}</td>}
+        <td style={{ fontSize: '0.8rem' }}>{METHOD_LABEL[entry.payment_method] || ''}</td>
         <td style={{ fontSize: '0.8rem' }}>
           {entry.note}
           {voided && <div style={{ color: '#B91C1C', fontWeight: 700 }}>Anulado: {entry.void_reason}</div>}
         </td>
-        <td>{!voided && <button type="button" onClick={() => voidEntry(kind, entry)} className="btn-secondary" style={{ padding: '3px 8px', fontSize: '0.74rem' }}>Anular</button>}</td>
+        <td style={{ whiteSpace: 'nowrap' }}>
+          {kind === 'payout' && <button type="button" onClick={() => openReceipt(entry.id)} className="btn-secondary" style={{ padding: '3px 8px', fontSize: '0.74rem', marginRight: '4px' }}>Recibo</button>}
+          {!voided && <button type="button" onClick={() => voidEntry(kind, entry)} className="btn-secondary" style={{ padding: '3px 8px', fontSize: '0.74rem' }}>Anular</button>}
+        </td>
       </tr>
     );
   };
 
+  const Section = ({ title, rows, kind, dayKey }) => (
+    <>
+      <h4 style={{ fontWeight: 800, margin: '14px 0 6px' }}>{title} ({rows.filter((r) => !r.voided_at).length})</h4>
+      {rows.length === 0 ? <p style={{ fontSize: '0.84rem', color: 'var(--text-muted)' }}>Nada en el período.</p> : (
+        <table className="admin-table"><tbody>{rows.map((r) => <Row key={`${kind}${r.id}`} entry={r} kind={kind} day={r[dayKey]} />)}</tbody></table>
+      )}
+    </>
+  );
+
   return (
-    <div className="modal-backdrop active" onClick={onClose}>
-      <div className="modal-box" style={{ maxWidth: '680px', maxHeight: '90vh', overflowY: 'auto' }} onClick={(e) => e.stopPropagation()}>
-        <button onClick={onClose} className="qty-btn" style={{ position: 'absolute', top: '14px', right: '14px' }}><X size={18} /></button>
-        <h3 style={{ fontSize: '1.15rem', fontWeight: 800 }}>{seller.name}</h3>
-        <p style={{ fontSize: '0.84rem', color: 'var(--text-muted)', marginBottom: '12px' }}>
-          Vendió {money(seller.total)} · comisión {money(seller.commission)} · vales {money(seller.advances)} · <strong>a pagar {money(seller.toPay)}</strong>
-        </p>
-        {error && <div role="alert" style={{ color: '#B91C1C', fontWeight: 600 }}>{error}</div>}
-        {!detail ? <Loader2 className="animate-spin" /> : (
-          <>
-            <h4 style={{ fontWeight: 800, margin: '10px 0 6px' }}>Ventas ({detail.sales.filter((s) => !s.voided_at).length})</h4>
-            {detail.sales.length === 0 ? <p style={{ fontSize: '0.84rem', color: 'var(--text-muted)' }}>Sin ventas en el período.</p> : (
-              <table className="admin-table"><tbody>{detail.sales.map((s) => <Row key={`s${s.id}`} entry={s} kind="sale" />)}</tbody></table>
-            )}
-            <h4 style={{ fontWeight: 800, margin: '16px 0 6px' }}>Vales / adelantos ({detail.advances.filter((a) => !a.voided_at).length})</h4>
-            {detail.advances.length === 0 ? <p style={{ fontSize: '0.84rem', color: 'var(--text-muted)' }}>Sin vales en el período.</p> : (
-              <table className="admin-table"><tbody>{detail.advances.map((a) => <Row key={`a${a.id}`} entry={a} kind="advance" />)}</tbody></table>
-            )}
-          </>
-        )}
-        <button type="button" onClick={toggleActive} className="btn-secondary" style={{ marginTop: '18px', fontSize: '0.8rem' }}>
-          {seller.active ? 'Dar de baja a esta vendedora' : 'Volver a dar de alta'}
-        </button>
-      </div>
+    <Modal title={seller.name} subtitle={`Vendió ${money(seller.total)} · comisión ${money(seller.commission)} · vales ${money(seller.advances)} · pagado ${money(seller.paid)} · saldo ${money(seller.balance)}`} onClose={onClose} maxWidth="720px">
+      {error && <div role="alert" style={{ color: '#B91C1C', fontWeight: 600 }}>{error}</div>}
+      {!detail ? <Loader2 className="animate-spin" /> : (
+        <>
+          <Section title="Ventas" rows={detail.sales} kind="sale" dayKey="sale_date" />
+          <Section title="Vales / adelantos" rows={detail.advances} kind="advance" dayKey="advance_date" />
+          <Section title="Pagos" rows={detail.payouts} kind="payout" dayKey="paid_date" />
+        </>
+      )}
+    </Modal>
+  );
+}
+
+// ---------------------------------------------------------------- Ranking
+function Ranking({ data }) {
+  const rows = [...data.sellers].filter((s) => s.total > 0 || s.prevTotal > 0).sort((a, b) => b.total - a.total);
+  if (rows.length === 0) return null;
+  const prevLabel = { day: 'el día anterior', week: 'la semana anterior', month: 'el mes anterior' }[data.period];
+  return (
+    <div style={{ backgroundColor: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: '14px', padding: '14px', marginTop: '16px' }}>
+      <h3 style={{ fontSize: '1rem', fontWeight: 800, display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '8px' }}><Trophy size={17} /> Ranking del período</h3>
+      {rows.map((s, i) => {
+        const change = s.prevTotal > 0 ? Math.round(((s.total - s.prevTotal) / s.prevTotal) * 100) : null;
+        return (
+          <div key={s.id} style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '6px 0', borderBottom: '1px solid var(--border-color)', fontSize: '0.88rem' }}>
+            <strong style={{ width: '24px' }}>{i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : `${i + 1}.`}</strong>
+            <span style={{ flex: 1, fontWeight: 700 }}>{s.name}</span>
+            <strong>{money(s.total)}</strong>
+            <span style={{ width: '120px', textAlign: 'right', fontSize: '0.76rem', color: change === null ? 'var(--text-muted)' : change >= 0 ? '#047857' : '#B91C1C', display: 'inline-flex', alignItems: 'center', justifyContent: 'flex-end', gap: '3px' }}>
+              {change === null ? `sin ventas ${prevLabel}` : <>{change >= 0 ? <TrendingUp size={13} /> : <TrendingDown size={13} />}{change >= 0 ? '+' : ''}{change}% vs {prevLabel}</>}
+            </span>
+          </div>
+        );
+      })}
     </div>
   );
 }
@@ -276,6 +516,8 @@ export default function VentasPage() {
   const [loadError, setLoadError] = useState('');
   const [pctDrafts, setPctDrafts] = useState({});
   const [entry, setEntry] = useState(null);   // { kind, seller }
+  const [payoutSeller, setPayoutSeller] = useState(null);
+  const [showCash, setShowCash] = useState(false);
   const [detailSeller, setDetailSeller] = useState(null);
   const [queueSize, setQueueSize] = useState(0);
   const [notice, setNotice] = useState('');
@@ -317,6 +559,12 @@ export default function VentasPage() {
     return () => { window.removeEventListener('online', tick); clearInterval(id); };
   }, [load]);
 
+  const afterSave = (queued) => {
+    setQueueSize(readQueue().length);
+    setNotice(queued ? 'Sin conexión: quedó guardado en este dispositivo y se envía solo cuando vuelva internet.' : '');
+    if (!queued) load();
+  };
+
   const savePct = async (seller) => {
     const pct = Number(String(pctDrafts[seller.id]).replace(',', '.'));
     try {
@@ -346,18 +594,19 @@ export default function VentasPage() {
 
   const totals = (data?.sellers || []).reduce((t, s) => ({
     total: t.total + s.total, cash: t.cash + s.cash, transfer: t.transfer + s.transfer,
-    commission: t.commission + s.commission, advances: t.advances + s.advances, toPay: t.toPay + s.toPay
-  }), { total: 0, cash: 0, transfer: 0, commission: 0, advances: 0, toPay: 0 });
+    commission: t.commission + s.commission, advances: t.advances + s.advances, paid: t.paid + s.paid, balance: t.balance + s.balance
+  }), { total: 0, cash: 0, transfer: 0, commission: 0, advances: 0, paid: 0, balance: 0 });
 
   const rangeLabel = !data ? '' : period === 'day' ? fmtDate(data.from) : `${fmtDate(data.from)} al ${fmtDate(data.to)}`;
   const isToday = date === todayAR();
+  const stop = (fn) => (e) => { e.stopPropagation(); fn(); };
 
   return (
     <div style={{ minHeight: '100vh', backgroundColor: 'var(--bg-surface-elevated)', padding: '16px' }}>
       <div style={{ maxWidth: '1100px', margin: '0 auto' }}>
         <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '10px', flexWrap: 'wrap', marginBottom: '14px' }}>
           <h1 style={{ fontSize: '1.35rem', fontWeight: 900, display: 'flex', alignItems: 'center', gap: '8px' }}><Users size={22} /> Ventas de vendedoras</h1>
-          <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+          <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
             {queueSize > 0 && (
               <span title="Se guardaron sin conexión y se envían solos al volver internet" style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', fontSize: '0.8rem', fontWeight: 800, color: '#B45309', backgroundColor: '#FFFBEB', border: '1px solid #FDE68A', padding: '4px 10px', borderRadius: '20px' }}>
                 <CloudOff size={14} /> {queueSize} sin enviar
@@ -389,14 +638,28 @@ export default function VentasPage() {
             <p style={{ fontSize: '0.9rem', fontWeight: 700, marginBottom: '10px' }}>{PERIODS[period]}: {rangeLabel}</p>
 
             {/* Totales */}
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '10px', marginBottom: '16px' }}>
-              {[['Total vendido', totals.total], ['Efectivo', totals.cash], ['Transferencia', totals.transfer], ['Comisiones', totals.commission], ['Vales', totals.advances], ['A pagar', totals.toPay]].map(([label, value]) => (
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: '10px', marginBottom: '12px' }}>
+              {[['Total vendido', totals.total], ['Efectivo', totals.cash], ['Transferencia', totals.transfer], ['Comisiones', totals.commission], ['Vales', totals.advances], ['Pagado', totals.paid], ['Saldo pendiente', totals.balance]].map(([label, value]) => (
                 <div key={label} style={{ backgroundColor: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: '12px', padding: '10px 12px' }}>
                   <div style={{ fontSize: '0.74rem', fontWeight: 700, color: 'var(--text-muted)' }}>{label}</div>
-                  <div style={{ fontSize: '1.15rem', fontWeight: 900 }}>{money(value)}</div>
+                  <div style={{ fontSize: '1.1rem', fontWeight: 900 }}>{money(value)}</div>
                 </div>
               ))}
             </div>
+
+            {/* Caja del dia */}
+            {period === 'day' && data.cash && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap', backgroundColor: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: '12px', padding: '10px 14px', marginBottom: '16px', fontSize: '0.88rem' }}>
+                <Calculator size={18} />
+                <span>Efectivo del día (sin fondo inicial): <strong>{money(data.cash.expected)}</strong></span>
+                {data.cash.lastCount ? (
+                  <span style={{ fontWeight: 700, color: Number(data.cash.lastCount.difference) === 0 ? '#047857' : '#B91C1C' }}>
+                    Último arqueo {new Date(data.cash.lastCount.created_at).toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })}: {Number(data.cash.lastCount.difference) === 0 ? 'cerró justo' : Number(data.cash.lastCount.difference) > 0 ? `sobraban ${money(data.cash.lastCount.difference)}` : `faltaban ${money(-data.cash.lastCount.difference)}`}
+                  </span>
+                ) : <span style={{ color: 'var(--text-muted)' }}>Sin arqueo todavía</span>}
+                <button type="button" onClick={() => setShowCash(true)} className="btn-secondary" style={{ marginLeft: 'auto', display: 'inline-flex', alignItems: 'center', gap: '5px' }}><Calculator size={14} /> Hacer arqueo</button>
+              </div>
+            )}
 
             {/* Vendedoras */}
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '12px' }}>
@@ -414,7 +677,7 @@ export default function VentasPage() {
                   style={{ backgroundColor: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: '14px', padding: '14px', opacity: s.active ? 1 : 0.6, cursor: s.active ? 'pointer' : 'default' }}
                 >
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: '8px' }}>
-                    <button type="button" onClick={(e) => { e.stopPropagation(); setDetailSeller(s); }} title="Ver historial" style={{ background: 'none', border: 'none', padding: 0, fontSize: '1.05rem', fontWeight: 900, cursor: 'pointer', color: 'var(--text-main)', textDecoration: 'underline' }}>{s.name}</button>
+                    <button type="button" onClick={stop(() => setDetailSeller(s))} title="Ver historial" style={{ background: 'none', border: 'none', padding: 0, fontSize: '1.05rem', fontWeight: 900, cursor: 'pointer', color: 'var(--text-main)', textDecoration: 'underline' }}>{s.name}</button>
                     <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>{s.salesCount} venta{s.salesCount === 1 ? '' : 's'}</span>
                   </div>
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '4px 12px', fontSize: '0.86rem', marginBottom: '10px' }}>
@@ -423,7 +686,9 @@ export default function VentasPage() {
                     <span>Transferencia</span><span style={{ textAlign: 'right' }}>{money(s.transfer)}</span>
                     <span>Comisión{period === 'day' ? '' : ' (suma diaria)'}</span><strong style={{ textAlign: 'right', color: '#047857' }}>{money(s.commission)}</strong>
                     <span>Vales</span><span style={{ textAlign: 'right', color: '#B91C1C' }}>− {money(s.advances)}</span>
-                    <span style={{ fontWeight: 800 }}>A pagar</span><strong style={{ textAlign: 'right', fontSize: '1rem' }}>{money(s.toPay)}</strong>
+                    <span>Pagado</span><span style={{ textAlign: 'right' }}>− {money(s.paid)}</span>
+                    <span style={{ fontWeight: 800 }}>Saldo pendiente</span>
+                    <strong style={{ textAlign: 'right', fontSize: '1rem', color: s.balance < 0 ? '#B91C1C' : undefined }} title="Acumulado: todas las comisiones menos vales y pagos">{money(s.balance)}</strong>
                   </div>
 
                   {/* % del dia */}
@@ -445,12 +710,15 @@ export default function VentasPage() {
                   )}
 
                   {s.active && (
-                    <div style={{ display: 'flex', gap: '8px' }}>
-                      <button type="button" onClick={(e) => { e.stopPropagation(); setEntry({ kind: 'sale', seller: s }); }} className="btn-primary" style={{ flex: 1, justifyContent: 'center', display: 'inline-flex', alignItems: 'center', gap: '5px', padding: '8px' }}>
+                    <div style={{ display: 'flex', gap: '6px' }}>
+                      <button type="button" onClick={stop(() => setEntry({ kind: 'sale', seller: s }))} className="btn-primary" style={{ flex: 1, justifyContent: 'center', display: 'inline-flex', alignItems: 'center', gap: '4px', padding: '8px 4px' }}>
                         <Plus size={15} /> Venta
                       </button>
-                      <button type="button" onClick={(e) => { e.stopPropagation(); setEntry({ kind: 'advance', seller: s }); }} className="btn-secondary" style={{ flex: 1, justifyContent: 'center', display: 'inline-flex', alignItems: 'center', gap: '5px', padding: '8px' }}>
+                      <button type="button" onClick={stop(() => setEntry({ kind: 'advance', seller: s }))} className="btn-secondary" style={{ flex: 1, justifyContent: 'center', display: 'inline-flex', alignItems: 'center', gap: '4px', padding: '8px 4px' }}>
                         <HandCoins size={15} /> Vale
+                      </button>
+                      <button type="button" onClick={stop(() => setPayoutSeller(s))} className="btn-secondary" style={{ flex: 1, justifyContent: 'center', display: 'inline-flex', alignItems: 'center', gap: '4px', padding: '8px 4px' }}>
+                        <Banknote size={15} /> Liquidar
                       </button>
                     </div>
                   )}
@@ -458,37 +726,21 @@ export default function VentasPage() {
               ))}
             </div>
 
+            <Ranking data={data} />
+
             <p style={{ fontSize: '0.8rem', marginTop: '18px' }}>
               Para dar de alta o de baja vendedoras: <a href="/admin" style={{ fontWeight: 700, textDecoration: 'underline' }}>Panel de admin → Vendedoras</a>.
             </p>
-            <p style={{ fontSize: '0.76rem', color: 'var(--text-muted)', marginTop: '10px' }}>
-              <Wallet size={12} style={{ display: 'inline', verticalAlign: 'middle' }} /> “A pagar” = comisión − vales. La comisión de cada día se calcula con el % de ese día. Tocá la tarjeta de una vendedora para cargar una venta; tocá su nombre para ver el historial. Nada se borra: las ventas y vales se anulan con motivo desde el historial.
+            <p style={{ fontSize: '0.76rem', color: 'var(--text-muted)', marginTop: '8px' }}>
+              <Wallet size={12} style={{ display: 'inline', verticalAlign: 'middle' }} /> “Saldo pendiente” = todas las comisiones − vales − pagos (acumulado, se arrastra de un período al otro). La comisión de cada día se calcula con el % de ese día. Tocá la tarjeta para cargar una venta; el nombre abre el historial con los recibos <Receipt size={12} style={{ display: 'inline', verticalAlign: 'middle' }} />. Nada se borra: todo se anula con motivo.
             </p>
           </>
         )}
 
-        {entry && (
-          <EntryModal
-            kind={entry.kind}
-            seller={entry.seller}
-            date={date}
-            onClose={() => setEntry(null)}
-            onSaved={(queued) => {
-              setQueueSize(readQueue().length);
-              setNotice(queued ? 'Sin conexión: quedó guardado en este dispositivo y se envía solo cuando vuelva internet.' : '');
-              if (!queued) load();
-            }}
-          />
-        )}
-        {detailSeller && (
-          <DetailModal
-            seller={detailSeller}
-            period={period}
-            date={date}
-            onClose={() => setDetailSeller(null)}
-            onChanged={load}
-          />
-        )}
+        {entry && <EntryModal kind={entry.kind} seller={entry.seller} date={date} onClose={() => setEntry(null)} onSaved={afterSave} />}
+        {payoutSeller && data && <PayoutModal seller={payoutSeller} data={data} onClose={() => setPayoutSeller(null)} onSaved={afterSave} />}
+        {showCash && data?.cash && <CashCountModal date={date} cash={data.cash} onClose={() => { setShowCash(false); load(); }} onSaved={(queued) => { if (queued) afterSave(true); }} />}
+        {detailSeller && <DetailModal seller={detailSeller} period={period} date={date} onClose={() => setDetailSeller(null)} onChanged={load} />}
       </div>
     </div>
   );
