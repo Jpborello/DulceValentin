@@ -451,7 +451,7 @@ export default function DuplicateProductModal({ product, categories = [], onClos
             Crear Variante / Nuevo Producto
           </h2>
           <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', margin: 0 }}>
-            Duplicando a partir de <strong>"{product.name}"</strong> (Cód: {product.code || 'S/C'}). Se asignará un <strong>código nuevo único</strong> y podés modificar todos sus talles, colores, fotos y precios.
+            Duplicando a partir de <strong>&quot;{product.name}&quot;</strong> (Cód: {product.code || 'S/C'}). Se asignará un <strong>código nuevo único</strong> y podés modificar todos sus talles, colores, fotos y precios.
           </p>
         </div>
 

@@ -567,7 +567,7 @@ export default function StockTab({ products, categories = [], searchFilter, setS
             </div>
 
             <p style={{ fontSize: '0.85rem', color: 'var(--text-main)', margin: '0 0 20px 0', lineHeight: 1.45 }}>
-              ¿Estás seguro de que querés borrar permanentemente <strong>"{deletingProduct.name}"</strong>? Ya no se mostrará en el catálogo ni en el panel de control.
+              ¿Estás seguro de que querés borrar permanentemente <strong>&quot;{deletingProduct.name}&quot;</strong>? Ya no se mostrará en el catálogo ni en el panel de control.
             </p>
 
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>

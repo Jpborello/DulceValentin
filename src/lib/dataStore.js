@@ -118,12 +118,13 @@ class DataStore {
     this.transferCuit = '[CUIT — COMPLETAR]';
     this.transferAlias = 'alias.dulcevalentin.completar';
 
-    // Imágenes de las 4 categorías principales del home
+    // Imágenes de las 5 categorías principales del home
     this.categoryImages = {
       calzado: '/categorias/calzado.webp',
       indumentaria: '/categorias/indumentaria.webp',
       lenceria: '/categorias/lenceria.webp',
-      bebes: '/categorias/bebes.webp'
+      bebes: '/categorias/bebes.webp',
+      blanqueria: '/categorias/blanqueria.webp'
     };
     if (typeof window !== 'undefined') {
       try {
@@ -469,8 +470,7 @@ class DataStore {
         if (holderRow?.name) this.transferHolder = holderRow.name;
         if (cuitRow?.name) this.transferCuit = cuitRow.name;
 
-        // Leer imágenes de categorías del home
-        const catImgKeys = ['calzado', 'indumentaria', 'lenceria', 'bebes'];
+        const catImgKeys = ['calzado', 'indumentaria', 'lenceria', 'bebes', 'blanqueria'];
         catImgKeys.forEach(k => {
           const row = data.find(item => item.id === `_config_cat_img_${k}`);
           if (row?.name) {
@@ -1368,13 +1368,6 @@ class DataStore {
   // (esa lista solo se llena del lado admin), así que sin este dato
   // caeríamos siempre en el nombre genérico "Cliente Mayorista".
   loginUser(phone, knownClient = null) {
-    if (phone === 'admin' || phone === '1122334455') {
-      const adminUser = { id: 'u-admin', name: 'Administrador Dulce Valentín', phone, role: 'admin' };
-      this.currentUser = adminUser;
-      this.notify();
-      return adminUser;
-    }
-
     const normalizedPhone = normalizePhone(phone) || phone;
     const existingClient = knownClient || this.clients.find(c => normalizePhone(c.phone) === normalizedPhone);
     const user = existingClient

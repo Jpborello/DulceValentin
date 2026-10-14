@@ -34,3 +34,8 @@ node_modules_broken_*
 
 # Salidas de trabajo con Claude (incluye una copia del env)
 Claude outputs/
+.claude/
+
+# Archivos de carga masiva locales
+*.zip
+/carga/

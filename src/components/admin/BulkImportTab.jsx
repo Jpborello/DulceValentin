@@ -305,7 +305,7 @@ Pantalon Jogging Frizado,Pantalon de Yoguin,Pantalones,16800,90,Pantalón babuch
                 <Sparkles size={18} style={{ color: '#EAB308' }} /> Previsualización ({parsedProducts.length} productos detectados)
               </h3>
               <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', margin: '2px 0 0 0' }}>
-                El precio que cargues en la columna "precio" se guarda directo como precio mayorista (no se aplica ningún descuento automático).
+                El precio que cargues en la columna &quot;precio&quot; se guarda directo como precio mayorista (no se aplica ningún descuento automático).
               </p>
             </div>
 

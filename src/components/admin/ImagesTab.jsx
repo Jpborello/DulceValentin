@@ -34,7 +34,8 @@ const MAIN_CATEGORIES = [
   { id: 'calzado', name: 'Calzado', defaultImg: '/categorias/calzado.webp', desc: 'Zapatillas y calzado familiar' },
   { id: 'indumentaria', name: 'Indumentaria', defaultImg: '/categorias/indumentaria.webp', desc: 'Hombre, Mujer e Infantil' },
   { id: 'lenceria', name: 'Lencería', defaultImg: '/categorias/lenceria.webp', desc: 'Ropa interior, medias y lencería' },
-  { id: 'bebes', name: 'Bebés', defaultImg: '/categorias/bebes.webp', desc: 'Recién nacidos y primera infancia' }
+  { id: 'bebes', name: 'Bebés', defaultImg: '/categorias/bebes.webp', desc: 'Recién nacidos y primera infancia' },
+  { id: 'blanqueria', name: 'Blanquería', defaultImg: '/categorias/blanqueria.webp', desc: 'Sábanas, acolchados y blanquería' }
 ];
 
 export default function ImagesTab({ products, onUpdateImage, categoryImages = {}, onUpdateCategoryImage }) {
@@ -137,10 +138,10 @@ export default function ImagesTab({ products, onUpdateImage, categoryImages = {}
           </div>
           <h3 style={{ fontSize: '1.25rem', fontWeight: 800, color: 'var(--text-main)', margin: '0 0 4px 0', display: 'flex', alignItems: 'center', gap: '8px' }}>
             <ImageIcon size={20} style={{ color: 'var(--accent-gold)' }} />
-            Portadas de las 4 Categorías Principales del Home
+            Portadas de las 5 Categorías Principales del Home
           </h3>
           <p style={{ fontSize: '0.84rem', color: 'var(--text-muted)', margin: 0 }}>
-            Cambiá las fotos que se ven en las tarjetas de la página principal (Calzado, Indumentaria, Lencería y Bebés). Podés subir una foto nueva desde tu computadora o pegar un enlace.
+            Cambiá las fotos que se ven en las tarjetas de la página principal (Calzado, Indumentaria, Lencería, Bebés y Blanquería). Podés subir una foto nueva desde tu computadora o pegar un enlace.
           </p>
         </div>
 

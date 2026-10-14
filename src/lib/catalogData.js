@@ -164,12 +164,19 @@ export const HOME_CATEGORY_GROUPS = [
     items: [
       { label: 'Bebés', category: 'Bebés', expand: true }
     ]
+  },
+  {
+    id: 'blanqueria',
+    name: 'Blanquería',
+    tagline: 'Sábanas, acolchados y blanquería',
+    image: '/categorias/blanqueria.webp',
+    items: [
+      { label: 'Blanquería', category: 'Blanquería', expand: true }
+    ]
   }
 ];
 
-// Categorias que no entran en las 4 cards y se muestran como accesos chicos
-// debajo de la grilla principal.
-export const SECONDARY_CATEGORY_IDS = ['Blanquería', 'Perfumería', 'Complementos'];
+export const SECONDARY_CATEGORY_IDS = [];
 
 // Helper para devolver el precio mayorista (sin recargo minorista)
 export const calcRetail = (wholesale) => wholesale;

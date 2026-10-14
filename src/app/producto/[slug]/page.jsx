@@ -19,31 +19,29 @@ const SITE_URL = 'https://www.dulcevalentin.com.ar';
 const getProduct = cache(async (slug) => {
   if (!slug) return null;
 
-  // Los ids del catalogo suelen ser "prefijo-numero" (ej "p-0040"), pero
-  // algunos productos tienen una version actualizada con un sufijo extra
-  // (ej "p-0040-new", un producto distinto con su propio precio/stock).
-  // Por eso no alcanza con tomar los primeros dos segmentos del slug:
-  // buscamos, entre todos los ids activos, el que sea el prefijo MAS LARGO
-  // que calce con el slug completo, para no confundir "p-0040" con
-  // "p-0040-new" cuando el link comparte este ultimo.
-  const { data: candidates } = await supabase
-    .from('products')
-    .select('id')
-    .eq('is_active', true);
-  if (!candidates) return null;
+  // Los ids suelen ser "p-0040" o "p-0040-new". Generamos todos los prefijos posibles
+  // del slug para buscar únicamente los IDs candidatos contra el índice de la base,
+  // en vez de bajar el catálogo completo a memoria en cada visita.
+  const segments = String(slug).split('-');
+  const candidateIds = [];
+  for (let i = segments.length; i >= 2; i--) {
+    candidateIds.push(segments.slice(0, i).join('-'));
+  }
+  if (!candidateIds.includes(slug)) {
+    candidateIds.unshift(slug);
+  }
 
-  const matches = candidates.filter((p) => slug === p.id || slug.startsWith(`${p.id}-`));
-  if (matches.length === 0) return null;
-  matches.sort((a, b) => b.id.length - a.id.length);
-  const id = matches[0].id;
-
-  const { data } = await supabase
+  const { data: matches } = await supabase
     .from('products')
     .select('*')
-    .eq('id', id)
-    .eq('is_active', true)
-    .maybeSingle();
-  return data;
+    .in('id', candidateIds)
+    .eq('is_active', true);
+
+  if (!matches || matches.length === 0) return null;
+
+  // El prefijo más largo calza con mayor especificidad (ej: "p-0040-new" sobre "p-0040")
+  matches.sort((a, b) => b.id.length - a.id.length);
+  return matches[0];
 });
 
 export async function generateMetadata({ params }) {

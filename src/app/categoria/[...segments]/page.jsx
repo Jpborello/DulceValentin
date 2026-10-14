@@ -4,7 +4,7 @@ import { notFound } from 'next/navigation';
 import { MapPin, ArrowLeft } from 'lucide-react';
 import { supabase } from '@/lib/supabaseClient';
 import { slugify } from '@/lib/slugify';
-import { isRetiredSubcategory } from '@/lib/catalogData';
+import { isRetiredSubcategory, CATALOG_CATEGORIES } from '@/lib/catalogData';
 import { normalizeText } from '@/lib/searchUtils';
 import { buildProductSlug } from '@/lib/productSlug';
 import ShareCategoryButton from '@/components/ShareCategoryButton';
@@ -31,7 +31,7 @@ const getAllCategoryDefs = cache(async () => {
     .from('categories')
     .select('id, name, subcategories')
     .not('id', 'like', '_config_%');
-  return data || [];
+  return (data && data.length > 0) ? data : CATALOG_CATEGORIES;
 });
 
 async function resolveParams(segments) {
@@ -51,7 +51,7 @@ async function resolveParams(segments) {
     return { kind: 'group', groupId: firstSlug, groupName: group.name, members };
   }
 
-  const categoryDef = allCategories.find((c) => slugify(c.id) === firstSlug);
+  const categoryDef = allCategories.find((c) => slugify(c.id) === firstSlug || slugify(c.name) === firstSlug);
   if (!categoryDef) return null;
 
   let subcategory = null;

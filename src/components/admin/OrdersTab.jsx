@@ -767,7 +767,7 @@ export default function OrdersTab({ orders, mpTransfers, mpConfigured, mpLoading
 
       {!cleanNotice && oldReceiptsCount > 0 && (
         <div className="no-print" style={{ backgroundColor: '#FFFBEB', color: '#92400E', border: '1px solid #FDE68A', padding: '10px 14px', borderRadius: '6px', fontSize: '0.85rem', fontWeight: 700, marginBottom: '16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '8px' }}>
-          <span>⚠️ Hay {oldReceiptsCount} comprobante(s) con más de 60 días. Podés liberar espacio con "Limpiar Fotos".</span>
+          <span>⚠️ Hay {oldReceiptsCount} comprobante(s) con más de 60 días. Podés liberar espacio con &quot;Limpiar Fotos&quot;.</span>
           <button
             onClick={handleCleanOldReceipts}
             className="btn-secondary"

@@ -1025,7 +1025,7 @@ Adjunto mi comprobante para coordinar el despacho. ¡Muchas gracias!`;
                       boxShadow: '0 2px 8px rgba(180, 83, 9, 0.25)'
                     }}
                   >
-                    <span>+ Sumar {unitsNeededForMinQty} de "{closestMinQtyItem.product?.name}" y Habilitar Compra</span>
+                    <span>+ Sumar {unitsNeededForMinQty} de &quot;{closestMinQtyItem.product?.name}&quot; y Habilitar Compra</span>
                   </button>
                 )}
 

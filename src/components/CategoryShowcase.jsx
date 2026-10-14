@@ -2,38 +2,20 @@
 
 import Link from 'next/link';
 import { ArrowRight } from 'lucide-react';
-import {
-  HOME_CATEGORY_GROUPS,
-  SECONDARY_CATEGORY_IDS
-} from '@/lib/catalogData';
+import { HOME_CATEGORY_GROUPS } from '@/lib/catalogData';
 
 const normStr = (str) =>
   (str || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().trim();
 
 /**
- * Las 4 categorias principales del home, en cards cuadradas. Cada una es un
- * link directo a su propia pagina (/categoria/<id>: calzado, indumentaria,
- * lenceria, bebes) que ya muestra todos sus productos apenas entra el
- * visitante, con buscador y filtro por subcategoria adentro — ver
- * `CategoryGroupCatalog`. La home ya no despliega el catalogo abajo al
- * tocarlas.
- *
- * Las categorias secundarias (Blanquería, Perfumería, Complementos, y
- * cualquier categoria nueva que el admin cargue sin asignarla a una card)
- * siguen filtrando el catalogo de la propia home, sin navegar a otra pagina.
+ * Categorías principales del home en cards cuadradas. Cada una es un
+ * link directo a su propia página (/categoria/<id>: calzado, indumentaria,
+ * lencería, bebés, blanquería).
  */
 export default function CategoryShowcase({
-  categories = [],
   products = [],
-  categoryImages = {},
-  selectedCategory,
-  onSelect
+  categoryImages = {}
 }) {
-  const findCategory = (idOrName) =>
-    categories.find(
-      (c) => normStr(c.id) === normStr(idOrName) || normStr(c.name) === normStr(idOrName)
-    );
-
   const matchesItem = (product, item) => {
     if (normStr(product.category) !== normStr(item.category)) return false;
     if (!item.subcategory) return true;
@@ -44,41 +26,6 @@ export default function CategoryShowcase({
     products.filter(
       (p) => p.is_active !== false && group.items.some((item) => matchesItem(p, item))
     ).length;
-
-  const handlePickSecondary = (category) => {
-    const cat = findCategory(category);
-    onSelect(cat ? cat.id : category, null);
-    requestAnimationFrame(() => {
-      requestAnimationFrame(() => {
-        const el = document.getElementById('catalogo');
-        if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
-      });
-    });
-  };
-
-  // Red de seguridad: como el home ya no muestra la grilla completa, una
-  // categoria que no cuelgue de ninguna card seria inalcanzable salvo por
-  // buscador. Cualquier categoria con productos que no este cubierta por las
-  // cards ni por la fila secundaria se agrega igual a esa fila — sirve para
-  // las categorias que el admin crea despues desde el panel.
-  const coveredKeys = new Set();
-  HOME_CATEGORY_GROUPS.forEach((g) =>
-    g.items.forEach((it) => coveredKeys.add(normStr(it.category)))
-  );
-  SECONDARY_CATEGORY_IDS.forEach((id) => coveredKeys.add(normStr(id)));
-
-  const uncovered = categories.filter(
-    (c) =>
-      c.id !== 'all' &&
-      !coveredKeys.has(normStr(c.id)) &&
-      !coveredKeys.has(normStr(c.name)) &&
-      (c.count || 0) > 0
-  );
-
-  const secondaryCategories = [
-    ...SECONDARY_CATEGORY_IDS.map(findCategory).filter(Boolean),
-    ...uncovered
-  ].filter((cat, idx, arr) => arr.findIndex((c) => c.id === cat.id) === idx);
 
   return (
     <section id="categorias" className="cat-showcase" aria-labelledby="cat-showcase-title">
@@ -126,24 +73,6 @@ export default function CategoryShowcase({
           );
         })}
       </div>
-
-      {secondaryCategories.length > 0 && (
-        <div className="cat-secondary">
-          <span className="cat-secondary-label">También:</span>
-          {secondaryCategories.map((cat) => (
-            <button
-              key={cat.id}
-              type="button"
-              onClick={() => handlePickSecondary(cat.id)}
-              className={`cat-secondary-chip ${
-                normStr(selectedCategory) === normStr(cat.id) ? 'active' : ''
-              }`}
-            >
-              {cat.name}
-            </button>
-          ))}
-        </div>
-      )}
     </section>
   );
 }

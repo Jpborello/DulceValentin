@@ -386,7 +386,7 @@ export default function AddProductTab({ categories, onCreateProduct }) {
 
       {successInfo && (
         <div style={{ backgroundColor: '#D1FAE5', color: '#065F46', border: '1px solid #6EE7B7', padding: '14px 18px', borderRadius: '8px', marginBottom: '18px', fontSize: '0.9rem', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <CheckCircle2 size={20} /> "{successInfo.name}" creado con código <strong>{successInfo.code}</strong>. Ya está activo en la web.
+          <CheckCircle2 size={20} /> &quot;{successInfo.name}&quot; creado con código <strong>{successInfo.code}</strong>. Ya está activo en la web.
         </div>
       )}
 

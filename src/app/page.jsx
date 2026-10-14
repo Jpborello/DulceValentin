@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import Header from '@/components/Header';
 import HeroSection from '@/components/HeroSection';
 import SearchBarSection from '@/components/SearchBarSection';
@@ -19,7 +19,7 @@ import FaqSection from '@/components/FaqSection';
 import { dataStore, CATEGORIES, getProductPrice, DEFAULT_PROMO_BANNERS } from '@/lib/dataStore';
 import { getProductStockForSizeColor } from '@/lib/catalogData';
 import { getSearchScores } from '@/lib/searchUtils';
-import { evaluateWholesaleRule } from '@/lib/cartStorage';
+import { evaluateWholesaleRule, CART_UPDATED_EVENT } from '@/lib/cartStorage';
 import { trackPixel } from '@/lib/metaPixel';
 import { Store, MapPin, Instagram, PackageSearch } from 'lucide-react';
 import Link from 'next/link';
@@ -148,38 +148,48 @@ export default function Home() {
   // varias variantes del mismo producto.
   const getVariantKey = (product) => `${product.id}::${product.selectedSize || ''}::${product.selectedColor || ''}`;
 
+  const restoreCartFromStorage = (productsList) => {
+    if (!productsList || productsList.length === 0) return [];
+    try {
+      const raw = window.localStorage.getItem(CART_STORAGE_KEY);
+      if (!raw) return [];
+      const savedTuples = JSON.parse(raw);
+      return (Array.isArray(savedTuples) ? savedTuples : [])
+        .map((t) => {
+          const baseProduct = productsList.find((p) => p.id === t.id);
+          if (!baseProduct) return null;
+          const unit_price = t.unit_price != null
+            ? t.unit_price
+            : getProductPrice(baseProduct, t.selectedSize || null);
+          const product = { ...baseProduct, selectedSize: t.selectedSize || null, selectedColor: t.selectedColor || null, unit_price };
+          return { product, quantity: t.quantity || 1, variantKey: getVariantKey(product) };
+        })
+        .filter(Boolean);
+    } catch (e) {
+      console.warn('No se pudo restaurar el carrito guardado:', e);
+      return [];
+    }
+  };
+
   // Restaurar el carrito guardado (una vez que ya tenemos productos para
   // validar contra precio/stock actual) para que no se pierda al refrescar.
   useEffect(() => {
     if (cartHydrated || products.length === 0) return;
-    try {
-      const raw = window.localStorage.getItem(CART_STORAGE_KEY);
-      if (raw) {
-        const savedTuples = JSON.parse(raw);
-        const restored = (Array.isArray(savedTuples) ? savedTuples : [])
-          .map((t) => {
-            const baseProduct = products.find((p) => p.id === t.id);
-            if (!baseProduct) return null;
-            // El precio unitario guardado en el carrito queda "congelado":
-            // si el pedido ya se armo con un precio, no se recalcula al
-            // restaurar la pagina aunque el precio vigente del producto haya
-            // cambiado desde entonces. Los carritos guardados ANTES de este
-            // cambio no tienen unit_price todavia, asi que ahi si se calcula
-            // una vez (con el precio de hoy) para no dejarlos sin precio.
-            const unit_price = t.unit_price != null
-              ? t.unit_price
-              : getProductPrice(baseProduct, t.selectedSize || null);
-            const product = { ...baseProduct, selectedSize: t.selectedSize || null, selectedColor: t.selectedColor || null, unit_price };
-            return { product, quantity: t.quantity || 1, variantKey: getVariantKey(product) };
-          })
-          .filter(Boolean);
-        if (restored.length > 0) setCartItems(restored);
-      }
-    } catch (e) {
-      console.warn('No se pudo restaurar el carrito guardado:', e);
-    }
+    const items = restoreCartFromStorage(products);
+    if (items.length > 0) setCartItems(items);
     setCartHydrated(true);
   }, [products, cartHydrated]);
+
+  // Sincronizar el carrito en tiempo real si se agrega algo desde otra pantalla (ej: /producto/[slug])
+  useEffect(() => {
+    const handleCartUpdated = () => {
+      const items = restoreCartFromStorage(products);
+      setCartItems(items);
+    };
+
+    window.addEventListener(CART_UPDATED_EVENT, handleCartUpdated);
+    return () => window.removeEventListener(CART_UPDATED_EVENT, handleCartUpdated);
+  }, [products]);
 
   // ?carrito=1 abre el carrito directo. Lo usan las paginas de producto
   // ("Ver carrito" despues de agregar algo desde ahi).
@@ -432,53 +442,59 @@ export default function Home() {
   // Puntaje de busqueda (null si no hay texto buscado). Se calcula sobre
   // todo el catalogo activo para saber si hay coincidencias "de verdad" y
   // descartar las debiles (ver getSearchScores).
-  const searchScores = getSearchScores(products.filter((p) => p.is_active !== false), searchQuery);
+  const searchScores = useMemo(() => {
+    return getSearchScores(products.filter((p) => p.is_active !== false), searchQuery);
+  }, [products, searchQuery]);
 
   // Mismo top 5 que ya usa el admin en Metricas ("Mayor Rotacion"), para que
   // el sello "Mas Vendido" en la grilla coincida con ese ranking. Tiene que
   // estar definido ANTES de filteredProducts: el filtro "Mas Vendidos" lo usa
   // (declarado despues, tocar ese chip tiraba ReferenceError y rompia la home).
-  const topSellingIds = new Set(
-    [...products]
-      .filter((p) => (p.sales_count || 0) > 0)
-      .sort((a, b) => b.sales_count - a.sales_count)
-      .slice(0, 5)
-      .map((p) => p.id)
-  );
+  const topSellingIds = useMemo(() => {
+    return new Set(
+      [...products]
+        .filter((p) => (p.sales_count || 0) > 0)
+        .sort((a, b) => b.sales_count - a.sales_count)
+        .slice(0, 5)
+        .map((p) => p.id)
+    );
+  }, [products]);
 
-  const filteredProducts = products.filter((product) => {
-    const matchesCategory = matchesCategoryFor(product, selectedCategory);
-    const matchesSubcategory = matchesSubcategoryFor(product, selectedSubcategory);
+  const filteredProducts = useMemo(() => {
+    return products.filter((product) => {
+      const matchesCategory = matchesCategoryFor(product, selectedCategory);
+      const matchesSubcategory = matchesSubcategoryFor(product, selectedSubcategory);
 
-    const matchesSearch = !searchScores || searchScores.has(product.id);
+      const matchesSearch = !searchScores || searchScores.has(product.id);
 
-    let matchesQuick = true;
-    if (quickFilter === 'offers') {
-      matchesQuick = Boolean(product.is_offer);
-    } else if (quickFilter === 'new') {
-      matchesQuick = Boolean(product.is_new);
-    } else if (quickFilter === 'top') {
-      matchesQuick = Boolean(product.is_top_seller || topSellingIds?.has(product.id));
-    } else if (quickFilter === 'under20k') {
-      const price = product.wholesale_price || product.price || 0;
-      matchesQuick = price <= 20000;
-    }
+      let matchesQuick = true;
+      if (quickFilter === 'offers') {
+        matchesQuick = Boolean(product.is_offer);
+      } else if (quickFilter === 'new') {
+        matchesQuick = Boolean(product.is_new);
+      } else if (quickFilter === 'top') {
+        matchesQuick = Boolean(product.is_top_seller || topSellingIds?.has(product.id));
+      } else if (quickFilter === 'under20k') {
+        const price = product.wholesale_price || product.price || 0;
+        matchesQuick = price <= 20000;
+      }
 
-    let matchesSize = true;
-    if (selectedSizeFilter) {
-      const pSizes = Array.isArray(product.sizes) ? product.sizes.map((s) => String(s).toLowerCase().trim()) : [];
-      matchesSize = pSizes.includes(selectedSizeFilter.toLowerCase().trim());
-    }
+      let matchesSize = true;
+      if (selectedSizeFilter) {
+        const pSizes = Array.isArray(product.sizes) ? product.sizes.map((s) => String(s).toLowerCase().trim()) : [];
+        matchesSize = pSizes.includes(selectedSizeFilter.toLowerCase().trim());
+      }
 
-    return product.is_active !== false && matchesCategory && matchesSubcategory && matchesSearch && matchesQuick && matchesSize;
-  }).sort((a, b) => {
-    // Con busqueda: primero lo mas relevante. Sin busqueda: nuevos ingresos primero.
-    if (searchScores) {
-      const diff = (searchScores.get(b.id) || 0) - (searchScores.get(a.id) || 0);
-      if (diff !== 0) return diff;
-    }
-    return Number(!!b.is_new) - Number(!!a.is_new);
-  });
+      return product.is_active !== false && matchesCategory && matchesSubcategory && matchesSearch && matchesQuick && matchesSize;
+    }).sort((a, b) => {
+      // Con busqueda: primero lo mas relevante. Sin busqueda: nuevos ingresos primero.
+      if (searchScores) {
+        const diff = (searchScores.get(b.id) || 0) - (searchScores.get(a.id) || 0);
+        if (diff !== 0) return diff;
+      }
+      return Number(!!b.is_new) - Number(!!a.is_new);
+    });
+  }, [products, selectedCategory, selectedSubcategory, searchScores, quickFilter, topSellingIds, selectedSizeFilter]);
 
   // Talles disponibles presentes en el catálogo activo
   const availableSizes = Array.from(
@@ -610,26 +626,10 @@ export default function Home() {
           para que en móviles el cliente vea los resultados inmediatamente sin scroll infinito */}
       {!hasSearch && (
         <>
-          {/* Categorías principales: 4 cards (Calzado, Indumentaria, Lencería, Bebés) + secundarias */}
+          {/* Categorías principales: 5 cards (Calzado, Indumentaria, Lencería, Bebés, Blanquería) */}
           <CategoryShowcase
-            categories={categories}
             products={products}
             categoryImages={categoryImages}
-            selectedCategory={selectedCategory}
-            selectedSubcategory={selectedSubcategory}
-            onSelect={(category, subcategory) => {
-              setCatalogOpen(true);
-              setSelectedCategory(category);
-              setSelectedSubcategory(subcategory);
-              requestAnimationFrame(() => {
-                requestAnimationFrame(() => {
-                  const el = document.getElementById('catalogo');
-                  if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
-                });
-              });
-            }}
-            searchQuery={searchQuery}
-            setSearchQuery={setSearchQuery}
           />
 
           {/* Trust Bar con beneficios */}

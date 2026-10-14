@@ -208,10 +208,12 @@ export default function AdminPage() {
       .maybeSingle()
       .then(({ data, error }) => {
         if (cancelled) return;
-        // Sin tabla staff (antes de la migracion de roles): se mantiene el
-        // acceso como antes.
-        if (error) setStaffRole('admin');
-        else setStaffRole(data?.role === 'admin' && data.active ? 'admin' : 'other');
+        if (error) {
+          console.error('Error verificando rol de staff:', error);
+          setStaffRole('other');
+        } else {
+          setStaffRole(data?.role === 'admin' && data.active ? 'admin' : 'other');
+        }
       });
     return () => { cancelled = true; };
   }, [adminUser?.id]);

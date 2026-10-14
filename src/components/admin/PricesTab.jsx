@@ -250,7 +250,7 @@ export default function PricesTab({
             textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.86rem'
           }}>
             Actualmente no hay productos con etiqueta en el carrusel.
-            Hacé clic en <strong>"+ Agregar producto al carrusel"</strong> o asigná etiquetas desde el botón "🏷️ Etiqueta Carrusel" en la tabla inferior.
+            Hacé clic en <strong>&quot;+ Agregar producto al carrusel&quot;</strong> o asigná etiquetas desde el botón &quot;🏷️ Etiqueta Carrusel&quot; en la tabla inferior.
           </div>
         ) : (
           <div style={{

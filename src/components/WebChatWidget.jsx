@@ -77,8 +77,28 @@ export default function WebChatWidget() {
 
     if (!isOpen) return;
 
-    pollRef.current = setInterval(() => fetchMessages(sessionId, true), POLL_MS);
-    return () => clearInterval(pollRef.current);
+    const tick = () => {
+      if (typeof document !== 'undefined' && document.hidden) return;
+      fetchMessages(sessionId, true);
+    };
+
+    pollRef.current = setInterval(tick, POLL_MS);
+
+    const onVisibilityChange = () => {
+      if (typeof document !== 'undefined' && !document.hidden) {
+        fetchMessages(sessionId, true);
+      }
+    };
+    if (typeof document !== 'undefined') {
+      document.addEventListener('visibilitychange', onVisibilityChange);
+    }
+
+    return () => {
+      clearInterval(pollRef.current);
+      if (typeof document !== 'undefined') {
+        document.removeEventListener('visibilitychange', onVisibilityChange);
+      }
+    };
   }, [sessionId, isOpen, fetchMessages]);
 
   useEffect(() => {

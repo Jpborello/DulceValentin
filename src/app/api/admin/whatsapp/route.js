@@ -4,12 +4,14 @@ import { requireAdmin } from '@/lib/adminAuth';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://revrbrrzlnweuxwhpgei.supabase.co';
 const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'sb_publishable_SG-JwsfgUZuPHN23twhBlw_QhaJmwL_';
-
-const effectiveKey = (serviceRoleKey && !serviceRoleKey.includes('COMPLETAR')) ? serviceRoleKey : anonKey;
-const supabaseAdmin = createClient(supabaseUrl, effectiveKey);
+const supabaseAdmin = (serviceRoleKey && !serviceRoleKey.includes('COMPLETAR')) 
+  ? createClient(supabaseUrl, serviceRoleKey) 
+  : null;
 
 export async function GET(req) {
+  if (!supabaseAdmin) {
+    return NextResponse.json({ error: 'Servicio de administración no configurado.' }, { status: 503 });
+  }
   const denied = await requireAdmin(req, supabaseAdmin);
   if (denied) return denied;
 
@@ -64,6 +66,9 @@ export async function GET(req) {
 }
 
 export async function POST(req) {
+  if (!supabaseAdmin) {
+    return NextResponse.json({ error: 'Servicio de administración no configurado.' }, { status: 503 });
+  }
   const denied = await requireAdmin(req, supabaseAdmin);
   if (denied) return denied;
 
