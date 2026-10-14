@@ -377,11 +377,12 @@ export default function AdminPage() {
     showSuccessNotice('Stock actualizado correctamente.');
   };
 
-  // Editar nombre y descripcion desde Control de Stock. Devuelve el
-  // resultado para que el modal muestre el error si no se pudo guardar.
-  const handleUpdateDetails = async (id, { name, description }) => {
-    const result = await dataStore.updateProduct(id, { name, description });
-    if (result?.ok) showSuccessNotice('Nombre y descripción actualizados.');
+  // Editar nombre, descripcion y excepcion del minimo x3 desde Control de Stock.
+  const handleUpdateDetails = async (id, { name, description, exempt_from_min3 }) => {
+    const payload = { name, description };
+    if (exempt_from_min3 !== undefined) payload.exempt_from_min3 = exempt_from_min3;
+    const result = await dataStore.updateProduct(id, payload);
+    if (result?.ok) showSuccessNotice('Detalles del producto actualizados.');
     return result;
   };
 

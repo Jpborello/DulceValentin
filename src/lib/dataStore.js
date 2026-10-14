@@ -1520,6 +1520,11 @@ class DataStore {
     const coverImage = rawUrls[0] || (data.image_url || '').trim() || '/logo.png';
     const finalImageUrls = rawUrls.length > 0 ? rawUrls : [coverImage];
 
+    const isPromo = data.exempt_from_min3 !== undefined
+      ? Boolean(data.exempt_from_min3)
+      : ((categoryName || '').toUpperCase().includes('PROMO') ||
+         /\b2X|\b3X|PROMO|COMBO|PACK/i.test(data.name || ''));
+
     const newProduct = {
       id: `p-${code}`,
       code,
@@ -1540,7 +1545,7 @@ class DataStore {
       is_offer: false,
       is_featured: false,
       is_top_seller: false,
-      exempt_from_min3: false,
+      exempt_from_min3: isPromo,
       sales_count: 0
     };
 

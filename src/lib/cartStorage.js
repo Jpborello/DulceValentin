@@ -53,4 +53,4 @@ export function addToStoredCart(product, quantity = 1) {
 
 // La regla del x3 vive en wholesaleRule.js (sin 'use client') para que
 // tambien la pueda usar /api/orders en el servidor.
-export { evaluateWholesaleRule } from './wholesaleRule';
+export { evaluateWholesaleRule, isProductExemptFromMin3 } from './wholesaleRule';

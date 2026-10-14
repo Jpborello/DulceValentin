@@ -7,6 +7,7 @@ import useCloseOnBack from '@/lib/useCloseOnBack';
 import { getProductColors, getProductColorsForSize, getProductStockForSizeColor } from '@/lib/catalogData';
 import { shareProduct } from '@/lib/shareProduct';
 import { getProductImages, getProductPrice, getThumbUrl } from '@/lib/dataStore';
+import { isProductExemptFromMin3 } from '@/lib/wholesaleRule';
 import SafeImg from '@/components/admin/SafeImg';
 
 export default function ProductDetailModal({ product, isOpen, onClose, onAddToCart, isWholesaleQualified = false, relatedProducts = [], onSelectProduct = null, cartCountForProduct = 0, onViewCart = null }) {
@@ -29,6 +30,7 @@ export default function ProductDetailModal({ product, isOpen, onClose, onAddToCa
   // no hay talle seleccionado o el producto no tiene precio por talle, cae
   // al precio unico de siempre.
   const currentPrice = getProductPrice(product, selectedSize);
+  const isExempt = isProductExemptFromMin3(product);
 
   const handleShare = async () => {
     const result = await shareProduct(product);
@@ -64,7 +66,7 @@ export default function ProductDetailModal({ product, isOpen, onClose, onAddToCa
       // carrito ya cumple la regla (o el producto esta exceptuado), se abre
       // por unidad: antes se abria siempre en pack y el cliente entendia que
       // tenia que llevar 3 de cada articulo.
-      setSelectionMode(hasV && !isWholesaleQualified && !product.exempt_from_min3 ? 'pack' : 'single');
+      setSelectionMode(hasV && !isWholesaleQualified && !isExempt ? 'pack' : 'single');
 
       // Inicializar 3 prendas para el pack variado (con variedad sugerida)
       const sList = hasS ? product.sizes : [null];
@@ -91,7 +93,7 @@ export default function ProductDetailModal({ product, isOpen, onClose, onAddToCa
       // Al pasar a un producto relacionado, arrancar arriba de todo.
       if (boxRef.current) boxRef.current.scrollTop = 0;
     }
-  }, [product]);
+  }, [product, isWholesaleQualified, isExempt]);
 
   const handleSelectSize = (size) => {
     setSelectedSize(size);
@@ -862,6 +864,25 @@ export default function ProductDetailModal({ product, isOpen, onClose, onAddToCa
                   )}
                 </div>
 
+                {isExempt && (
+                  <div style={{
+                    marginTop: '12px',
+                    padding: '10px 12px',
+                    borderRadius: '10px',
+                    backgroundColor: '#F5F3FF',
+                    border: '1px solid #DDD6FE',
+                    color: '#6D28D9',
+                    fontSize: '0.82rem',
+                    fontWeight: 700,
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px'
+                  }}>
+                    <Sparkles size={16} style={{ flexShrink: 0 }} />
+                    <span>¡Esta promo no requiere mínimo de compra x3! Podés llevar desde 1 unidad al precio publicado.</span>
+                  </div>
+                )}
+
                 {/* Selector de Cantidad Inteligente y Botones Rápidos */}
                 <div style={{
                   marginTop: '14px',
@@ -1105,7 +1126,7 @@ export default function ProductDetailModal({ product, isOpen, onClose, onAddToCa
                 <div className="pdm-added-title">✓ Agregado: {justAdded}</div>
                 <div className="pdm-added-text">
                   Llevás <strong>{cartCountForProduct}</strong> de este producto.
-                  {!product.exempt_from_min3 && !isWholesaleQualified && cartCountForProduct < 3
+                  {!isExempt && !isWholesaleQualified && cartCountForProduct < 3
                     ? ` Sumá ${3 - cartCountForProduct} más para completar tu primer artículo x3: podés combinar talles y colores.`
                     : isWholesaleQualified
                       ? ' Ya tenés tu primer artículo x3: el resto lo podés sumar por unidad.'

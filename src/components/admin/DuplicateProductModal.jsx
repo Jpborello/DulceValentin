@@ -381,7 +381,8 @@ export default function DuplicateProductModal({ product, categories = [], onClos
         colors: finalColorsList,
         image_url: imageUrls[0] || '',
         image_urls: imageUrls,
-        code: customCode.trim() || undefined
+        code: customCode.trim() || undefined,
+        exempt_from_min3: Boolean(product?.exempt_from_min3)
       });
       onClose();
     } catch (err) {

@@ -625,12 +625,16 @@ const DESC_MAX = 1500;
 function EditDetailsModal({ product, onClose, onSave }) {
   const [name, setName] = useState(product.name || '');
   const [description, setDescription] = useState(product.description || '');
+  const [exemptFromMin3, setExemptFromMin3] = useState(Boolean(product.exempt_from_min3));
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState('');
 
   const trimmedName = name.trim();
   const trimmedDesc = description.trim();
-  const changed = trimmedName !== (product.name || '').trim() || trimmedDesc !== (product.description || '').trim();
+  const changed =
+    trimmedName !== (product.name || '').trim() ||
+    trimmedDesc !== (product.description || '').trim() ||
+    exemptFromMin3 !== Boolean(product.exempt_from_min3);
   const canSave = trimmedName.length >= 2 && changed && !isSaving;
 
   useEffect(() => {
@@ -644,7 +648,11 @@ function EditDetailsModal({ product, onClose, onSave }) {
     if (!canSave) return;
     setIsSaving(true);
     setError('');
-    const result = await onSave(product.id, { name: trimmedName, description: trimmedDesc });
+    const result = await onSave(product.id, {
+      name: trimmedName,
+      description: trimmedDesc,
+      exempt_from_min3: exemptFromMin3
+    });
     setIsSaving(false);
     if (result && result.ok === false) {
       setError('No se pudo guardar. Revisá la conexión o volvé a iniciar sesión e intentá de nuevo.');
@@ -722,6 +730,32 @@ function EditDetailsModal({ product, onClose, onSave }) {
               <span>Se muestra en la ficha del producto y la usa el bot para responder.</span>
               <span>{description.length}/{DESC_MAX}</span>
             </div>
+          </div>
+
+          <div style={{
+            marginBottom: '18px',
+            padding: '12px 14px',
+            backgroundColor: exemptFromMin3 ? '#F5F3FF' : 'var(--bg-surface-elevated)',
+            border: exemptFromMin3 ? '1px solid #C4B5FD' : '1px solid var(--border-color)',
+            borderRadius: '10px',
+            transition: 'all 0.2s ease'
+          }}>
+            <label style={{ display: 'flex', alignItems: 'flex-start', gap: '10px', cursor: 'pointer', margin: 0 }}>
+              <input
+                type="checkbox"
+                checked={exemptFromMin3}
+                onChange={(e) => setExemptFromMin3(e.target.checked)}
+                style={{ width: '18px', height: '18px', accentColor: '#7C3AED', marginTop: '2px', cursor: 'pointer' }}
+              />
+              <div>
+                <span style={{ fontSize: '0.88rem', fontWeight: 700, color: exemptFromMin3 ? '#6D28D9' : 'var(--text-main)', display: 'block' }}>
+                  ✨ Exceptuar de la regla de compra mínima x3
+                </span>
+                <span style={{ fontSize: '0.76rem', color: 'var(--text-muted)', display: 'block', marginTop: '2px', lineHeight: 1.35 }}>
+                  Recomendado para promociones y combos. El cliente podrá comprarlo desde 1 unidad sin que el carrito le exija llevar 3 del mismo artículo.
+                </span>
+              </div>
+            </label>
           </div>
 
           {error && (

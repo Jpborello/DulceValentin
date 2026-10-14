@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { PlusCircle, X, UploadCloud, Loader2, CheckCircle2, AlertCircle, Tag, Star, Trash2, ArrowLeft, ArrowRight, Image as ImageIcon, Layers, Palette, Plus } from 'lucide-react';
 import { supabase } from '@/lib/supabaseClient';
 import { compressImageWithThumb } from '@/lib/compressImage';
@@ -23,6 +23,8 @@ const EMPTY_FORM = {
 // permite elegir cual es la portada y reordenarlas.
 export default function AddProductTab({ categories, onCreateProduct }) {
   const [form, setForm] = useState(EMPTY_FORM);
+  const [exemptFromMin3, setExemptFromMin3] = useState(false);
+  const [manualExemptToggled, setManualExemptToggled] = useState(false);
   const [imageUrls, setImageUrls] = useState([]);
   const [manualUrlInput, setManualUrlInput] = useState('');
   const [sizes, setSizes] = useState([]);
@@ -41,6 +43,15 @@ export default function AddProductTab({ categories, onCreateProduct }) {
   const [isSaving, setIsSaving] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
   const [successInfo, setSuccessInfo] = useState(null);
+
+  // Auto-activar excepcion x3 si el nombre o la categoría son de una promo/pack
+  useEffect(() => {
+    if (manualExemptToggled) return;
+    const cat = (form.customCategory.trim() || form.category || '').toUpperCase();
+    const name = form.name || '';
+    const isPromo = cat.includes('PROMO') || /\b2X|\b3X|PROMO|COMBO|PACK/i.test(name);
+    setExemptFromMin3(isPromo);
+  }, [form.category, form.customCategory, form.name, manualExemptToggled]);
 
   const selectedCategory = categories.find((c) => c.id === form.category);
   const availableSubcats = selectedCategory?.subcategories || [];
@@ -289,6 +300,8 @@ export default function AddProductTab({ categories, onCreateProduct }) {
     setSingleColors([]);
     setSingleColorStock({});
     setSingleColorInput('');
+    setExemptFromMin3(false);
+    setManualExemptToggled(false);
   };
 
   const handleSubmit = async (e) => {
@@ -356,7 +369,8 @@ export default function AddProductTab({ categories, onCreateProduct }) {
         sizes,
         colors: finalColorsList,
         image_url: imageUrls[0] || '',
-        image_urls: imageUrls
+        image_urls: imageUrls,
+        exempt_from_min3: exemptFromMin3
       });
       setSuccessInfo(created);
       resetForNext();
@@ -493,6 +507,37 @@ export default function AddProductTab({ categories, onCreateProduct }) {
         <div className="form-group">
           <label className="form-label">Descripción (opcional)</label>
           <textarea className="form-input" rows={2} value={form.description} onChange={update('description')} placeholder="Detalle de tela, corte, etc." />
+        </div>
+
+        {/* Promociones / Excepción de Mínimo x3 */}
+        <div className="form-group" style={{ gridColumn: '1 / -1' }}>
+          <div style={{
+            padding: '12px 16px',
+            backgroundColor: exemptFromMin3 ? '#F5F3FF' : 'var(--bg-surface-elevated)',
+            border: exemptFromMin3 ? '1px solid #C4B5FD' : '1px solid var(--border-color)',
+            borderRadius: '10px',
+            transition: 'all 0.2s ease'
+          }}>
+            <label style={{ display: 'flex', alignItems: 'flex-start', gap: '10px', cursor: 'pointer', margin: 0 }}>
+              <input
+                type="checkbox"
+                checked={exemptFromMin3}
+                onChange={(e) => {
+                  setManualExemptToggled(true);
+                  setExemptFromMin3(e.target.checked);
+                }}
+                style={{ width: '18px', height: '18px', accentColor: '#7C3AED', marginTop: '2px', cursor: 'pointer' }}
+              />
+              <div>
+                <span style={{ fontSize: '0.9rem', fontWeight: 700, color: exemptFromMin3 ? '#6D28D9' : 'var(--text-main)', display: 'block' }}>
+                  ✨ Exceptuar de la regla de compra mínima x3 (Promoción / Pack)
+                </span>
+                <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)', display: 'block', marginTop: '3px', lineHeight: 1.4 }}>
+                  Si se activa, el cliente puede comprar desde 1 unidad sin que el carrito le exija llevar 3 del mismo artículo. {exemptFromMin3 && <strong style={{ color: '#6D28D9' }}>— ¡Activado automáticamente para esta promo!</strong>}
+                </span>
+              </div>
+            </label>
+          </div>
         </div>
 
         {/* Talles, Colores y Stock por Talle */}

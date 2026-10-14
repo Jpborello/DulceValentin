@@ -5,6 +5,7 @@ import { X, Trash2, Plus, Minus, ShoppingBag, Truck, Store, Upload, CheckCircle2
 import { supabase } from '@/lib/supabaseClient';
 import { dataStore, getProductPrice } from '@/lib/dataStore';
 import { getProductStockForSizeColor } from '@/lib/catalogData';
+import { isProductExemptFromMin3 } from '@/lib/wholesaleRule';
 import useCloseOnBack from '@/lib/useCloseOnBack';
 import { compressImage } from '@/lib/compressImage';
 import { COMPANY_INFO } from '@/lib/companyInfo';
@@ -180,7 +181,7 @@ Adjunto mi comprobante para coordinar el despacho. ¡Muchas gracias!`;
   // mismo articulo aunque sean de distinto talle o color (ej. 1 S negra +
   // 1 M negra + 1 M blanca de la misma remera cumple). Antes se exigian 3
   // del mismo talle y color.
-  const minQtyQualifyingItems = cartItems.filter((item) => !item.product?.exempt_from_min3);
+  const minQtyQualifyingItems = cartItems.filter((item) => !isProductExemptFromMin3(item.product));
   const unitsByProduct = minQtyQualifyingItems.reduce((acc, item) => {
     const id = item.product?.id;
     if (!id) return acc;
@@ -987,7 +988,9 @@ Adjunto mi comprobante para coordinar el despacho. ¡Muchas gracias!`;
                   lineHeight: '1.4'
                 }}>
                   {hasMinQtyItem ? (
-                    'Ya cumpliste con llevar 3 unidades de un artículo. ¡Ahora podés sumar cualquier otra prenda por unidad!'
+                    minQtyQualifyingItems.length === 0
+                      ? '✨ Tu pedido contiene promos / artículos sin mínimo de compra. ¡Podés comprar directamente!'
+                      : 'Ya cumpliste con llevar 3 unidades de un artículo. ¡Ahora podés sumar cualquier otra prenda por unidad!'
                   ) : (
                     <>
                       Para acceder al precio mayorista, tu primer artículo tiene que ser por 3 unidades (podés combinar talles y colores). Te falta{unitsNeededForMinQty === 1 ? '' : 'n'}{' '}
@@ -1081,6 +1084,11 @@ Adjunto mi comprobante para coordinar el despacho. ¡Muchas gracias!`;
                         </div>
 
                         <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap', marginTop: '2px', marginBottom: '4px' }}>
+                          {isProductExemptFromMin3(item.product) && (
+                            <span style={{ fontSize: '0.73rem', backgroundColor: '#F5F3FF', color: '#7C3AED', border: '1px solid #DDD6FE', padding: '2px 6px', borderRadius: '4px', fontWeight: 800 }}>
+                              ✨ Sin mínimo x3
+                            </span>
+                          )}
                           {itemSize && (
                             <span style={{ fontSize: '0.73rem', backgroundColor: '#EFF6FF', color: '#1D4ED8', padding: '2px 6px', borderRadius: '4px', fontWeight: 700 }}>
                               Talle: {itemSize}

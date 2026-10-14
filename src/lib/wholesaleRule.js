@@ -1,3 +1,16 @@
+// Verifica si un producto está exento de la regla de compra mínima de 3 unidades.
+// Aplica si está marcado como exempt_from_min3 en la base de datos o si pertenece
+// a la categoría PROMOS o es una promo/pack/combo tipo 2x1 o 3x1.
+export function isProductExemptFromMin3(product) {
+  if (!product) return false;
+  if (product.exempt_from_min3 === true) return true;
+  const cat = String(product.category || '').toUpperCase();
+  if (cat === 'PROMOS' || cat.includes('PROMO')) return true;
+  const name = String(product.name || '').toUpperCase();
+  if (/\b2X|\b3X|PROMO|COMBO|PACK/.test(name)) return true;
+  return false;
+}
+
 // Regla del x3 para el precio mayorista, sin dependencias: la usan el
 // carrito (cliente) y /api/orders (servidor), que vuelve a validarla para no
 // confiar en lo que manda el navegador. cartStorage.js la re-exporta.
@@ -13,9 +26,9 @@ export function evaluateWholesaleRule(cartItems = []) {
     };
   }
 
-  const minQtyQualifyingItems = cartItems.filter((item) => !item.product?.exempt_from_min3);
+  const minQtyQualifyingItems = cartItems.filter((item) => !isProductExemptFromMin3(item.product));
   if (minQtyQualifyingItems.length === 0) {
-    // Si todos los productos están exentos (ej: medias, packs), califica automáticamente
+    // Si todos los productos están exentos (ej: promos, medias, packs), califica automáticamente
     return {
       hasMinQtyItem: true,
       closestGroup: null,

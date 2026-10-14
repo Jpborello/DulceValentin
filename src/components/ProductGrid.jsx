@@ -5,6 +5,7 @@ import Image from 'next/image';
 import { ShoppingCart, Share2, Check, ChevronLeft, ChevronRight, Camera, MessageCircle } from 'lucide-react';
 import { shareProduct } from '@/lib/shareProduct';
 import { getProductImages, getProductPrice, getProductPriceRange, getThumbUrl } from '@/lib/dataStore';
+import { isProductExemptFromMin3 } from '@/lib/wholesaleRule';
 import { COMPANY_INFO } from '@/lib/companyInfo';
 
 const restockWhatsAppUrl = (product) => {
@@ -372,22 +373,39 @@ function ProductGridCard({ product, onOpenDetail, onQuickAdd, onShare, isCopiedS
               >
                 Sin Stock
               </span>
-            ) : product.badge_text ? (
-              <span
-                className="card-badge-offer"
-                style={{
-                  background: 'linear-gradient(135deg, #DC2626 0%, #E11D48 100%)',
-                  color: '#FFFFFF',
-                  fontWeight: 800,
-                  boxShadow: '0 2px 8px rgba(225, 29, 72, 0.4)'
-                }}
-              >
-                {product.badge_text}
-              </span>
             ) : (
               <>
-                {product.is_new && <span className="card-badge-new">🆕 Nuevo</span>}
-                {product.is_offer && <span className="card-badge-offer">Oferta</span>}
+                {isProductExemptFromMin3(product) && (
+                  <span
+                    className="card-badge-offer"
+                    style={{
+                      background: 'linear-gradient(135deg, #7C3AED 0%, #9333EA 100%)',
+                      color: '#FFFFFF',
+                      fontWeight: 800,
+                      boxShadow: '0 2px 8px rgba(124, 58, 237, 0.4)'
+                    }}
+                  >
+                    ✨ Sin mínimo x3
+                  </span>
+                )}
+                {product.badge_text ? (
+                  <span
+                    className="card-badge-offer"
+                    style={{
+                      background: 'linear-gradient(135deg, #DC2626 0%, #E11D48 100%)',
+                      color: '#FFFFFF',
+                      fontWeight: 800,
+                      boxShadow: '0 2px 8px rgba(225, 29, 72, 0.4)'
+                    }}
+                  >
+                    {product.badge_text}
+                  </span>
+                ) : (
+                  <>
+                    {product.is_new && <span className="card-badge-new">🆕 Nuevo</span>}
+                    {product.is_offer && <span className="card-badge-offer">Oferta</span>}
+                  </>
+                )}
               </>
             )}
             {Number(product.stock) > 0 && isTopSeller && <span className="card-badge-bestseller">🔥 Más Vendido</span>}
