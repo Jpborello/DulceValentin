@@ -266,6 +266,23 @@ export async function GET(req) {
       payouts: mine(ledger.payouts, 'paid_date')
     };
   }
+
+  // Exportacion a Excel: todos los movimientos del periodo (incluidos los
+  // anulados, marcados) + arqueos de caja.
+  if (searchParams.get('export') === '1') {
+    const nameById = Object.fromEntries((sellers || []).map((s) => [s.id, s.name]));
+    const rows = (list, key) => list
+      .filter((x) => inRange(x[key], from, to))
+      .map((x) => ({ ...x, date: x[key], seller_name: nameById[x.seller_id] || '' }))
+      .sort((a, b) => (a.date === b.date ? (a.created_at < b.created_at ? -1 : 1) : (a.date < b.date ? -1 : 1)));
+    const { data: counts } = await db.from('cash_counts').select('*').gte('count_date', from).lte('count_date', to).order('created_at', { ascending: true });
+    body.export = {
+      sales: rows(ledger.sales, 'sale_date'),
+      advances: rows(ledger.advances, 'advance_date'),
+      payouts: rows(ledger.payouts, 'paid_date'),
+      cashCounts: counts || []
+    };
+  }
   return NextResponse.json(body);
 }
 

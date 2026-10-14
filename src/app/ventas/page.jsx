@@ -1,9 +1,10 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import { Users, Plus, Wallet, HandCoins, Loader2, LogOut, X, Download, CloudOff, ChevronLeft, ChevronRight, Save, Banknote, Receipt, Calculator, Trophy, TrendingUp, TrendingDown, History } from 'lucide-react';
+import { Users, Plus, Wallet, HandCoins, Loader2, LogOut, X, Download, CloudOff, ChevronLeft, ChevronRight, Save, Banknote, Receipt, Calculator, Trophy, TrendingUp, TrendingDown, History, Send } from 'lucide-react';
 import { supabase } from '@/lib/supabaseClient';
 import { adminFetch } from '@/lib/adminFetch';
+import { downloadVentasExcel, cierreText, OWNER_WHATSAPP } from '@/lib/ventasExport';
 
 // /ventas (2026-10): ventas, comisiones, vales, liquidaciones y arqueo de
 // caja de las vendedoras. Solo la dueña (admin). Nada se borra: se anula con
@@ -71,18 +72,6 @@ async function flushQueue() {
   }
   writeQueue(remaining);
   return queue.length - remaining.length;
-}
-
-function exportCsv(data) {
-  const rows = [['Vendedora', 'Ventas', 'Total', 'Efectivo', 'Transferencia', '% comisión', 'Comisión', 'Vales', 'Pagado', 'Saldo pendiente']];
-  data.sellers.forEach((s) => rows.push([s.name, s.salesCount, s.total, s.cash, s.transfer, s.pct, s.commission, s.advances, s.paid, s.balance]));
-  const csv = rows.map((r) => r.map((v) => `"${String(v).replace(/"/g, '""')}"`).join(';')).join('\n');
-  const blob = new Blob([`﻿${csv}`], { type: 'text/csv;charset=utf-8' });
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(blob);
-  a.download = `ventas_${data.from}_a_${data.to}.csv`;
-  a.click();
-  URL.revokeObjectURL(a.href);
 }
 
 // ---------------------------------------------------------------- Monto entero
@@ -578,6 +567,27 @@ export default function VentasPage() {
   const [detailSeller, setDetailSeller] = useState(null);
   const [queueSize, setQueueSize] = useState(0);
   const [notice, setNotice] = useState('');
+  const [exporting, setExporting] = useState(false);
+
+  // Excel del periodo: pide todos los movimientos (incluidos los anulados)
+  // y arma un .xlsx con Resumen, Ventas, Vales, Pagos y Caja.
+  const exportExcel = async () => {
+    setExporting(true);
+    try {
+      const full = await api('GET', null, `?period=${period}&date=${date}&export=1`);
+      await downloadVentasExcel(full);
+    } catch (err) {
+      window.alert(err.message || 'No se pudo generar el Excel.');
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  // Cierre por WhatsApp: el texto se arma con lo que se ve en pantalla.
+  const sendCierre = () => {
+    if (!data) return;
+    window.open(`https://wa.me/${OWNER_WHATSAPP}?text=${encodeURIComponent(cierreText(data))}`, '_blank', 'noopener');
+  };
 
   const load = useCallback(async () => {
     setLoadError('');
@@ -669,7 +679,16 @@ export default function VentasPage() {
                 <CloudOff size={14} /> {queueSize} sin enviar
               </span>
             )}
-            {data && <button type="button" onClick={() => exportCsv(data)} className="btn-secondary" style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}><Download size={14} /> Excel</button>}
+            {data && (
+              <button type="button" onClick={sendCierre} className="btn-primary" style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', backgroundColor: '#25D366', borderColor: '#25D366' }} title="Abre WhatsApp con el resumen para Mica">
+                <Send size={14} /> {period === 'day' ? 'Enviar cierre a Mica' : 'Enviar resumen a Mica'}
+              </button>
+            )}
+            {data && (
+              <button type="button" onClick={exportExcel} disabled={exporting} className="btn-secondary" style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                {exporting ? <Loader2 size={14} className="animate-spin" /> : <Download size={14} />} Excel
+              </button>
+            )}
             <button type="button" onClick={logout} className="btn-secondary" style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}><LogOut size={14} /> Salir</button>
           </div>
         </header>
