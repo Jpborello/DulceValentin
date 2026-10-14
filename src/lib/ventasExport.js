@@ -140,11 +140,13 @@ export function cierreText(data) {
     commission: acc.commission + s.commission, advances: acc.advances + s.advances, paid: acc.paid + s.paid, count: acc.count + s.salesCount
   }), { total: 0, cash: 0, transfer: 0, commission: 0, advances: 0, paid: 0, count: 0 });
 
+  const avgTicket = t.count > 0 ? money(Math.round(t.total / t.count)) : '−';
+
   const lines = [
     `*${isDay ? 'CIERRE DE JORNADA' : 'RESUMEN'} — Dulce Valentín*`,
     `📅 ${isDay ? fmtDate(data.from) : `${fmtDate(data.from)} al ${fmtDate(data.to)}`}`,
     '',
-    `💰 *Total vendido: ${money(t.total)}* (${t.count} ventas)`,
+    `💰 *Total vendido: ${money(t.total)}* (${t.count} ventas · ticket prom: ${avgTicket})`,
     `   • Efectivo: ${money(t.cash)}`,
     `   • Transferencia: ${money(t.transfer)}`,
     `🧾 Comisiones: ${money(t.commission)}`,
@@ -155,7 +157,8 @@ export function cierreText(data) {
   if (sellers.length > 0) {
     lines.push('*Por vendedora:*');
     sellers.forEach((s) => {
-      lines.push(`• *${s.name}*: vendió ${money(s.total)} (ef. ${money(s.cash)} / transf. ${money(s.transfer)}) · comisión ${money(s.commission)} (${s.pct}%) · vales ${money(s.advances)}${s.paid ? ` · pagado ${money(s.paid)}` : ''} · saldo ${money(s.balance)}`);
+      const sAvg = s.salesCount > 0 ? money(Math.round(s.total / s.salesCount)) : '−';
+      lines.push(`• *${s.name}*: vendió ${money(s.total)} (${s.salesCount} vtas · ticket: ${sAvg}) · comisión ${money(s.commission)} (${s.pct}%) · vales ${money(s.advances)}${s.paid ? ` · pagado ${money(s.paid)}` : ''} · saldo ${money(s.balance)}`);
     });
     lines.push('');
   }

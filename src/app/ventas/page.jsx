@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import { Users, Plus, Wallet, HandCoins, Loader2, LogOut, X, Download, CloudOff, ChevronLeft, ChevronRight, Save, Banknote, Receipt, Calculator, Trophy, TrendingUp, TrendingDown, History, Send } from 'lucide-react';
+import { Users, Plus, Wallet, HandCoins, Loader2, LogOut, X, Download, CloudOff, ChevronLeft, ChevronRight, Save, Banknote, Receipt, Calculator, Trophy, TrendingUp, TrendingDown, History, Send, Target, Sparkles, Pencil } from 'lucide-react';
 import { supabase } from '@/lib/supabaseClient';
 import { adminFetch } from '@/lib/adminFetch';
 import { downloadVentasExcel, cierreText, OWNER_WHATSAPP } from '@/lib/ventasExport';
@@ -25,6 +25,26 @@ const PERIODS = { day: 'Día', week: 'Semana', month: 'Mes' };
 const METHOD_LABEL = { efectivo: 'Efectivo', transferencia: 'Transferencia' };
 const QUEUE_KEY = 'dv_ventas_queue';
 const BIG_AMOUNT = 1000000; // por encima de esto se pide confirmar
+
+const GOALS_STORAGE_KEY = 'dv_ventas_store_goals';
+const DEFAULT_GOALS = {
+  day: 1000000,
+  week: 5000000,
+  month: 20000000
+};
+const readGoals = () => {
+  try {
+    const saved = JSON.parse(localStorage.getItem(GOALS_STORAGE_KEY) || '{}');
+    return { ...DEFAULT_GOALS, ...saved };
+  } catch {
+    return DEFAULT_GOALS;
+  }
+};
+const writeGoals = (g) => {
+  try {
+    localStorage.setItem(GOALS_STORAGE_KEY, JSON.stringify(g));
+  } catch {}
+};
 
 const readQueue = () => {
   try { return JSON.parse(localStorage.getItem(QUEUE_KEY) || '[]'); } catch { return []; }
@@ -526,27 +546,190 @@ function DetailModal({ seller, periodFrom, periodTo, onClose, onChanged }) {
   );
 }
 
+// ---------------------------------------------------------------- Meta del local (Termómetro)
+function GoalEditModal({ period, currentGoal, onClose, onSave }) {
+  const [amount, setAmount] = useState(String(currentGoal || ''));
+  const [error, setError] = useState('');
+
+  const handleSave = () => {
+    if (!amountOk(amount)) {
+      setError('Poné el monto en pesos, sin puntos ni comas.');
+      return;
+    }
+    onSave(Number(amount));
+    onClose();
+  };
+
+  return (
+    <Modal
+      title={`Meta de ventas (${PERIODS[period]})`}
+      subtitle="Fijá el objetivo de facturación para el termómetro de ventas del local."
+      onClose={onClose}
+    >
+      <AmountInput value={amount} onChange={setAmount} label={`Objetivo para este ${PERIODS[period].toLowerCase()}`} autoFocus />
+      {error && <div role="alert" style={{ color: '#B91C1C', fontSize: '0.84rem', fontWeight: 600, marginBottom: '10px' }}>{error}</div>}
+      <button type="button" onClick={handleSave} className="btn-primary" style={{ width: '100%', justifyContent: 'center', padding: '11px', display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+        <Save size={16} /> Guardar meta
+      </button>
+    </Modal>
+  );
+}
+
+function GoalThermometer({ period, total, salesCount, goal, onEditGoal }) {
+  const pct = goal > 0 ? Math.round((total / goal) * 100) : 0;
+  const barWidth = Math.min(Math.max(pct, 0), 100);
+  const isReached = total >= goal;
+  const remaining = Math.max(0, goal - total);
+  const diffExceeded = Math.max(0, total - goal);
+  const avgTicket = salesCount > 0 ? Math.round(total / salesCount) : 0;
+
+  return (
+    <div style={{
+      backgroundColor: 'var(--bg-card)',
+      border: isReached ? '2px solid #10B981' : '1px solid var(--border-color)',
+      borderRadius: '16px',
+      padding: '16px 18px',
+      marginBottom: '16px',
+      boxShadow: isReached ? '0 4px 16px rgba(16, 185, 129, 0.12)' : 'none',
+      position: 'relative',
+      overflow: 'hidden'
+    }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px', marginBottom: '12px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <div style={{
+            width: '34px',
+            height: '34px',
+            borderRadius: '9px',
+            backgroundColor: isReached ? '#ECFDF5' : '#F3E8FF',
+            color: isReached ? '#059669' : '#7C3AED',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center'
+          }}>
+            {isReached ? <Sparkles size={18} /> : <Target size={18} />}
+          </div>
+          <div>
+            <h3 style={{ fontSize: '0.96rem', fontWeight: 800, margin: 0, display: 'flex', alignItems: 'center', gap: '6px' }}>
+              Termómetro de ventas · Meta {PERIODS[period]}
+            </h3>
+            <div style={{ fontSize: '0.76rem', color: 'var(--text-muted)' }}>
+              Objetivo fijado: <strong>{money(goal)}</strong>
+            </div>
+          </div>
+        </div>
+
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <span style={{
+            fontSize: '0.84rem',
+            fontWeight: 900,
+            padding: '4px 10px',
+            borderRadius: '20px',
+            backgroundColor: isReached ? '#ECFDF5' : pct >= 70 ? '#EFF6FF' : '#FFFBEB',
+            color: isReached ? '#047857' : pct >= 70 ? '#1D4ED8' : '#B45309',
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: '4px'
+          }}>
+            {isReached ? `🎉 ${pct}% Superado` : `${pct}% alcanzado`}
+          </span>
+          <button
+            type="button"
+            onClick={onEditGoal}
+            className="btn-secondary"
+            style={{ padding: '5px 9px', fontSize: '0.76rem', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
+            title="Cambiar objetivo de ventas"
+          >
+            <Pencil size={13} /> Ajustar meta
+          </button>
+        </div>
+      </div>
+
+      <div style={{
+        width: '100%',
+        height: '16px',
+        backgroundColor: 'var(--bg-surface-elevated)',
+        borderRadius: '9999px',
+        overflow: 'hidden',
+        border: '1px solid var(--border-color)',
+        position: 'relative',
+        marginBottom: '10px'
+      }}>
+        <div style={{
+          width: `${barWidth}%`,
+          height: '100%',
+          borderRadius: '9999px',
+          background: isReached
+            ? 'linear-gradient(90deg, #10B981 0%, #059669 100%)'
+            : pct >= 70
+            ? 'linear-gradient(90deg, #6366F1 0%, #8B5CF6 100%)'
+            : 'linear-gradient(90deg, #EC4899 0%, #8B5CF6 100%)',
+          transition: 'width 0.6s cubic-bezier(0.4, 0, 0.2, 1)',
+          boxShadow: isReached ? '0 0 10px rgba(16, 185, 129, 0.5)' : 'none'
+        }} />
+      </div>
+
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px', fontSize: '0.8rem' }}>
+        <div style={{ fontWeight: 600 }}>
+          {isReached ? (
+            <span style={{ color: '#047857', fontWeight: 800 }}>
+              ¡Meta del local cumplida! Superada por <strong>{money(diffExceeded)}</strong>
+            </span>
+          ) : (
+            <span style={{ color: 'var(--text-muted)' }}>
+              Faltan <strong style={{ color: 'var(--text-main)' }}>{money(remaining)}</strong> para alcanzar los {money(goal)}
+            </span>
+          )}
+        </div>
+
+        <div style={{ display: 'flex', gap: '14px', color: 'var(--text-muted)', fontSize: '0.78rem' }}>
+          <span>Operaciones: <strong style={{ color: 'var(--text-main)' }}>{salesCount}</strong></span>
+          <span>Ticket promedio local: <strong style={{ color: 'var(--text-main)' }}>{avgTicket > 0 ? money(avgTicket) : '−'}</strong></span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ---------------------------------------------------------------- Ranking
 function Ranking({ data }) {
   const rows = [...data.sellers].filter((s) => s.total > 0 || s.prevTotal > 0).sort((a, b) => b.total - a.total);
   if (rows.length === 0) return null;
   const prevLabel = { day: 'el día anterior', week: 'la semana anterior', month: 'el mes anterior' }[data.period];
   return (
-    <div style={{ backgroundColor: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: '14px', padding: '14px', marginTop: '16px' }}>
-      <h3 style={{ fontSize: '1rem', fontWeight: 800, display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '8px' }}><Trophy size={17} /> Ranking del período</h3>
-      {rows.map((s, i) => {
-        const change = s.prevTotal > 0 ? Math.round(((s.total - s.prevTotal) / s.prevTotal) * 100) : null;
-        return (
-          <div key={s.id} style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '6px 0', borderBottom: '1px solid var(--border-color)', fontSize: '0.88rem' }}>
-            <strong style={{ width: '24px' }}>{i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : `${i + 1}.`}</strong>
-            <span style={{ flex: 1, fontWeight: 700 }}>{s.name}</span>
-            <strong>{money(s.total)}</strong>
-            <span style={{ width: '120px', textAlign: 'right', fontSize: '0.76rem', color: change === null ? 'var(--text-muted)' : change >= 0 ? '#047857' : '#B91C1C', display: 'inline-flex', alignItems: 'center', justifyContent: 'flex-end', gap: '3px' }}>
-              {change === null ? `sin ventas ${prevLabel}` : <>{change >= 0 ? <TrendingUp size={13} /> : <TrendingDown size={13} />}{change >= 0 ? '+' : ''}{change}% vs {prevLabel}</>}
-            </span>
-          </div>
-        );
-      })}
+    <div style={{ backgroundColor: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: '14px', padding: '16px', marginTop: '16px' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+        <h3 style={{ fontSize: '1rem', fontWeight: 800, display: 'flex', alignItems: 'center', gap: '6px', margin: 0 }}>
+          <Trophy size={17} style={{ color: '#F59E0B' }} /> Ranking del período
+        </h3>
+        <span style={{ fontSize: '0.76rem', color: 'var(--text-muted)', fontWeight: 600 }}>
+          {rows.length} {rows.length === 1 ? 'vendedora' : 'vendedoras'}
+        </span>
+      </div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+        {rows.map((s, i) => {
+          const change = s.prevTotal > 0 ? Math.round(((s.total - s.prevTotal) / s.prevTotal) * 100) : null;
+          const avgTicket = s.salesCount > 0 ? Math.round(s.total / s.salesCount) : 0;
+          return (
+            <div key={s.id} style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '8px 10px', borderRadius: '10px', backgroundColor: 'var(--bg-surface-elevated)', fontSize: '0.88rem' }}>
+              <strong style={{ width: '24px', textAlign: 'center', fontSize: '1rem' }}>
+                {i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : `${i + 1}.`}
+              </strong>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <span style={{ fontWeight: 800 }}>{s.name}</span>
+                <span style={{ display: 'block', fontSize: '0.74rem', color: 'var(--text-muted)' }}>
+                  {s.salesCount} vta{s.salesCount === 1 ? '' : 's'} · Ticket prom: <strong style={{ color: 'var(--text-main)' }}>{avgTicket > 0 ? money(avgTicket) : '−'}</strong>
+                </span>
+              </div>
+              <div style={{ textAlign: 'right' }}>
+                <strong style={{ display: 'block' }}>{money(s.total)}</strong>
+                <span style={{ fontSize: '0.74rem', color: change === null ? 'var(--text-muted)' : change >= 0 ? '#047857' : '#B91C1C', display: 'inline-flex', alignItems: 'center', justifyContent: 'flex-end', gap: '2px' }}>
+                  {change === null ? `sin ventas ${prevLabel}` : <>{change >= 0 ? <TrendingUp size={12} /> : <TrendingDown size={12} />}{change >= 0 ? '+' : ''}{change}%</>}
+                </span>
+              </div>
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }
@@ -568,6 +751,18 @@ export default function VentasPage() {
   const [queueSize, setQueueSize] = useState(0);
   const [notice, setNotice] = useState('');
   const [exporting, setExporting] = useState(false);
+  const [goals, setGoals] = useState(DEFAULT_GOALS);
+  const [showGoalModal, setShowGoalModal] = useState(false);
+
+  useEffect(() => {
+    setGoals(readGoals());
+  }, []);
+
+  const updateGoal = (newAmount) => {
+    const updated = { ...goals, [period]: newAmount };
+    setGoals(updated);
+    writeGoals(updated);
+  };
 
   // Excel del periodo: pide todos los movimientos (incluidos los anulados)
   // y arma un .xlsx con Resumen, Ventas, Vales, Pagos y Caja.
@@ -661,8 +856,9 @@ export default function VentasPage() {
 
   const totals = (data?.sellers || []).reduce((t, s) => ({
     total: t.total + s.total, cash: t.cash + s.cash, transfer: t.transfer + s.transfer,
-    commission: t.commission + s.commission, advances: t.advances + s.advances, paid: t.paid + s.paid, balance: t.balance + s.balance
-  }), { total: 0, cash: 0, transfer: 0, commission: 0, advances: 0, paid: 0, balance: 0 });
+    commission: t.commission + s.commission, advances: t.advances + s.advances, paid: t.paid + s.paid, balance: t.balance + s.balance,
+    salesCount: t.salesCount + s.salesCount
+  }), { total: 0, cash: 0, transfer: 0, commission: 0, advances: 0, paid: 0, balance: 0, salesCount: 0 });
 
   const rangeLabel = !data ? '' : period === 'day' ? fmtDate(data.from) : `${fmtDate(data.from)} al ${fmtDate(data.to)}`;
   const isToday = date === todayAR();
@@ -713,6 +909,15 @@ export default function VentasPage() {
           <>
             <p style={{ fontSize: '0.9rem', fontWeight: 700, marginBottom: '10px' }}>{PERIODS[period]}: {rangeLabel}</p>
 
+            {/* Termómetro de ventas / Meta del local */}
+            <GoalThermometer
+              period={period}
+              total={totals.total}
+              salesCount={totals.salesCount}
+              goal={goals[period] || DEFAULT_GOALS[period]}
+              onEditGoal={() => setShowGoalModal(true)}
+            />
+
             {/* Totales */}
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: '10px', marginBottom: '12px' }}>
               {[['Total vendido', totals.total], ['Efectivo', totals.cash], ['Transferencia', totals.transfer], ['Comisiones', totals.commission], ['Vales', totals.advances], ['Pagado', totals.paid], ['Saldo pendiente', totals.balance]].map(([label, value]) => (
@@ -758,6 +963,7 @@ export default function VentasPage() {
                   </div>
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '4px 12px', fontSize: '0.86rem', marginBottom: '10px' }}>
                     <span>Total vendido</span><strong style={{ textAlign: 'right' }}>{money(s.total)}</strong>
+                    <span>Ticket promedio</span><strong style={{ textAlign: 'right', color: 'var(--text-main)' }}>{s.salesCount > 0 ? money(Math.round(s.total / s.salesCount)) : '−'}</strong>
                     <span>Efectivo</span><span style={{ textAlign: 'right' }}>{money(s.cash)}</span>
                     <span>Transferencia</span><span style={{ textAlign: 'right' }}>{money(s.transfer)}</span>
                     <span>Comisión{period === 'day' ? '' : ' (suma diaria)'}</span><strong style={{ textAlign: 'right', color: '#047857' }}>{money(s.commission)}</strong>
@@ -820,6 +1026,14 @@ export default function VentasPage() {
         {payoutSeller && data && <PayoutModal seller={payoutSeller} data={data} onClose={() => setPayoutSeller(null)} onSaved={afterSave} />}
         {showCash && data?.cash && <CashCountModal date={date} cash={data.cash} onClose={() => { setShowCash(false); load(); }} onSaved={(queued) => { if (queued) afterSave(true); }} />}
         {detailSeller && data && <DetailModal seller={detailSeller} periodFrom={data.from} periodTo={data.to} onClose={() => setDetailSeller(null)} onChanged={load} />}
+        {showGoalModal && (
+          <GoalEditModal
+            period={period}
+            currentGoal={goals[period] || DEFAULT_GOALS[period]}
+            onClose={() => setShowGoalModal(false)}
+            onSave={updateGoal}
+          />
+        )}
       </div>
     </div>
   );

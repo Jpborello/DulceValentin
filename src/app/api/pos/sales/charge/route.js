@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { getStaff, supabaseAdmin, deny } from '@/lib/staffAuth';
+import { getStaff, supabaseAdmin, deny, argentinaDayRange } from '@/lib/staffAuth';
 
 const METHODS = ['efectivo', 'transferencia'];
 
@@ -23,7 +23,7 @@ export async function POST(req) {
 
   const { data: sale } = await supabaseAdmin
     .from('orders')
-    .select('id, status, channel, total_amount, commission_pct')
+    .select('id, status, channel, total_amount, commission_pct, seller_id, client_name')
     .eq('id', orderId)
     .maybeSingle();
   if (!sale || sale.channel !== 'local') return deny(404, 'No se encontró la venta.');
@@ -56,6 +56,31 @@ export async function POST(req) {
     .maybeSingle();
   if (error) return deny(500, 'No se pudo registrar el cobro.');
   if (!updated) return deny(409, 'Esta venta ya fue cobrada o cancelada.');
+
+  // Sincronización automática con /ventas (seller_sales):
+  // Si la venta tiene vendedora asignada, registramos el movimiento en el libro contable
+  // para que impacte de inmediato en su comisión, el ranking y el arqueo de caja.
+  if (sale.seller_id && total > 0) {
+    const saleDate = argentinaDayRange().day;
+    const clientRef = crypto.randomUUID();
+    const note = `Venta mostrador #${orderId}${sale.client_name ? ` (${sale.client_name})` : ''}`;
+    try {
+      const { error: syncErr } = await supabaseAdmin.from('seller_sales').insert({
+        client_ref: clientRef,
+        seller_id: sale.seller_id,
+        sale_date: saleDate,
+        amount: total,
+        payment_method: paymentMethod,
+        note,
+        created_by: staff.id
+      });
+      if (syncErr) {
+        console.error('POS charge: error al registrar en seller_sales:', syncErr);
+      }
+    } catch (syncEx) {
+      console.error('POS charge: excepción al registrar en seller_sales:', syncEx);
+    }
+  }
 
   return NextResponse.json({
     success: true,
