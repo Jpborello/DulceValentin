@@ -4,6 +4,8 @@ import { useCallback, useEffect, useState, useMemo, useRef } from 'react';
 import { Users, Plus, Wallet, HandCoins, Loader2, LogOut, X, Download, CloudOff, ChevronLeft, ChevronRight, Save, Banknote, Receipt, Calculator, Trophy, TrendingUp, TrendingDown, History, Send, Target, Sparkles, Pencil, Zap, Undo2, Settings, Check, Building2, AlertTriangle, AlertCircle, Copy, CheckCheck, FileSpreadsheet, Clock, Landmark } from 'lucide-react';
 import { supabase } from '@/lib/supabaseClient';
 import { adminFetch } from '@/lib/adminFetch';
+import AliasManager from '@/components/AliasManager';
+import { pickAlias, aliasStatus, aliasRemaining, aliasRules } from '@/lib/aliasPick';
 import { downloadVentasExcel, cierreText, OWNER_WHATSAPP, downloadTransferenciasExcelForMica, transferenciasWhatsAppText } from '@/lib/ventasExport';
 
 // /ventas (2026-10): ventas, comisiones, vales, liquidaciones y arqueo de
@@ -731,7 +733,7 @@ function SellerNumbersModal({ sellers, currentMap, onClose, onSave }) {
 }
 
 // ---------------------------------------------------------------- Barra de Carga Rápida en Hora Pico
-function QuickSaleBar({ sellers, numberMap, date, dailyAlias, dayTransfers = [], onSaleCreated, onOpenNumbersModal }) {
+function QuickSaleBar({ sellers, numberMap, date, aliases = [], onSaleCreated, onOpenNumbersModal, onEditAliases }) {
   const [sellerInput, setSellerInput] = useState('');
   const [selectedSellerId, setSelectedSellerId] = useState(null);
   const [amount, setAmount] = useState('');
@@ -744,15 +746,28 @@ function QuickSaleBar({ sellers, numberMap, date, dailyAlias, dayTransfers = [],
   const amountRef = useRef(null);
   const sellerInputRef = useRef(null);
 
-  const dayTransferTotal = useMemo(() => {
-    return (dayTransfers || []).reduce((acc, t) => acc + (t.amount || 0), 0);
-  }, [dayTransfers]);
+  // Alias de cobro: se sugiere solo el primero que acepta el monto; con
+  // flechas arriba/abajo (o clic en el chip) se elige otro.
+  const [aliasChoice, setAliasChoice] = useState(null);
+  const [aliasCopied, setAliasCopied] = useState(false);
+  const activeAliases = useMemo(() => aliases.filter((a) => a.active), [aliases]);
+  const amountNum = Number(String(amount).replace(/[^\d]/g, '')) || 0;
+  const chosenAlias = useMemo(() => pickAlias(activeAliases, amountNum, aliasChoice), [activeAliases, amountNum, aliasChoice]);
 
-  const aliasLimit = Number(dailyAlias?.limit) || 1000000;
-  const transferRemaining = aliasLimit - dayTransferTotal;
-  const transferPct = Math.round((dayTransferTotal / (aliasLimit || 1)) * 100);
-  const isTransferOver = dayTransferTotal >= aliasLimit;
-  const isTransferNear = !isTransferOver && transferPct >= 80;
+  const cycleAlias = (dir) => {
+    const ok = activeAliases.filter((a) => aliasStatus(a, amountNum).ok);
+    if (ok.length === 0) return;
+    const idx = ok.findIndex((a) => a.id === chosenAlias?.id);
+    const next = ok[(idx + dir + ok.length) % ok.length];
+    setAliasChoice(next.id);
+  };
+
+  const copyChosenAlias = () => {
+    if (!chosenAlias) return;
+    navigator.clipboard?.writeText(chosenAlias.alias);
+    setAliasCopied(true);
+    setTimeout(() => setAliasCopied(false), 1500);
+  };
 
   const activeSellers = useMemo(() => sellers.filter((s) => s.active !== false), [sellers]);
 
@@ -827,6 +842,15 @@ function QuickSaleBar({ sellers, numberMap, date, dailyAlias, dayTransfers = [],
       return;
     }
 
+    let saleAlias = null;
+    if (targetMethod === 'transferencia' && activeAliases.length > 0) {
+      saleAlias = pickAlias(activeAliases, Number(targetAmount), aliasChoice);
+      if (!saleAlias) {
+        setError(`Ningún alias acepta ${money(targetAmount)} (por mínimo, máximo o tope). Revisá los alias o cobralo en efectivo.`);
+        return;
+      }
+    }
+
     setBusy(true);
     setError('');
 
@@ -839,6 +863,7 @@ function QuickSaleBar({ sellers, numberMap, date, dailyAlias, dayTransfers = [],
         date,
         amount: Number(targetAmount),
         method: targetMethod,
+        aliasId: saleAlias?.id || null,
         note: 'Carga rápida mostrador'
       });
 
@@ -850,6 +875,7 @@ function QuickSaleBar({ sellers, numberMap, date, dailyAlias, dayTransfers = [],
           sellerName: targetSeller.name,
           amount: Number(targetAmount),
           method: targetMethod,
+          aliasName: saleAlias?.alias || '',
           sellerNum: numberMap[targetSeller.id]
         });
       }
@@ -859,6 +885,7 @@ function QuickSaleBar({ sellers, numberMap, date, dailyAlias, dayTransfers = [],
       setAmount('');
       setSellerInput('');
       setSelectedSellerId(null);
+      setAliasChoice(null);
 
       setTimeout(() => {
         if (sellerInputRef.current) sellerInputRef.current.focus();
@@ -1011,6 +1038,11 @@ function QuickSaleBar({ sellers, numberMap, date, dailyAlias, dayTransfers = [],
     if (e.key === 'e' || e.key === 'E') {
       e.preventDefault();
       setMethod('efectivo');
+      return;
+    }
+    if ((e.key === 'ArrowUp' || e.key === 'ArrowDown') && method === 'transferencia') {
+      e.preventDefault();
+      cycleAlias(e.key === 'ArrowDown' ? 1 : -1);
       return;
     }
 
@@ -1350,43 +1382,71 @@ function QuickSaleBar({ sellers, numberMap, date, dailyAlias, dayTransfers = [],
         </span>
       </div>
 
-      {/* Alerta de Alias al cobrar por Transferencia */}
+      {/* Alias de cobro al cobrar por Transferencia */}
       {method === 'transferencia' && (
-        <div style={{
-          marginTop: '10px',
-          padding: '8px 12px',
-          borderRadius: '8px',
-          fontSize: '0.82rem',
-          fontWeight: 700,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          gap: '8px',
-          backgroundColor: isTransferOver ? '#FEF2F2' : isTransferNear ? '#FFFBEB' : '#ECFDF5',
-          color: isTransferOver ? '#B91C1C' : isTransferNear ? '#92400E' : '#047857',
-          border: `1px solid ${isTransferOver ? '#FCA5A5' : isTransferNear ? '#FDE68A' : '#A7F3D0'}`
-        }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-            {isTransferOver ? <AlertCircle size={16} /> : isTransferNear ? <AlertTriangle size={16} /> : <Check size={16} />}
-            <span>
-              {isTransferOver ? (
-                <><strong>🚨 ALIAS EN EL TOPE:</strong> <code>{dailyAlias?.alias || 'hoy'}</code> superó el límite ({money(dayTransferTotal)} de {money(aliasLimit)}).</>
-              ) : isTransferNear ? (
-                <><strong>⚠️ ALERTA:</strong> <code>{dailyAlias?.alias || 'hoy'}</code> al {transferPct}%. Restan <strong>{money(transferRemaining)}</strong>.</>
-              ) : (
-                <><strong>🏦 Alias del día:</strong> <code>{dailyAlias?.alias || 'hoy'}</code> · Disponible: <strong>{money(transferRemaining)}</strong>.</>
-              )}
-            </span>
-          </div>
-          <span
-            style={{ fontSize: '0.74rem', textDecoration: 'underline', cursor: 'pointer', flexShrink: 0 }}
-            onClick={() => {
-              if (dailyAlias?.alias) navigator.clipboard.writeText(dailyAlias.alias);
-            }}
-            title="Copiar alias"
-          >
-            Copiar alias
-          </span>
+        <div style={{ marginTop: '10px', padding: '10px 12px', borderRadius: '10px', border: `1.5px solid ${chosenAlias ? '#10B981' : '#FCA5A5'}`, backgroundColor: chosenAlias ? '#ECFDF5' : '#FEF2F2' }}>
+          {activeAliases.length === 0 ? (
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px', flexWrap: 'wrap', fontSize: '0.84rem', fontWeight: 700, color: '#B91C1C' }}>
+              <span>No hay alias de cobro activos. La transferencia se carga igual, sin alias.</span>
+              <button type="button" onClick={onEditAliases} className="btn-secondary" style={{ padding: '4px 10px', fontSize: '0.76rem' }}>Cargar alias</button>
+            </div>
+          ) : (
+            <>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px', flexWrap: 'wrap' }}>
+                {chosenAlias ? (
+                  <div style={{ color: '#065F46', minWidth: 0 }}>
+                    <div style={{ fontSize: '0.72rem', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.03em' }}>🏦 Pasale este alias{amountNum ? ` · ${money(amountNum)}` : ''}</div>
+                    <div style={{ fontSize: '1.25rem', fontWeight: 900, fontFamily: 'monospace', wordBreak: 'break-all', color: 'var(--text-main)' }}>{chosenAlias.alias}</div>
+                    <div style={{ fontSize: '0.78rem', fontWeight: 600 }}>
+                      {[chosenAlias.holder, chosenAlias.bank].filter(Boolean).join(' · ')}
+                      {aliasRemaining(chosenAlias) !== null ? ` · le quedan ${money(aliasRemaining(chosenAlias))} hoy` : ''}
+                    </div>
+                    {chosenAlias.description && <div style={{ fontSize: '0.8rem', fontWeight: 800, color: '#92400E' }}>“{chosenAlias.description}”</div>}
+                  </div>
+                ) : (
+                  <div style={{ fontSize: '0.86rem', fontWeight: 800, color: '#B91C1C' }}>
+                    🚫 Ningún alias acepta {money(amountNum)}. Revisá mínimos y topes o cobralo en efectivo.
+                  </div>
+                )}
+                {chosenAlias && (
+                  <button type="button" onClick={copyChosenAlias} className="btn-secondary" style={{ padding: '6px 12px', fontSize: '0.8rem', fontWeight: 800, display: 'inline-flex', alignItems: 'center', gap: '5px', flexShrink: 0 }}>
+                    {aliasCopied ? <><CheckCheck size={14} /> Copiado</> : <><Copy size={14} /> Copiar alias</>}
+                  </button>
+                )}
+              </div>
+              <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginTop: '8px', alignItems: 'center' }}>
+                {activeAliases.map((a) => {
+                  const st = aliasStatus(a, amountNum);
+                  const sel = chosenAlias?.id === a.id;
+                  return (
+                    <button
+                      key={a.id}
+                      type="button"
+                      disabled={!st.ok}
+                      onClick={() => { setAliasChoice(a.id); amountRef.current?.focus(); }}
+                      title={a.description || aliasRules(a)}
+                      style={{
+                        padding: '4px 9px',
+                        borderRadius: '8px',
+                        fontSize: '0.74rem',
+                        fontWeight: 800,
+                        cursor: st.ok ? 'pointer' : 'not-allowed',
+                        border: sel ? '2px solid #047857' : '1px solid var(--border-color)',
+                        backgroundColor: sel ? '#047857' : st.ok ? 'var(--bg-card)' : 'transparent',
+                        color: sel ? '#FFFFFF' : st.ok ? 'var(--text-main)' : 'var(--text-muted)',
+                        textDecoration: st.ok ? 'none' : 'line-through'
+                      }}
+                    >
+                      {a.alias}{!st.ok ? ` · ${st.reason}` : ''}
+                    </button>
+                  );
+                })}
+                <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>
+                  <kbd>↑</kbd> <kbd>↓</kbd> cambiar alias
+                </span>
+              </div>
+            </>
+          )}
         </div>
       )}
 
@@ -1415,7 +1475,7 @@ function QuickSaleBar({ sellers, numberMap, date, dailyAlias, dayTransfers = [],
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 800, fontSize: '0.88rem' }}>
             <Check size={18} style={{ color: '#059669' }} />
             <span>
-              ✓ Venta de <strong>{money(undoToast.amount)}</strong> cargada a <strong>#{undoToast.sellerNum} {undoToast.sellerName}</strong> ({METHOD_LABEL[undoToast.method]})
+              ✓ Venta de <strong>{money(undoToast.amount)}</strong> cargada a <strong>#{undoToast.sellerNum} {undoToast.sellerName}</strong> ({METHOD_LABEL[undoToast.method]}{undoToast.aliasName ? ` → ${undoToast.aliasName}` : ''})
             </span>
           </div>
           <button
@@ -1443,128 +1503,13 @@ function QuickSaleBar({ sellers, numberMap, date, dailyAlias, dayTransfers = [],
   );
 }
 
-// ---------------------------------------------------------------- Modal Configurar Alias del Día
-function DailyAliasModal({ date, currentConfig, onClose, onSave }) {
-  const [alias, setAlias] = useState(currentConfig?.alias || '');
-  const [limit, setLimit] = useState(String(currentConfig?.limit || 1000000));
-  const [holder, setHolder] = useState(currentConfig?.holder || '');
-  const [bank, setBank] = useState(currentConfig?.bank || '');
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState('');
-
-  const handleSave = async (e) => {
-    e?.preventDefault();
-    if (!alias.trim()) {
-      setError('Escribí el alias bancario.');
-      return;
-    }
-    if (!amountOk(limit)) {
-      setError('Ingresá el monto tope en pesos sin puntos (ej: 800000).');
-      return;
-    }
-    setBusy(true);
-    setError('');
-    try {
-      await onSave({
-        alias: alias.trim().toLowerCase(),
-        limit: Number(limit),
-        holder: holder.trim(),
-        bank: bank.trim()
-      });
-    } catch (err) {
-      setError(err.message || 'Error al guardar');
-      setBusy(false);
-    }
-  };
-
-  return (
-    <Modal
-      title="Configurar Alias del Día y Tope"
-      subtitle={`Definí el alias bancario y el monto límite para ${fmtDate(date)}`}
-      onClose={onClose}
-      maxWidth="460px"
-    >
-      <form onSubmit={handleSave}>
-        {error && (
-          <div role="alert" style={{ fontSize: '0.84rem', fontWeight: 700, color: '#B91C1C', backgroundColor: '#FEF2F2', padding: '8px 10px', borderRadius: '8px', marginBottom: '10px' }}>
-            {error}
-          </div>
-        )}
-
-        <div style={{ marginBottom: '12px' }}>
-          <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 700, color: 'var(--text-muted)', marginBottom: '4px' }}>
-            Alias de transferencia / CVU *
-          </label>
-          <input
-            type="text"
-            required
-            autoFocus
-            value={alias}
-            onChange={(e) => setAlias(e.target.value.toLowerCase().trim())}
-            placeholder="ej: dulce.valentin.rioja"
-            className="form-input"
-            style={{ width: '100%', fontSize: '1.05rem', fontWeight: 800 }}
-          />
-          <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>
-            El alias que se le pasará a los clientes hoy para abonar.
-          </span>
-        </div>
-
-        <AmountInput
-          label="Monto Tope del Alias *"
-          value={limit}
-          onChange={setLimit}
-          placeholder="800000"
-        />
-
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '14px' }}>
-          <div>
-            <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 700, color: 'var(--text-muted)', marginBottom: '4px' }}>
-              Titular de la cuenta
-            </label>
-            <input
-              type="text"
-              value={holder}
-              onChange={(e) => setHolder(e.target.value)}
-              placeholder="ej: Micaela Gómez"
-              className="form-input"
-              style={{ width: '100%', fontSize: '0.9rem' }}
-            />
-          </div>
-
-          <div>
-            <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 700, color: 'var(--text-muted)', marginBottom: '4px' }}>
-              Banco / Billetera
-            </label>
-            <input
-              type="text"
-              value={bank}
-              onChange={(e) => setBank(e.target.value)}
-              placeholder="ej: Banco Galicia / MP"
-              className="form-input"
-              style={{ width: '100%', fontSize: '0.9rem' }}
-            />
-          </div>
-        </div>
-
-        <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end', marginTop: '16px' }}>
-          <button type="button" onClick={onClose} className="btn-secondary" disabled={busy}>
-            Cancelar
-          </button>
-          <button type="submit" disabled={busy} className="btn-primary" style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
-            {busy ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
-            Guardar Alias y Tope
-          </button>
-        </div>
-      </form>
-    </Modal>
-  );
-}
-
 // ---------------------------------------------------------------- Modal Carga Directa de Transferencia
-function DirectTransferModal({ date, sellers, numberMap, onClose, onSave }) {
+function DirectTransferModal({ date, sellers, numberMap, aliases = [], onClose, onSave }) {
   const [selectedSellerId, setSelectedSellerId] = useState(sellers[0]?.id || '');
   const [amount, setAmount] = useState('');
+  const [aliasChoice, setAliasChoice] = useState(null);
+  const activeAliases = aliases.filter((a) => a.active);
+  const chosenAlias = pickAlias(activeAliases, Number(amount) || 0, aliasChoice);
   const [note, setNote] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
@@ -1582,9 +1527,14 @@ function DirectTransferModal({ date, sellers, numberMap, onClose, onSave }) {
     setBusy(true);
     setError('');
     try {
+      if (activeAliases.length > 0 && !chosenAlias) {
+        setError('Ningún alias acepta ese monto. Revisá los alias.');
+        return;
+      }
       await onSave({
         sellerId: selectedSellerId,
         amount: Number(amount),
+        aliasId: chosenAlias?.id || null,
         note: note.trim() || 'Transferencia directa'
       });
       onClose();
@@ -1634,6 +1584,26 @@ function DirectTransferModal({ date, sellers, numberMap, onClose, onSave }) {
           autoFocus
         />
 
+        {activeAliases.length > 0 && (
+          <div style={{ marginBottom: '12px' }}>
+            <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 700, color: 'var(--text-muted)', marginBottom: '4px' }}>
+              Entró al alias
+            </label>
+            <select
+              value={chosenAlias?.id || ''}
+              onChange={(e) => setAliasChoice(e.target.value || null)}
+              className="form-input"
+              style={{ width: '100%', fontSize: '0.92rem', fontWeight: 700 }}
+            >
+              {!chosenAlias && <option value="">— Ningún alias acepta este monto —</option>}
+              {activeAliases.map((a) => {
+                const st = aliasStatus(a, Number(amount) || 0);
+                return <option key={a.id} value={a.id} disabled={!st.ok}>{a.alias}{st.ok ? '' : ` (${st.reason})`}</option>;
+              })}
+            </select>
+          </div>
+        )}
+
         <div style={{ marginBottom: '14px' }}>
           <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 700, color: 'var(--text-muted)', marginBottom: '4px' }}>
             Nota / Comprobante (opcional)
@@ -1666,6 +1636,7 @@ function DirectTransferModal({ date, sellers, numberMap, onClose, onSave }) {
 function DailyAliasSection({
   date,
   aliasConfig,
+  aliases = [],
   transfers = [],
   sellers = [],
   numberMap = {},
@@ -1681,17 +1652,20 @@ function DailyAliasSection({
     return (transfers || []).reduce((acc, t) => acc + (t.amount || 0), 0);
   }, [transfers]);
 
-  const limit = Number(aliasConfig?.limit) || 1000000;
+  // Topes sumados de los alias activos (para el Excel / WhatsApp de Mica)
+  const activeAliases = aliases.filter((a) => a.active);
+  const limit = activeAliases.reduce((acc, a) => acc + (a.dailyLimit || 0), 0) || Number(aliasConfig?.limit) || 0;
   const remaining = limit - totalTransfers;
-  const pct = Math.round((totalTransfers / (limit || 1)) * 100);
-  const isOver = totalTransfers >= limit;
-  const isNear = !isOver && pct >= 80;
+  const pct = limit > 0 ? Math.round((totalTransfers / limit) * 100) : 0;
+  const fullCount = activeAliases.filter((a) => aliasRemaining(a) === 0).length;
+  const isOver = activeAliases.length > 0 && fullCount === activeAliases.length;
+  const isNear = !isOver && fullCount > 0;
+  const unassigned = transfers.filter((t) => !t.aliasId).reduce((acc, t) => acc + (t.amount || 0), 0);
 
-  const copyAlias = () => {
-    if (!aliasConfig?.alias) return;
-    navigator.clipboard.writeText(aliasConfig.alias);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+  const copyAlias = (alias) => {
+    navigator.clipboard?.writeText(alias);
+    setCopied(alias);
+    setTimeout(() => setCopied(false), 1500);
   };
 
   const handleExportExcelForMica = async () => {
@@ -1700,6 +1674,7 @@ function DailyAliasSection({
       await downloadTransferenciasExcelForMica({
         date,
         aliasConfig,
+        aliases,
         transfers,
         totalTransfers,
         remaining,
@@ -1716,6 +1691,7 @@ function DailyAliasSection({
     const text = transferenciasWhatsAppText({
       date,
       aliasConfig,
+      aliases,
       transfers,
       totalTransfers,
       remaining,
@@ -1775,7 +1751,7 @@ function DailyAliasSection({
           <div>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
               <h3 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 900, color: 'var(--text-main)' }}>
-                Alias del Día y Control de Transferencias
+                Alias de Cobro y Transferencias
               </h3>
               {/* Badge de Estado del Límite */}
               <span style={{
@@ -1788,11 +1764,11 @@ function DailyAliasSection({
                 color: '#FFFFFF',
                 boxShadow: isOver ? '0 0 10px rgba(220, 38, 38, 0.5)' : undefined
               }}>
-                {isOver ? `🚨 TOPE ALCANZADO (${pct}%)` : isNear ? `⚠️ CERCA DEL TOPE (${pct}%)` : `✅ ACTIVO (${pct}%)`}
+{isOver ? '🚨 TODOS LOS ALIAS LLENOS' : isNear ? `⚠️ ${fullCount} ALIAS LLENO${fullCount > 1 ? 'S' : ''}` : `✅ ${activeAliases.length} ALIAS ACTIVO${activeAliases.length === 1 ? '' : 'S'}`}
               </span>
             </div>
             <p style={{ margin: 0, fontSize: '0.78rem', color: 'var(--text-muted)' }}>
-              Monitoreo automático en tiempo real para Micaela · Conciliación y alertas de tope
+              Total transferido hoy: <strong>{money(totalTransfers)}</strong> ({transfers.length}) · al cobrar se sugiere solo el alias que acepta el monto
             </p>
           </div>
         </div>
@@ -1805,7 +1781,7 @@ function DailyAliasSection({
             className="btn-secondary"
             style={{ padding: '6px 10px', fontSize: '0.78rem', display: 'inline-flex', alignItems: 'center', gap: '5px' }}
           >
-            <Settings size={13} /> Configurar Alias y Tope
+            <Settings size={13} /> Editar alias
           </button>
 
           <button
@@ -1832,111 +1808,55 @@ function DailyAliasSection({
         </div>
       </div>
 
-      {/* Alerta Inteligente Automática */}
-      <div style={{
-        padding: '12px 14px',
-        borderRadius: '12px',
-        marginBottom: '14px',
-        display: 'flex',
-        alignItems: 'flex-start',
-        gap: '10px',
-        backgroundColor: isOver ? '#FEF2F2' : isNear ? '#FFFBEB' : '#F0FDF4',
-        border: `1px solid ${isOver ? '#FCA5A5' : isNear ? '#FDE68A' : '#BBF7D0'}`,
-        color: isOver ? '#991B1B' : isNear ? '#92400E' : '#166534'
-      }}>
-        {isOver ? <AlertCircle size={20} style={{ flexShrink: 0, marginTop: '2px', color: '#DC2626' }} /> : isNear ? <AlertTriangle size={20} style={{ flexShrink: 0, marginTop: '2px', color: '#D97706' }} /> : <Check size={20} style={{ flexShrink: 0, marginTop: '2px', color: '#16A34A' }} />}
-        <div style={{ flex: 1, fontSize: '0.86rem' }}>
-          {isOver ? (
-            <>
-              <div style={{ fontWeight: 900, fontSize: '0.92rem', marginBottom: '2px' }}>🚨 ¡LÍMITE ALCANZADO EN EL ALIAS!</div>
-              El alias <strong>{aliasConfig?.alias || 'del día'}</strong> ya completó el tope diario de <strong>{money(limit)}</strong> (total recaudado: <strong>{money(totalTransfers)}</strong>). Cambiá el alias en <strong>&ldquo;Configurar Alias y Tope&rdquo;</strong> para no seguir recibiendo transferencias en esta cuenta.
-            </>
-          ) : isNear ? (
-            <>
-              <div style={{ fontWeight: 900, fontSize: '0.92rem', marginBottom: '2px' }}>⚠️ ¡ATENCIÓN! PRÓXIMO A ALCANZAR EL TOPE</div>
-              El alias <strong>{aliasConfig?.alias || 'del día'}</strong> está al <strong>{pct}%</strong> de su capacidad máxima. Restan solo <strong>{money(remaining)}</strong> disponibles antes de alcanzar el límite de <strong>{money(limit)}</strong>.
-            </>
-          ) : (
-            <>
-              <div style={{ fontWeight: 800, fontSize: '0.88rem', marginBottom: '2px' }}>✓ Alias operativo y con margen disponible</div>
-              Lleva <strong>{money(totalTransfers)}</strong> transferidos ({pct}%). Restan <strong>{money(remaining)}</strong> disponibles hasta alcanzar el tope de <strong>{money(limit)}</strong>.
-            </>
+      {/* Tarjetas por alias: recibido hoy contra el tope */}
+      {aliases.length === 0 ? (
+        <div style={{ padding: '14px', borderRadius: '12px', border: '1px dashed var(--border-color)', textAlign: 'center', fontSize: '0.86rem', color: 'var(--text-muted)', marginBottom: '14px' }}>
+          No hay alias de cobro cargados. <button type="button" onClick={onConfigClick} className="btn-secondary" style={{ padding: '3px 10px', fontSize: '0.78rem', marginLeft: '6px' }}>Agregar alias</button>
+        </div>
+      ) : (
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '10px', marginBottom: '14px' }}>
+          {aliases.map((a, idx) => {
+            const rem = aliasRemaining(a);
+            const p = a.dailyLimit ? Math.round(((a.receivedToday || 0) / a.dailyLimit) * 100) : null;
+            const full = rem === 0;
+            const near = !full && p !== null && p >= 80;
+            const color = !a.active ? 'var(--text-muted)' : full ? '#DC2626' : near ? '#D97706' : '#10B981';
+            return (
+              <div key={a.id} style={{ border: `1.5px solid ${a.active ? color : 'var(--border-color)'}`, borderRadius: '12px', padding: '10px 12px', backgroundColor: 'var(--bg-surface-elevated, var(--bg-card))', opacity: a.active ? 1 : 0.6 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '6px' }}>
+                  <div style={{ minWidth: 0 }}>
+                    <div style={{ fontSize: '0.68rem', fontWeight: 800, color: 'var(--text-muted)' }}>
+                      {idx + 1}. {!a.active ? 'PAUSADO' : full ? 'TOPE LLENO' : near ? 'CASI LLENO' : 'ACTIVO'}
+                    </div>
+                    <div style={{ fontFamily: 'monospace', fontWeight: 900, fontSize: '0.98rem', wordBreak: 'break-all' }}>{a.alias}</div>
+                  </div>
+                  <button type="button" onClick={() => copyAlias(a.alias)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: copied === a.alias ? '#059669' : 'var(--text-muted)', display: 'inline-flex', alignItems: 'center', gap: '3px', fontSize: '0.7rem', fontWeight: 800, flexShrink: 0 }} title="Copiar alias">
+                    {copied === a.alias ? <CheckCheck size={14} /> : <Copy size={14} />}
+                  </button>
+                </div>
+                <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>{[a.holder, a.bank].filter(Boolean).join(' · ') || 'Sin titular'} · {aliasRules(a)}</div>
+                {a.description && <div style={{ fontSize: '0.76rem', fontWeight: 800, color: '#92400E', marginTop: '2px' }}>“{a.description}”</div>}
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.78rem', fontWeight: 800, marginTop: '6px' }}>
+                  <span>{money(a.receivedToday)} <span style={{ fontWeight: 600, color: 'var(--text-muted)' }}>({a.countToday})</span></span>
+                  <span style={{ color }}>{rem !== null ? (full ? 'Lleno' : `quedan ${money(rem)}`) : 'sin tope'}</span>
+                </div>
+                {a.dailyLimit ? (
+                  <div style={{ height: '6px', borderRadius: '999px', backgroundColor: 'var(--border-color)', overflow: 'hidden', marginTop: '4px' }}>
+                    <div style={{ height: '100%', width: `${Math.min(100, p)}%`, backgroundColor: color, transition: 'width 0.4s ease' }} />
+                  </div>
+                ) : null}
+              </div>
+            );
+          })}
+          {unassigned > 0 && (
+            <div style={{ border: '1px dashed var(--border-color)', borderRadius: '12px', padding: '10px 12px', fontSize: '0.78rem', color: 'var(--text-muted)' }}>
+              <div style={{ fontWeight: 800 }}>Sin alias asignado</div>
+              <div style={{ fontWeight: 900, fontSize: '0.95rem', color: 'var(--text-main)' }}>{money(unassigned)}</div>
+              Transferencias cargadas antes de los alias de cobro.
+            </div>
           )}
         </div>
-      </div>
-
-      {/* Tarjetas de Métricas (4 KPIs) */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '10px', marginBottom: '14px' }}>
-        {/* Alias */}
-        <div style={{ backgroundColor: 'var(--bg-surface-elevated, var(--bg-card))', border: '1px solid var(--border-color)', borderRadius: '12px', padding: '12px' }}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '4px' }}>
-            <span style={{ fontSize: '0.74rem', fontWeight: 700, color: 'var(--text-muted)' }}>Alias Activo</span>
-            <button
-              type="button"
-              onClick={copyAlias}
-              style={{ background: 'none', border: 'none', cursor: 'pointer', color: copied ? '#059669' : 'var(--text-muted)', display: 'inline-flex', alignItems: 'center', gap: '3px', fontSize: '0.72rem', fontWeight: 800 }}
-              title="Copiar alias al portapapeles"
-            >
-              {copied ? <CheckCheck size={14} /> : <Copy size={14} />} {copied ? 'Copiado!' : 'Copiar'}
-            </button>
-          </div>
-          <div style={{ fontSize: '1.05rem', fontWeight: 900, color: 'var(--text-main)', fontFamily: 'monospace', wordBreak: 'break-all' }}>
-            {aliasConfig?.alias || 'Sin definir'}
-          </div>
-          <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '2px' }}>
-            {aliasConfig?.holder || 'Sin titular'} {aliasConfig?.bank ? `· ${aliasConfig.bank}` : ''}
-          </div>
-        </div>
-
-        {/* Monto Tope */}
-        <div style={{ backgroundColor: 'var(--bg-surface-elevated, var(--bg-card))', border: '1px solid var(--border-color)', borderRadius: '12px', padding: '12px' }}>
-          <div style={{ fontSize: '0.74rem', fontWeight: 700, color: 'var(--text-muted)', marginBottom: '4px' }}>Tope Establecido</div>
-          <div style={{ fontSize: '1.2rem', fontWeight: 900, color: 'var(--text-main)' }}>{money(limit)}</div>
-          <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '2px' }}>Límite máximo del día</div>
-        </div>
-
-        {/* Total Transferido */}
-        <div style={{ backgroundColor: 'var(--bg-surface-elevated, var(--bg-card))', border: '1px solid var(--border-color)', borderRadius: '12px', padding: '12px' }}>
-          <div style={{ fontSize: '0.74rem', fontWeight: 700, color: 'var(--text-muted)', marginBottom: '4px' }}>Total Transferido Hoy</div>
-          <div style={{ fontSize: '1.2rem', fontWeight: 900, color: isOver ? '#DC2626' : 'var(--text-main)' }}>{money(totalTransfers)}</div>
-          <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '2px' }}>{transfers.length} transferencias registradas</div>
-        </div>
-
-        {/* Restante */}
-        <div style={{ backgroundColor: 'var(--bg-surface-elevated, var(--bg-card))', border: '1px solid var(--border-color)', borderRadius: '12px', padding: '12px' }}>
-          <div style={{ fontSize: '0.74rem', fontWeight: 700, color: 'var(--text-muted)', marginBottom: '4px' }}>Disponible / Resto</div>
-          <div style={{ fontSize: '1.2rem', fontWeight: 900, color: remaining >= 0 ? '#047857' : '#DC2626' }}>
-            {remaining >= 0 ? money(remaining) : `Exceso: ${money(-remaining)}`}
-          </div>
-          <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '2px' }}>
-            {remaining >= 0 ? `${100 - Math.min(100, pct)}% de margen libre` : 'Excedido del límite'}
-          </div>
-        </div>
-      </div>
-
-      {/* Barra de Progreso */}
-      <div style={{ marginBottom: '16px' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem', fontWeight: 800, marginBottom: '5px' }}>
-          <span>Progreso del Tope</span>
-          <span style={{ color: isOver ? '#DC2626' : isNear ? '#D97706' : '#047857' }}>
-            {pct}% ({money(totalTransfers)} de {money(limit)})
-          </span>
-        </div>
-        <div style={{ height: '10px', borderRadius: '999px', backgroundColor: 'var(--border-color)', overflow: 'hidden' }}>
-          <div style={{
-            height: '100%',
-            width: `${Math.min(100, pct)}%`,
-            borderRadius: '999px',
-            backgroundColor: isOver ? '#DC2626' : isNear ? '#F59E0B' : '#10B981',
-            transition: 'width 0.4s ease'
-          }} />
-        </div>
-        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.68rem', color: 'var(--text-muted)', marginTop: '3px' }}>
-          <span>$0</span>
-          <span>80% ({money(limit * 0.8)})</span>
-          <span>100% ({money(limit)})</span>
-        </div>
-      </div>
+      )}
 
       {/* Historial de Transferencias y Hora */}
       <div style={{ borderTop: '1px solid var(--border-color)', paddingTop: '14px' }}>
@@ -1970,6 +1890,7 @@ function DailyAliasSection({
                   <th style={{ padding: '7px 8px', fontWeight: 700 }}>Hora</th>
                   <th style={{ padding: '7px 8px', fontWeight: 700 }}>Monto</th>
                   <th style={{ padding: '7px 8px', fontWeight: 700 }}>Vendedora</th>
+                  <th style={{ padding: '7px 8px', fontWeight: 700 }}>Alias</th>
                   <th style={{ padding: '7px 8px', fontWeight: 700 }}>Nota / Detalle</th>
                   <th style={{ padding: '7px 8px', fontWeight: 700, textAlign: 'right' }}>Acción</th>
                 </tr>
@@ -1992,6 +1913,9 @@ function DailyAliasSection({
                           </span>
                         ) : null}
                         {t.sellerName}
+                      </td>
+                      <td style={{ padding: '8px', fontFamily: 'monospace', fontWeight: 700, whiteSpace: 'nowrap' }}>
+                        {t.aliasName || <span style={{ color: 'var(--text-muted)', fontFamily: 'inherit' }}>—</span>}
                       </td>
                       <td style={{ padding: '8px', color: 'var(--text-muted)', maxWidth: '200px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                         {t.note || '—'}
@@ -2232,24 +2156,7 @@ export default function VentasPage() {
     writeGoals(updated);
   };
 
-  const handleSaveDailyAlias = async (newConfig) => {
-    try {
-      await api('POST', {
-        action: 'setDailyAlias',
-        date,
-        alias: newConfig.alias,
-        limit: newConfig.limit,
-        holder: newConfig.holder,
-        bank: newConfig.bank
-      });
-      setShowAliasModal(false);
-      load();
-    } catch (err) {
-      window.alert(err.message || 'No se pudo guardar el alias.');
-    }
-  };
-
-  const handleDirectTransfer = async ({ sellerId, amount, note }) => {
+  const handleDirectTransfer = async ({ sellerId, amount, note, aliasId }) => {
     const clientRef = crypto.randomUUID();
     const { queued } = await sendOrQueue({
       action: 'addSale',
@@ -2258,6 +2165,7 @@ export default function VentasPage() {
       date,
       amount,
       method: 'transferencia',
+      aliasId: aliasId || null,
       note: note || 'Transferencia directa'
     });
     afterSave(queued);
@@ -2417,10 +2325,10 @@ export default function VentasPage() {
                 sellers={data.sellers}
                 numberMap={assignedNumbers}
                 date={date}
-                dailyAlias={data.dailyAlias}
-                dayTransfers={data.dayTransfers}
+                aliases={data.aliases || []}
                 onSaleCreated={afterSave}
                 onOpenNumbersModal={() => setShowNumbersModal(true)}
+                onEditAliases={() => setShowAliasModal(true)}
               />
             )}
 
@@ -2429,6 +2337,7 @@ export default function VentasPage() {
               <DailyAliasSection
                 date={date}
                 aliasConfig={data.dailyAlias}
+                aliases={data.aliases || []}
                 transfers={data.dayTransfers || []}
                 sellers={data.sellers}
                 numberMap={assignedNumbers}
@@ -2582,11 +2491,11 @@ export default function VentasPage() {
           />
         )}
         {showAliasModal && (
-          <DailyAliasModal
-            date={date}
-            currentConfig={data?.dailyAlias}
+          <AliasManager
+            aliases={data?.aliases || []}
+            post={(body) => api('POST', body)}
+            onChanged={load}
             onClose={() => setShowAliasModal(false)}
-            onSave={handleSaveDailyAlias}
           />
         )}
         {showDirectTransferModal && data?.sellers && (
@@ -2594,6 +2503,7 @@ export default function VentasPage() {
             date={date}
             sellers={data.sellers}
             numberMap={assignedNumbers}
+            aliases={data.aliases || []}
             onClose={() => setShowDirectTransferModal(false)}
             onSave={handleDirectTransfer}
           />

@@ -41,6 +41,8 @@ import {
 } from 'lucide-react';
 import { supabase } from '@/lib/supabaseClient';
 import { adminFetch } from '@/lib/adminFetch';
+import AliasManager from '@/components/AliasManager';
+import { aliasRemaining as aliasLeft, aliasRules } from '@/lib/aliasPick';
 import {
   downloadSupervisorExcel,
   supervisorWhatsAppText,
@@ -50,7 +52,7 @@ import {
 const SUPERVISOR_EMAIL = 'belenbarbieri93@gmail.com';
 
 // Tablas que, al cambiar, refrescan el panel en vivo (Supabase Realtime).
-const LIVE_TABLES = ['seller_sales', 'seller_advances', 'seller_payouts', 'cash_counts', 'seller_commission_rates'];
+const LIVE_TABLES = ['seller_sales', 'seller_advances', 'seller_payouts', 'cash_counts', 'seller_commission_rates', 'payment_aliases'];
 const POLL_MS = 30000; // respaldo por si se corta el canal en vivo
 
 // adminFetch devuelve el Response crudo: hay que leer el JSON y chequear el status.
@@ -430,7 +432,8 @@ export default function SupervisorPage() {
   const [activeTab, setActiveTab] = useState('metrics'); // 'metrics' | 'transfers' | 'sellers' | 'history'
   const [privacyMode, setPrivacyMode] = useState(false); // Ocultar números si alguien mira
   const [exportingExcel, setExportingExcel] = useState(false);
-  const [copiedAlias, setCopiedAlias] = useState(false);
+  const [copiedAlias, setCopiedAlias] = useState('');
+  const [showAliasManager, setShowAliasManager] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedSellerFilter, setSelectedSellerFilter] = useState('ALL');
   const [lastUpdate, setLastUpdate] = useState(null);
@@ -561,12 +564,6 @@ export default function SupervisorPage() {
     return transfersList.reduce((acc, t) => acc + (t.amount || 0), 0);
   }, [transfersList]);
 
-  // Monitoreo del tope del alias activo
-  const activeAliasLimit = Number(data?.dailyAlias?.limit) || 1000000;
-  const aliasRemaining = activeAliasLimit - totalTransfersPeriod;
-  const aliasPct = Math.round((totalTransfersPeriod / (activeAliasLimit || 1)) * 100);
-  const aliasIsOver = totalTransfersPeriod >= activeAliasLimit;
-  const aliasIsNear = !aliasIsOver && aliasPct >= 80;
 
   // Filtrado de transferencias
   const filteredTransfers = useMemo(() => {
@@ -607,11 +604,11 @@ export default function SupervisorPage() {
     window.open(`https://wa.me/${OWNER_WHATSAPP}?text=${encodeURIComponent(text)}`, '_blank', 'noopener');
   };
 
-  const copyAliasToClipboard = () => {
-    if (!data?.dailyAlias?.alias) return;
-    navigator.clipboard.writeText(data.dailyAlias.alias);
-    setCopiedAlias(true);
-    setTimeout(() => setCopiedAlias(false), 2000);
+  const copyAliasToClipboard = (alias) => {
+    if (!alias) return;
+    navigator.clipboard?.writeText(alias);
+    setCopiedAlias(alias);
+    setTimeout(() => setCopiedAlias(''), 1500);
   };
 
   // Anular movimiento si fuera necesario
@@ -649,6 +646,15 @@ export default function SupervisorPage() {
   if (!authed) {
     return <SupervisorLogin onLoginSuccess={loadData} />;
   }
+
+  const aliasModal = showAliasManager ? (
+    <AliasManager
+      aliases={data?.aliases || []}
+      post={(body) => api('/api/ventas', { method: 'POST', body: JSON.stringify(body) })}
+      onChanged={() => loadData(true)}
+      onClose={() => setShowAliasManager(false)}
+    />
+  ) : null;
 
   const rangeLabel = !data ? '' : period === 'day' ? fmtDate(data.from) : `${fmtDate(data.from)} al ${fmtDate(data.to)}`;
   const isToday = date === todayAR();
@@ -1214,92 +1220,77 @@ export default function SupervisorPage() {
         {activeTab === 'transfers' && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '18px' }}>
 
-            {/* Tarjeta Fintech de Estado de Cuenta y Tope */}
+            {/* Alias de cobro: lo recibido en cada uno el día elegido */}
             <div style={{
               backgroundColor: 'var(--bg-card)',
               borderRadius: '20px',
-              padding: '22px 24px',
-              border: `2px solid ${aliasIsOver ? '#DC2626' : aliasIsNear ? '#D97706' : 'var(--border-color)'}`,
-              boxShadow: aliasIsOver ? '0 8px 24px rgba(220, 38, 38, 0.12)' : '0 4px 20px rgba(0,0,0,0.03)'
+              padding: '20px 22px',
+              border: '1px solid var(--border-color)',
+              boxShadow: '0 4px 20px rgba(0,0,0,0.03)'
             }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '14px', marginBottom: '16px' }}>
-                <div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap', marginBottom: '6px' }}>
-                    <div style={{
-                      width: '36px',
-                      height: '36px',
-                      borderRadius: '10px',
-                      backgroundColor: 'rgba(13, 148, 136, 0.12)',
-                      color: '#0D9488',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center'
-                    }}>
-                      <Landmark size={20} />
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px', marginBottom: '14px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                  <div style={{ width: '36px', height: '36px', borderRadius: '10px', backgroundColor: 'rgba(13, 148, 136, 0.12)', color: '#0D9488', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    <Landmark size={20} />
+                  </div>
+                  <div>
+                    <h3 style={{ margin: 0, fontSize: '1.1rem', fontWeight: 900, color: 'var(--text-main)' }}>Alias de cobro</h3>
+                    <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                      Recibido el <strong style={{ color: 'var(--text-main)' }}>{fmtDate(date)}</strong> · al cobrar se sugiere el primero que acepta el monto
                     </div>
-                    <div>
-                      <h3 style={{ margin: 0, fontSize: '1.15rem', fontWeight: 900, color: 'var(--text-main)' }}>
-                        Alias Activo: <span style={{ color: '#0D9488', fontFamily: 'monospace' }}>{data?.dailyAlias?.alias || 'dulce.valentin.rioja'}</span>
-                      </h3>
-                      <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
-                        Titular: <strong style={{ color: 'var(--text-main)' }}>{data?.dailyAlias?.holder || 'Micaela Barbieri'}</strong> {data?.dailyAlias?.bank ? `· Banco: ${data.dailyAlias.bank}` : ''}
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowAliasManager(true)}
+                  className="btn-primary"
+                  style={{ padding: '8px 14px', fontSize: '0.84rem', display: 'inline-flex', alignItems: 'center', gap: '6px' }}
+                >
+                  <Landmark size={15} /> Editar alias
+                </button>
+              </div>
+
+              {(data?.aliases || []).length === 0 ? (
+                <div style={{ padding: '16px', textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.86rem', border: '1px dashed var(--border-color)', borderRadius: '12px' }}>
+                  No hay alias de cobro cargados. Tocá <strong>Editar alias</strong> para agregarlos.
+                </div>
+              ) : (
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(230px, 1fr))', gap: '12px' }}>
+                  {data.aliases.map((a, idx) => {
+                    const rem = aliasLeft(a);
+                    const pct = a.dailyLimit ? Math.round(((a.receivedToday || 0) / a.dailyLimit) * 100) : null;
+                    const full = rem === 0;
+                    const near = !full && pct !== null && pct >= 80;
+                    const color = !a.active ? 'var(--text-muted)' : full ? '#DC2626' : near ? '#D97706' : '#10B981';
+                    return (
+                      <div key={a.id} style={{ border: `1.5px solid ${a.active ? color : 'var(--border-color)'}`, borderRadius: '14px', padding: '12px 14px', backgroundColor: 'var(--bg-surface-elevated)', opacity: a.active ? 1 : 0.6 }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '6px' }}>
+                          <div style={{ minWidth: 0 }}>
+                            <div style={{ fontSize: '0.68rem', fontWeight: 800, color: 'var(--text-muted)' }}>
+                              {idx + 1}. {!a.active ? 'PAUSADO' : full ? 'TOPE LLENO' : near ? 'CASI LLENO' : 'ACTIVO'}
+                            </div>
+                            <div style={{ fontFamily: 'monospace', fontWeight: 900, fontSize: '1rem', color: 'var(--text-main)', wordBreak: 'break-all' }}>{a.alias}</div>
+                          </div>
+                          <button type="button" onClick={() => copyAliasToClipboard(a.alias)} title="Copiar alias" style={{ background: 'none', border: 'none', cursor: 'pointer', color: copiedAlias === a.alias ? '#059669' : 'var(--text-muted)', flexShrink: 0 }}>
+                            {copiedAlias === a.alias ? <Check size={15} /> : <Copy size={15} />}
+                          </button>
+                        </div>
+                        <div style={{ fontSize: '0.74rem', color: 'var(--text-muted)' }}>{[a.holder, a.bank].filter(Boolean).join(' · ') || 'Sin titular'} · {aliasRules(a)}</div>
+                        {a.description && <div style={{ fontSize: '0.78rem', fontWeight: 800, color: 'var(--dv-accent-text)', marginTop: '2px' }}>“{a.description}”</div>}
+                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.84rem', fontWeight: 800, marginTop: '8px' }}>
+                          <span style={{ color: 'var(--text-main)' }}>{money(a.receivedToday)} <span style={{ fontWeight: 600, color: 'var(--text-muted)', fontSize: '0.76rem' }}>({a.countToday} ops)</span></span>
+                          <span style={{ color }}>{rem !== null ? (full ? 'Lleno' : `quedan ${money(rem)}`) : 'sin tope'}</span>
+                        </div>
+                        {a.dailyLimit ? (
+                          <div style={{ height: '7px', borderRadius: '999px', backgroundColor: 'var(--border-color)', overflow: 'hidden', marginTop: '5px' }}>
+                            <div style={{ height: '100%', width: `${Math.min(100, pct)}%`, backgroundColor: color, transition: 'width 0.4s' }} />
+                          </div>
+                        ) : null}
                       </div>
-                    </div>
-
-                    <button
-                      type="button"
-                      onClick={copyAliasToClipboard}
-                      className="btn-secondary"
-                      style={{ padding: '4px 10px', fontSize: '0.76rem', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
-                    >
-                      {copiedAlias ? <Check size={12} /> : <Copy size={12} />}
-                      <span>{copiedAlias ? '¡Copiado!' : 'Copiar'}</span>
-                    </button>
-
-                    <span style={{
-                      fontSize: '0.74rem',
-                      fontWeight: 900,
-                      padding: '3px 10px',
-                      borderRadius: '6px',
-                      backgroundColor: aliasIsOver ? '#DC2626' : aliasIsNear ? '#D97706' : '#10B981',
-                      color: '#FFFFFF'
-                    }}>
-                      {aliasIsOver ? `🚨 TOPE ALCANZADO (${aliasPct}%)` : aliasIsNear ? `⚠️ ALERTA DE TOPE (${aliasPct}%)` : `✅ CUENTA ACTIVA (${aliasPct}%)`}
-                    </span>
-                  </div>
+                    );
+                  })}
                 </div>
-
-                {/* Métricas del Tope */}
-                <div style={{ display: 'flex', gap: '20px', textAlign: 'right', flexWrap: 'wrap' }}>
-                  <div>
-                    <span style={{ display: 'block', fontSize: '0.72rem', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 700 }}>Tope de Cuenta</span>
-                    <strong style={{ fontSize: '1.15rem', color: 'var(--text-main)' }}>{money(activeAliasLimit)}</strong>
-                  </div>
-                  <div>
-                    <span style={{ display: 'block', fontSize: '0.72rem', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 700 }}>Total Transferido</span>
-                    <strong style={{ fontSize: '1.15rem', color: aliasIsOver ? '#DC2626' : '#059669' }}>{money(totalTransfersPeriod)}</strong>
-                  </div>
-                  <div>
-                    <span style={{ display: 'block', fontSize: '0.72rem', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 700 }}>Restante Disponible</span>
-                    <strong style={{ fontSize: '1.15rem', color: aliasRemaining >= 0 ? '#2563EB' : '#DC2626' }}>
-                      {aliasRemaining >= 0 ? money(aliasRemaining) : `Exceso: ${money(-aliasRemaining)}`}
-                    </strong>
-                  </div>
-                </div>
-              </div>
-
-              {/* Barra de progreso de consumo de cuenta */}
-              <div style={{ height: '10px', borderRadius: '999px', backgroundColor: 'var(--bg-surface-elevated)', overflow: 'hidden' }}>
-                <div
-                  style={{
-                    width: `${Math.min(aliasPct, 100)}%`,
-                    height: '100%',
-                    backgroundColor: aliasIsOver ? '#DC2626' : aliasIsNear ? '#F59E0B' : '#10B981',
-                    borderRadius: '999px',
-                    transition: 'width 0.4s'
-                  }}
-                />
-              </div>
+              )}
             </div>
 
             {/* Filtros y Buscador */}
@@ -1412,7 +1403,7 @@ export default function SupervisorPage() {
                                 padding: '3px 8px',
                                 borderRadius: '6px'
                               }}>
-                                {aliasInfo.alias || 'dulce.valentin.rioja'}
+                                {t.aliasName || (t.aliasId ? 'Alias archivado' : aliasInfo.alias || 'Sin alias')}
                               </span>
                             </td>
                             <td style={{ padding: '12px 16px', color: 'var(--text-muted)' }}>
@@ -1746,6 +1737,7 @@ export default function SupervisorPage() {
           </div>
         )}
 
+        {aliasModal}
       </main>
     </div>
   );

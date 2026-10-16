@@ -176,7 +176,7 @@ export function cierreText(data) {
 }
 
 // ---------------------------------------------------------------- Exportación de Transferencias y Alias para Mica
-export async function downloadTransferenciasExcelForMica({ date, aliasConfig, transfers, totalTransfers, remaining, limit }) {
+export async function downloadTransferenciasExcelForMica({ date, aliasConfig, aliases = [], transfers, totalTransfers, remaining, limit }) {
   const ExcelJS = (await import('exceljs')).default;
   const wb = new ExcelJS.Workbook();
   wb.creator = 'Dulce Valentín';
@@ -202,14 +202,16 @@ export async function downloadTransferenciasExcelForMica({ date, aliasConfig, tr
   ws.getCell('B3').value = fmtDate(date);
   ws.getCell('A3').font = { bold: true };
 
-  ws.getCell('D3').value = 'Alias del Día:';
-  ws.getCell('E3').value = aliasConfig?.alias || 'No definido';
+  ws.getCell('D3').value = aliases.length ? 'Alias activos:' : 'Alias del Día:';
+  ws.getCell('E3').value = aliases.length
+    ? aliases.filter((x) => x.active).map((x) => x.alias).join(', ') || 'Ninguno'
+    : aliasConfig?.alias || 'No definido';
   ws.getCell('D3').font = { bold: true };
   ws.getCell('E3').font = { bold: true, color: { argb: 'FF0D9488' } };
 
   // Fila 4
   ws.getCell('A4').value = 'Titular / Banco:';
-  ws.getCell('B4').value = `${aliasConfig?.holder || '-'} ${aliasConfig?.bank ? `(${aliasConfig.bank})` : ''}`;
+  ws.getCell('B4').value = aliases.length ? 'Ver hoja "Por alias"' : `${aliasConfig?.holder || '-'} ${aliasConfig?.bank ? `(${aliasConfig.bank})` : ''}`;
   ws.getCell('A4').font = { bold: true };
 
   ws.getCell('D4').value = 'Estado del Tope:';
@@ -245,6 +247,7 @@ export async function downloadTransferenciasExcelForMica({ date, aliasConfig, tr
     ['Hora', 11],
     ['Monto', 18],
     ['Vendedora', 26],
+    ['Alias', 24],
     ['Nota / Detalle', 34],
     ['Estado', 16]
   ];
@@ -262,6 +265,7 @@ export async function downloadTransferenciasExcelForMica({ date, aliasConfig, tr
       hourStr,
       Number(t.amount || 0),
       t.sellerName || 'Directa',
+      t.aliasName || '',
       t.note || '',
       t.voided_at ? 'Anulada' : 'Válida'
     ];
@@ -273,16 +277,39 @@ export async function downloadTransferenciasExcelForMica({ date, aliasConfig, tr
 
   const totalRowNum = 9 + transfers.length;
   const totalRow = ws.getRow(totalRowNum);
-  totalRow.values = ['TOTAL', '', { formula: `SUM(C9:C${Math.max(9, totalRowNum - 1)})` }, '', '', ''];
+  totalRow.values = ['TOTAL', '', { formula: `SUM(C9:C${Math.max(9, totalRowNum - 1)})` }, '', '', '', ''];
   totalRow.font = { bold: true };
   totalRow.border = { top: { style: 'thin' } };
   totalRow.getCell(3).numFmt = MONEY_FMT;
+
+  if (aliases.length) {
+    const wa = wb.addWorksheet('Por alias', { views: [{ state: 'frozen', ySplit: 1 }] });
+    wa.columns = [
+      { header: 'Alias', key: 'alias', width: 26 },
+      { header: 'Titular', key: 'holder', width: 22 },
+      { header: 'Banco', key: 'bank', width: 16 },
+      { header: 'Descripción', key: 'description', width: 32 },
+      { header: 'Mínimo', key: 'min', width: 13, style: { numFmt: MONEY_FMT } },
+      { header: 'Máximo', key: 'max', width: 13, style: { numFmt: MONEY_FMT } },
+      { header: 'Tope del día', key: 'limit', width: 14, style: { numFmt: MONEY_FMT } },
+      { header: 'Recibido', key: 'received', width: 14, style: { numFmt: MONEY_FMT } },
+      { header: 'Transferencias', key: 'count', width: 14 },
+      { header: 'Estado', key: 'state', width: 12 }
+    ];
+    styleHeader(wa.getRow(1));
+    aliases.forEach((x) => wa.addRow({
+      alias: x.alias, holder: x.holder, bank: x.bank, description: x.description,
+      min: x.minAmount, max: x.maxAmount, limit: x.dailyLimit,
+      received: Number(x.receivedToday || 0), count: x.countToday || 0,
+      state: x.active ? 'Activo' : 'Pausado'
+    }));
+  }
 
   const buffer = await wb.xlsx.writeBuffer();
   const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
-  const cleanAlias = (aliasConfig?.alias || 'dia').replace(/[^a-z0-9_-]/gi, '_');
+  const cleanAlias = (aliases.length ? 'alias' : (aliasConfig?.alias || 'dia')).replace(/[^a-z0-9_-]/gi, '_');
   a.download = `transferencias_mica_${date}_${cleanAlias}.xlsx`;
   document.body.appendChild(a);
   a.click();
@@ -291,7 +318,7 @@ export async function downloadTransferenciasExcelForMica({ date, aliasConfig, tr
 }
 
 // Texto de reporte de transferencias del día para WhatsApp de Mica
-export function transferenciasWhatsAppText({ date, aliasConfig, transfers, totalTransfers, remaining, limit }) {
+export function transferenciasWhatsAppText({ date, aliasConfig, aliases = [], transfers, totalTransfers, remaining, limit }) {
   const pct = limit > 0 ? Math.round((totalTransfers / limit) * 100) : 0;
   const isOver = totalTransfers >= limit;
   const isNear = !isOver && pct >= 80;
@@ -301,6 +328,30 @@ export function transferenciasWhatsAppText({ date, aliasConfig, transfers, total
     : isNear
       ? `⚠️ *¡ATENCIÓN!* Al ${pct}% del tope — Quedan ${money(remaining)} disponibles.`
       : `✅ *DENTRO DEL TOPE* (${pct}%) — ${money(remaining)} disponibles.`;
+
+  const aliasLines = aliases.length
+    ? [
+      `💰 *Total transferido hoy:* ${money(totalTransfers)} (${transfers.length} ops)`,
+      '',
+      '*Por alias:*',
+      ...aliases.map((x) => {
+        const tope = x.dailyLimit ? ` de ${money(x.dailyLimit)}${x.receivedToday >= x.dailyLimit ? ' 🚨 LLENO' : ''}` : '';
+        return `🏦 \`${x.alias}\`${x.active ? '' : ' (pausado)'}: *${money(x.receivedToday)}*${tope} · ${x.countToday || 0} ops`;
+      }),
+      ''
+    ]
+    : null;
+
+  if (aliasLines) {
+    const out = [`*DULCE VALENTÍN — CONTROL DE TRANSFERENCIAS*`, `📅 *Fecha:* ${fmtDate(date)}`, ...aliasLines, `*Historial de transferencias (${transfers.length}):*`];
+    if (transfers.length === 0) out.push('_Sin transferencias registradas para esta fecha._');
+    transfers.forEach((t, i) => {
+      const h = t.createdAt ? hour(t.createdAt) : '--:--';
+      out.push(`${i + 1}. *${h}* ➔ *${money(t.amount)}* · ${t.sellerName || ''}${t.aliasName ? ` → ${t.aliasName}` : ''}${t.note ? ` (${t.note})` : ''}`);
+    });
+    out.push('', `*Total a conciliar:* ${money(totalTransfers)}`);
+    return out.join('\n');
+  }
 
   const lines = [
     `*DULCE VALENTÍN — CONTROL DE TRANSFERENCIAS*`,

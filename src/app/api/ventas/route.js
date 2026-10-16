@@ -78,6 +78,40 @@ function commissionOf(sales, rates, sellerId) {
 }
 
 // Trae todo lo necesario hasta la fecha "to" (los volumenes son chicos).
+// Alias de cobro (tabla payment_aliases). Montos numericos o null.
+const numOrNull = (v) => (v === null || v === undefined || v === '' ? null : Number(v));
+async function loadAliases(date, sales) {
+  const { data, error } = await db
+    .from('payment_aliases')
+    .select('*')
+    .eq('archived', false)
+    .order('sort', { ascending: true })
+    .order('created_at', { ascending: true });
+  if (error) return [];
+  const received = {};
+  const counts = {};
+  sales
+    .filter((x) => !x.voided_at && x.sale_date === date && x.payment_method === 'transferencia' && x.alias_id)
+    .forEach((x) => {
+      received[x.alias_id] = (received[x.alias_id] || 0) + Number(x.amount);
+      counts[x.alias_id] = (counts[x.alias_id] || 0) + 1;
+    });
+  return (data || []).map((a) => ({
+    id: a.id,
+    alias: a.alias,
+    holder: a.holder || '',
+    bank: a.bank || '',
+    description: a.description || '',
+    minAmount: numOrNull(a.min_amount),
+    maxAmount: numOrNull(a.max_amount),
+    dailyLimit: numOrNull(a.daily_limit),
+    sort: a.sort,
+    active: a.active,
+    receivedToday: round2(received[a.id] || 0),
+    countToday: counts[a.id] || 0
+  }));
+}
+
 async function loadLedger(to) {
   const [sales, advances, payouts, rates] = await Promise.all([
     db.from('seller_sales').select('*').lte('sale_date', to).order('created_at', { ascending: true }),
@@ -269,9 +303,14 @@ export async function GET(req) {
       sellerName: nameById[x.seller_id] || 'Vendedora',
       date: x.sale_date,
       createdAt: x.created_at,
-      note: x.note || ''
+      note: x.note || '',
+      aliasId: x.alias_id || null
     }))
     .sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
+
+  const aliases = await loadAliases(date, ledger.sales);
+  const aliasNameById = Object.fromEntries(aliases.map((a) => [a.id, a.alias]));
+  periodTransfers.forEach((t) => { t.aliasName = t.aliasId ? (aliasNameById[t.aliasId] || 'Alias archivado') : ''; });
 
   const dayTransfers = periodTransfers.filter((x) => x.date === date);
 
@@ -367,7 +406,7 @@ export async function GET(req) {
     };
   }
 
-  const body = { period, date, from, to, prev, sellers: summary, cash, dailyAlias, dayTransfers, periodTransfers, supervisorData };
+  const body = { period, date, from, to, prev, sellers: summary, cash, dailyAlias, aliases, dayTransfers, periodTransfers, supervisorData };
   if (sellerId) {
     const mine = (rows, key) => rows.filter((x) => x.seller_id === sellerId && inRange(x[key], from, to));
     body.detail = {
@@ -406,7 +445,9 @@ function parseAmount(v, { allowZero = false } = {}) {
 //   addSeller    { name }
 //   rename       { sellerId, name }
 //   setActive    { sellerId, active }
-//   addSale      { clientRef, sellerId, date, amount, method, note }
+//   addSale      { clientRef, sellerId, date, amount, method, note, aliasId? }
+//   saveAlias    { id?, alias, holder, bank, description, minAmount, maxAmount, dailyLimit, active }
+//   setAliasActive { id, active } · archiveAlias { id } · reorderAliases { ids }
 //   addAdvance   { clientRef, sellerId, date, amount, method, note }
 //   addPayout    { clientRef, sellerId, date, amount, method, periodFrom, periodTo, note }
 //   addCashCount { clientRef, date, openingFloat, counted, note }
@@ -454,6 +495,65 @@ export async function POST(req) {
       return NextResponse.json({ success: true });
     }
 
+    // Alias de cobro: alta / edición / pausa / archivo / orden
+    case 'saveAlias': {
+      const alias = String(body.alias || '').trim().toLowerCase().slice(0, 80);
+      if (!alias) return fail(400, 'Escribí el alias o CVU.');
+      const opt = (v) => {
+        if (v === null || v === undefined || String(v).trim() === '') return { ok: true, value: null };
+        const n = parseAmount(v, { allowZero: false });
+        return n === null ? { ok: false } : { ok: true, value: n };
+      };
+      const min = opt(body.minAmount);
+      const max = opt(body.maxAmount);
+      const lim = opt(body.dailyLimit);
+      if (!min.ok || !max.ok || !lim.ok) return fail(400, 'Los montos van en pesos enteros, sin puntos (ej: 100000).');
+      if (min.value !== null && max.value !== null && min.value > max.value) return fail(400, 'El mínimo no puede ser mayor que el máximo.');
+      const row = {
+        alias,
+        holder: String(body.holder || '').trim().slice(0, 80) || null,
+        bank: String(body.bank || '').trim().slice(0, 60) || null,
+        description: String(body.description || '').trim().slice(0, 200) || null,
+        min_amount: min.value,
+        max_amount: max.value,
+        daily_limit: lim.value,
+        active: body.active !== false,
+        updated_at: new Date().toISOString()
+      };
+      if (body.id) {
+        if (!uuidRe.test(String(body.id))) return fail(400, 'Alias inválido.');
+        const { data, error } = await db.from('payment_aliases').update(row).eq('id', body.id).select('id').maybeSingle();
+        if (error || !data) return fail(500, 'No se pudo guardar el alias.');
+        return NextResponse.json({ success: true, id: data.id });
+      }
+      const { data: last } = await db.from('payment_aliases').select('sort').order('sort', { ascending: false }).limit(1).maybeSingle();
+      row.sort = (last?.sort || 0) + 1;
+      const { data, error } = await db.from('payment_aliases').insert(row).select('id').single();
+      if (error) return fail(500, 'No se pudo agregar el alias.');
+      return NextResponse.json({ success: true, id: data.id });
+    }
+
+    case 'setAliasActive':
+    case 'archiveAlias': {
+      if (!uuidRe.test(String(body.id || ''))) return fail(400, 'Alias inválido.');
+      const patch = body.action === 'archiveAlias'
+        ? { archived: true, active: false }
+        : { active: Boolean(body.active) };
+      const { error } = await db.from('payment_aliases').update({ ...patch, updated_at: new Date().toISOString() }).eq('id', body.id);
+      if (error) return fail(500, 'No se pudo guardar.');
+      return NextResponse.json({ success: true });
+    }
+
+    case 'reorderAliases': {
+      const ids = Array.isArray(body.ids) ? body.ids.filter((id) => uuidRe.test(String(id))) : [];
+      if (ids.length === 0) return fail(400, 'Orden inválido.');
+      for (let i = 0; i < ids.length; i++) {
+        const { error } = await db.from('payment_aliases').update({ sort: i + 1 }).eq('id', ids[i]);
+        if (error) return fail(500, 'No se pudo guardar el orden.');
+      }
+      return NextResponse.json({ success: true });
+    }
+
     case 'setDailyAlias': {
       const targetDate = dateOk(body.date);
       const alias = String(body.alias || '').trim().toLowerCase();
@@ -493,6 +593,12 @@ export async function POST(req) {
       if (body.action === 'addSale') {
         table = 'seller_sales';
         row = { sale_date: date, payment_method: body.method };
+        if (body.method === 'transferencia' && body.aliasId) {
+          if (!uuidRe.test(String(body.aliasId))) return fail(400, 'Alias inválido.');
+          const { data: al } = await db.from('payment_aliases').select('id').eq('id', body.aliasId).maybeSingle();
+          if (!al) return fail(404, 'Ese alias ya no existe. Elegí otro.');
+          row.alias_id = body.aliasId;
+        }
       } else if (body.action === 'addAdvance') {
         table = 'seller_advances';
         row = { advance_date: date, payment_method: body.method };
