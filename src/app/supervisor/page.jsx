@@ -433,7 +433,7 @@ export default function SupervisorPage() {
   const [privacyMode, setPrivacyMode] = useState(false); // Ocultar números si alguien mira
   const [exportingExcel, setExportingExcel] = useState(false);
   const [copiedAlias, setCopiedAlias] = useState('');
-  const [showAliasManager, setShowAliasManager] = useState(false);
+  const [showAliasManager, setShowAliasManager] = useState(false); // false | 'edit' | 'new'
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedSellerFilter, setSelectedSellerFilter] = useState('ALL');
   const [lastUpdate, setLastUpdate] = useState(null);
@@ -653,6 +653,7 @@ export default function SupervisorPage() {
       post={(body) => api('/api/ventas', { method: 'POST', body: JSON.stringify(body) })}
       onChanged={() => loadData(true)}
       onClose={() => setShowAliasManager(false)}
+      startAdding={showAliasManager === 'new'}
     />
   ) : null;
 
@@ -747,6 +748,18 @@ export default function SupervisorPage() {
             >
               {privacyMode ? <EyeOff size={15} /> : <Eye size={15} />}
               <span>{privacyMode ? 'Oculto' : 'Ocultar $'}</span>
+            </button>
+
+            {/* Alias de cobro: siempre a mano */}
+            <button
+              type="button"
+              onClick={() => { setActiveTab('aliases'); setShowAliasManager('new'); }}
+              className="btn-primary"
+              style={{ padding: '7px 12px', fontSize: '0.8rem', display: 'inline-flex', alignItems: 'center', gap: '5px', backgroundColor: '#0D9488', borderColor: '#0D9488' }}
+              title="Agregar un alias de cobro por transferencia"
+            >
+              <Landmark size={14} />
+              <span>+ Alias</span>
             </button>
 
             {/* Excel Gerencial */}
@@ -942,6 +955,7 @@ export default function SupervisorPage() {
         }}>
           {[
             { id: 'metrics', label: 'Ganancias & Rentabilidad', icon: TrendingUp },
+            { id: 'aliases', label: `Alias de Cobro (${(data?.aliases || []).length})`, icon: Wallet },
             { id: 'transfers', label: `Auditoría Transferencias (${transfersList.length})`, icon: Landmark },
             { id: 'sellers', label: 'Rendimiento de Vendedoras', icon: Users },
             { id: 'history', label: 'Historial Transaccional', icon: Receipt }
@@ -1216,10 +1230,9 @@ export default function SupervisorPage() {
           </div>
         )}
 
-        {/* ==================== SOLAPA 2: AUDITORÍA DE TRANSFERENCIAS ==================== */}
-        {activeTab === 'transfers' && (
+        {/* ==================== SOLAPA: ALIAS DE COBRO ==================== */}
+        {activeTab === 'aliases' && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '18px' }}>
-
             {/* Alias de cobro: lo recibido en cada uno el día elegido */}
             <div style={{
               backgroundColor: 'var(--bg-card)',
@@ -1240,19 +1253,29 @@ export default function SupervisorPage() {
                     </div>
                   </div>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => setShowAliasManager(true)}
-                  className="btn-primary"
-                  style={{ padding: '8px 14px', fontSize: '0.84rem', display: 'inline-flex', alignItems: 'center', gap: '6px' }}
-                >
-                  <Landmark size={15} /> Editar alias
-                </button>
+                <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                  <button
+                    type="button"
+                    onClick={() => setShowAliasManager('new')}
+                    className="btn-primary"
+                    style={{ padding: '9px 16px', fontSize: '0.88rem', fontWeight: 800, display: 'inline-flex', alignItems: 'center', gap: '6px', backgroundColor: '#0D9488', borderColor: '#0D9488' }}
+                  >
+                    + Agregar alias
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setShowAliasManager('edit')}
+                    className="btn-secondary"
+                    style={{ padding: '9px 14px', fontSize: '0.88rem', fontWeight: 800, display: 'inline-flex', alignItems: 'center', gap: '6px' }}
+                  >
+                    <Landmark size={15} /> Editar / pausar / ordenar
+                  </button>
+                </div>
               </div>
 
               {(data?.aliases || []).length === 0 ? (
                 <div style={{ padding: '16px', textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.86rem', border: '1px dashed var(--border-color)', borderRadius: '12px' }}>
-                  No hay alias de cobro cargados. Tocá <strong>Editar alias</strong> para agregarlos.
+                  No hay alias de cobro cargados. Tocá <strong>+ Agregar alias</strong>.
                 </div>
               ) : (
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(230px, 1fr))', gap: '12px' }}>
@@ -1292,6 +1315,13 @@ export default function SupervisorPage() {
                 </div>
               )}
             </div>
+
+          </div>
+        )}
+
+        {/* ==================== SOLAPA 2: AUDITORÍA DE TRANSFERENCIAS ==================== */}
+        {activeTab === 'transfers' && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '18px' }}>
 
             {/* Filtros y Buscador */}
             <div style={{

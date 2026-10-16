@@ -1641,6 +1641,7 @@ function DailyAliasSection({
   sellers = [],
   numberMap = {},
   onConfigClick,
+  onAddAliasClick,
   onAddTransferClick,
   onRefresh
 }) {
@@ -1777,11 +1778,19 @@ function DailyAliasSection({
         <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
           <button
             type="button"
+            onClick={onAddAliasClick}
+            className="btn-primary"
+            style={{ padding: '7px 13px', fontSize: '0.82rem', fontWeight: 800, display: 'inline-flex', alignItems: 'center', gap: '5px' }}
+          >
+            <Plus size={15} /> Agregar alias
+          </button>
+          <button
+            type="button"
             onClick={onConfigClick}
             className="btn-secondary"
-            style={{ padding: '6px 10px', fontSize: '0.78rem', display: 'inline-flex', alignItems: 'center', gap: '5px' }}
+            style={{ padding: '7px 12px', fontSize: '0.82rem', fontWeight: 800, display: 'inline-flex', alignItems: 'center', gap: '5px' }}
           >
-            <Settings size={13} /> Editar alias
+            <Pencil size={14} /> Editar / pausar alias
           </button>
 
           <button
@@ -1811,7 +1820,7 @@ function DailyAliasSection({
       {/* Tarjetas por alias: recibido hoy contra el tope */}
       {aliases.length === 0 ? (
         <div style={{ padding: '14px', borderRadius: '12px', border: '1px dashed var(--border-color)', textAlign: 'center', fontSize: '0.86rem', color: 'var(--text-muted)', marginBottom: '14px' }}>
-          No hay alias de cobro cargados. <button type="button" onClick={onConfigClick} className="btn-secondary" style={{ padding: '3px 10px', fontSize: '0.78rem', marginLeft: '6px' }}>Agregar alias</button>
+          No hay alias de cobro cargados. <button type="button" onClick={onAddAliasClick} className="btn-primary" style={{ padding: '3px 10px', fontSize: '0.78rem', marginLeft: '6px' }}>Agregar alias</button>
         </div>
       ) : (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '10px', marginBottom: '14px' }}>
@@ -2132,7 +2141,7 @@ export default function VentasPage() {
   const [showGoalModal, setShowGoalModal] = useState(false);
   const [sellerNumbersMap, setSellerNumbersMap] = useState({});
   const [showNumbersModal, setShowNumbersModal] = useState(false);
-  const [showAliasModal, setShowAliasModal] = useState(false);
+  const [showAliasModal, setShowAliasModal] = useState(false); // false | 'edit' | 'new'
   const [showDirectTransferModal, setShowDirectTransferModal] = useState(false);
 
   useEffect(() => {
@@ -2328,7 +2337,7 @@ export default function VentasPage() {
                 aliases={data.aliases || []}
                 onSaleCreated={afterSave}
                 onOpenNumbersModal={() => setShowNumbersModal(true)}
-                onEditAliases={() => setShowAliasModal(true)}
+                onEditAliases={() => setShowAliasModal('new')}
               />
             )}
 
@@ -2341,7 +2350,8 @@ export default function VentasPage() {
                 transfers={data.dayTransfers || []}
                 sellers={data.sellers}
                 numberMap={assignedNumbers}
-                onConfigClick={() => setShowAliasModal(true)}
+                onConfigClick={() => setShowAliasModal('edit')}
+                onAddAliasClick={() => setShowAliasModal('new')}
                 onAddTransferClick={() => setShowDirectTransferModal(true)}
                 onRefresh={load}
               />
@@ -2496,6 +2506,7 @@ export default function VentasPage() {
             post={(body) => api('POST', body)}
             onChanged={load}
             onClose={() => setShowAliasModal(false)}
+            startAdding={showAliasModal === 'new'}
           />
         )}
         {showDirectTransferModal && data?.sellers && (

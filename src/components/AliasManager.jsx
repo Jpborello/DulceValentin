@@ -100,8 +100,8 @@ function AliasForm({ initial, onCancel, onSave }) {
 }
 
 // post(body) -> promesa con la respuesta del POST /api/ventas
-export default function AliasManager({ aliases = [], post, onChanged, onClose }) {
-  const [editing, setEditing] = useState(null); // id | 'new' | null
+export default function AliasManager({ aliases = [], post, onChanged, onClose, startAdding = false }) {
+  const [editing, setEditing] = useState(startAdding ? 'new' : null); // id | 'new' | null
   const [busyId, setBusyId] = useState(null);
   const [error, setError] = useState('');
 
