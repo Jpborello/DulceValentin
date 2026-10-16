@@ -1,0 +1,17 @@
+-- /ventas: Alias del día y control de transferencias bancarias (2026-10-16)
+--
+-- Cada día puede configurarse un alias bancario específico y un tope de monto (monto máximo
+-- diario a recibir por transferencia).
+-- Se almacena en la tabla categories bajo el id '_config_alias_day_YYYY-MM-DD' con:
+--   - name: el alias bancario activo
+--   - subcategories: [limit, holder, bank]
+--
+-- Las transferencias se registran en public.seller_sales (payment_method = 'transferencia')
+-- con su marca de tiempo exacta (created_at timestamptz) y vendedora asignada.
+--
+-- Opcionalmente se asegura el índice para búsquedas ultra rápidas de transferencias por fecha:
+-
+-create index if not exists seller_sales_date_method_idx 
+-  on public.seller_sales (sale_date, payment_method) 
+-  where voided_at is null;
+-

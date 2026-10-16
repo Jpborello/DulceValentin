@@ -886,7 +886,7 @@ export default function Home() {
               {[
                 ['Pte. Perón 5349', 'Local de Ropa'],
                 ['Pte. Perón 5305', 'Local exclusivo de bebé y calzados'],
-                ['Pte. Perón 5264', 'Medias, Lencería, Blanquería, Bazar']
+                ['Pte. Perón 5265', 'Medias, Lencería, Blanquería, Bazar']
               ].map(([address, label]) => (
                 <div key={address} style={{ display: 'flex', alignItems: 'flex-start', gap: '8px' }}>
                   <MapPin size={16} style={{ flexShrink: 0, marginTop: '2px' }} />

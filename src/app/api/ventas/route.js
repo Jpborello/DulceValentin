@@ -257,7 +257,75 @@ export async function GET(req) {
     };
   }
 
-  const body = { period, date, from, to, prev, sellers: summary, cash };
+  // Alias del día y registro de transferencias
+  let dailyAlias = null;
+  let dayTransfers = [];
+  if (period === 'day') {
+    const nameById = Object.fromEntries((sellers || []).map((s) => [s.id, s.name]));
+    dayTransfers = ledger.sales
+      .filter((x) => !x.voided_at && x.sale_date === date && x.payment_method === 'transferencia')
+      .map((x) => ({
+        id: x.id,
+        clientRef: x.client_ref,
+        amount: Number(x.amount),
+        sellerId: x.seller_id,
+        sellerName: nameById[x.seller_id] || 'Vendedora',
+        date: x.sale_date,
+        createdAt: x.created_at,
+        note: x.note || ''
+      }))
+      .sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
+
+    try {
+      const { data: aliasRow } = await db
+        .from('categories')
+        .select('*')
+        .eq('id', `_config_alias_day_${date}`)
+        .maybeSingle();
+
+      if (aliasRow?.name) {
+        let sub = aliasRow.subcategories;
+        if (typeof sub === 'string') {
+          try { sub = JSON.parse(sub); } catch {}
+        }
+        const limit = Array.isArray(sub) ? Number(sub[0]) : Number(sub?.limit);
+        const holder = Array.isArray(sub) ? sub[1] : sub?.holder;
+        const bank = Array.isArray(sub) ? sub[2] : sub?.bank;
+        dailyAlias = {
+          alias: aliasRow.name,
+          limit: limit && !isNaN(limit) ? limit : 1000000,
+          holder: holder || '',
+          bank: bank || ''
+        };
+      } else {
+        const { data: defaultRow } = await db
+          .from('categories')
+          .select('*')
+          .eq('id', '_config_alias1')
+          .maybeSingle();
+        const { data: holderRow } = await db
+          .from('categories')
+          .select('*')
+          .eq('id', '_config_holder')
+          .maybeSingle();
+        dailyAlias = {
+          alias: defaultRow?.name || 'dulce.valentin.rioja',
+          limit: 1000000,
+          holder: holderRow?.name || '',
+          bank: ''
+        };
+      }
+    } catch {
+      dailyAlias = {
+        alias: 'dulce.valentin.rioja',
+        limit: 1000000,
+        holder: '',
+        bank: ''
+      };
+    }
+  }
+
+  const body = { period, date, from, to, prev, sellers: summary, cash, dailyAlias, dayTransfers };
   if (sellerId) {
     const mine = (rows, key) => rows.filter((x) => x.seller_id === sellerId && inRange(x[key], from, to));
     body.detail = {
@@ -345,6 +413,29 @@ export async function POST(req) {
       return NextResponse.json({ success: true });
     }
 
+    case 'setDailyAlias': {
+      const targetDate = dateOk(body.date);
+      const alias = String(body.alias || '').trim().toLowerCase();
+      if (!alias) return fail(400, 'Ingresá el alias.');
+      const limit = parseAmount(body.limit, { allowZero: false });
+      if (limit === null) return fail(400, 'Poné el monto tope en pesos sin puntos (ej: 800000).');
+      const holder = String(body.holder || '').trim();
+      const bank = String(body.bank || '').trim();
+
+      const subcategories = [String(limit), holder, bank];
+      const { error } = await db.from('categories').upsert({
+        id: `_config_alias_day_${targetDate}`,
+        name: alias,
+        subcategories
+      }, { onConflict: 'id' });
+
+      if (error) return fail(500, 'No se pudo guardar la configuración del alias.');
+      return NextResponse.json({
+        success: true,
+        dailyAlias: { alias, limit, holder, bank }
+      });
+    }
+
     case 'addSale':
     case 'addAdvance':
     case 'addPayout': {
@@ -381,6 +472,10 @@ export async function POST(req) {
       if (body.action === 'addPayout') {
         const { data: saved } = await db.from('seller_payouts').select('id').eq('client_ref', body.clientRef).maybeSingle();
         return NextResponse.json({ success: true, payoutId: saved?.id || null });
+      }
+      if (body.action === 'addSale') {
+        const { data: saved } = await db.from('seller_sales').select('id').eq('client_ref', body.clientRef).maybeSingle();
+        return NextResponse.json({ success: true, saleId: saved?.id || null });
       }
       return NextResponse.json({ success: true });
     }

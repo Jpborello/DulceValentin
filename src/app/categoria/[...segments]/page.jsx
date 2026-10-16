@@ -90,7 +90,7 @@ export async function generateMetadata({ params }) {
   const label = resolved.kind === 'group'
     ? resolved.groupName
     : (resolved.subcategory ? `${resolved.subcategory} de ${resolved.categoryName}` : resolved.categoryName);
-  const title = `${label} — Venta Mayorista`;
+  const title = `${label} por Mayor en Rosario`;
   const description = `Comprá ${label.toLowerCase()} al por mayor en Dulce Valentín: precios de fábrica, envíos a todo el país y retiro en Rosario, Santa Fe.`;
   const canonicalPath = `/categoria/${segments.join('/')}`;
 
@@ -158,9 +158,13 @@ export default async function CategoryPage({ params }) {
   const itemListJsonLd = {
     '@context': 'https://schema.org',
     '@type': 'ItemList',
+    name: `${heading} — Venta Mayorista`,
+    numberOfItems: products.length,
     itemListElement: products.map((p, idx) => ({
       '@type': 'ListItem',
       position: idx + 1,
+      name: p.name,
+      image: p.image_url || undefined,
       url: `${SITE_URL}/producto/${buildProductSlug(p)}`
     }))
   };

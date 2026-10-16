@@ -62,7 +62,10 @@ export const metadata = {
   // "Agregar a inicio" en iPhone y que abra a pantalla completa.
   manifest: '/manifest.webmanifest',
   icons: {
-    icon: [{ url: '/icons/favicon-64.png', sizes: '64x64', type: 'image/png' }],
+    icon: [
+      { url: '/favicon.ico', sizes: 'any' },
+      { url: '/icons/favicon-64.png', sizes: '64x64', type: 'image/png' }
+    ],
     apple: [{ url: '/icons/apple-touch-icon.png', sizes: '180x180' }]
   },
   appleWebApp: {
@@ -105,6 +108,12 @@ export const metadata = {
     description:
       'Venta por mayor de indumentaria, calzado, lencería y artículos para bebés. Local en Rosario y envíos a todo el país.',
     images: ['/logo.png']
+  },
+  other: {
+    'geo.region': 'AR-S',
+    'geo.placename': 'Rosario, Santa Fe, Argentina',
+    'geo.position': '-32.9602861;-60.6958208',
+    'ICBM': '-32.9602861, -60.6958208'
   }
 };
 
@@ -113,12 +122,16 @@ export const metadata = {
 // real en Rosario, con horarios, rubro y contacto verificables.
 const localBusinessJsonLd = {
   '@context': 'https://schema.org',
-  '@type': 'ClothingStore',
+  '@type': ['ClothingStore', 'WholesaleStore'],
   name: 'Dulce Valentín',
+  description:
+    'Distribuidora mayorista de indumentaria, calzado, lencería y artículos para bebés en Rosario. Venta directa de fábrica por mayor con retiro en el local y envíos a todo el país.',
   image: `${SITE_URL}/logo.png`,
   url: SITE_URL,
   telephone: '+5493412648035',
   priceRange: '$$',
+  currenciesAccepted: 'ARS',
+  paymentAccepted: ['Efectivo', 'Transferencia bancaria'],
   address: {
     '@type': 'PostalAddress',
     streetAddress: 'Av. Pres. Perón 5349/5305/5265',
@@ -135,12 +148,48 @@ const localBusinessJsonLd = {
     longitude: -60.6958208
   },
   hasMap: 'https://maps.app.goo.gl/cnrzyNr8FxRYtqjm7',
-  // Aunque el local es de Rosario, vendemos por mayor a todo el pais —
-  // ayuda a que no se lo limite solo a busquedas locales de Rosario.
   areaServed: {
     '@type': 'Country',
     name: 'Argentina'
   },
+  department: [
+    {
+      '@type': 'ClothingStore',
+      name: 'Dulce Valentín — Indumentaria Mayorista',
+      address: {
+        '@type': 'PostalAddress',
+        streetAddress: 'Av. Pres. Perón 5349',
+        addressLocality: 'Rosario',
+        addressRegion: 'Santa Fe',
+        postalCode: 'S2010AAD',
+        addressCountry: 'AR'
+      }
+    },
+    {
+      '@type': 'Store',
+      name: 'Dulce Valentín — Calzado y Bebés',
+      address: {
+        '@type': 'PostalAddress',
+        streetAddress: 'Av. Pres. Perón 5305',
+        addressLocality: 'Rosario',
+        addressRegion: 'Santa Fe',
+        postalCode: 'S2010AAD',
+        addressCountry: 'AR'
+      }
+    },
+    {
+      '@type': 'Store',
+      name: 'Dulce Valentín — Lencería, Medias y Blanquería',
+      address: {
+        '@type': 'PostalAddress',
+        streetAddress: 'Av. Pres. Perón 5265',
+        addressLocality: 'Rosario',
+        addressRegion: 'Santa Fe',
+        postalCode: 'S2010AAD',
+        addressCountry: 'AR'
+      }
+    }
+  ],
   openingHoursSpecification: [
     {
       '@type': 'OpeningHoursSpecification',
@@ -150,6 +199,21 @@ const localBusinessJsonLd = {
     }
   ],
   sameAs: ['https://www.instagram.com/dulcevalentin.unidas/']
+};
+
+const webSiteJsonLd = {
+  '@context': 'https://schema.org',
+  '@type': 'WebSite',
+  name: 'Dulce Valentín',
+  url: SITE_URL,
+  potentialAction: {
+    '@type': 'SearchAction',
+    target: {
+      '@type': 'EntryPoint',
+      urlTemplate: `${SITE_URL}/?q={search_term_string}`
+    },
+    'query-input': 'required name=search_term_string'
+  }
 };
 
 export default function RootLayout({ children }) {
@@ -177,6 +241,10 @@ export default function RootLayout({ children }) {
         <script
           type="application/ld+json"
           dangerouslySetInnerHTML={{ __html: JSON.stringify(localBusinessJsonLd) }}
+        />
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{ __html: JSON.stringify(webSiteJsonLd) }}
         />
 
         {/* Meta Pixel Code */}

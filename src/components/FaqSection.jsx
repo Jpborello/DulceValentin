@@ -21,7 +21,7 @@ const FAQ_ITEMS = [
   },
   {
     question: '¿Qué medios de pago aceptan?',
-    answer: 'Transferencia bancaria, Mercado Pago, o efectivo si comprás en el local.'
+    answer: 'Transferencia bancaria o efectivo si comprás en el local.'
   },
   {
     question: '¿Puedo comprar por unidad o tengo que llevar talle completo?',

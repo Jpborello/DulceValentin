@@ -174,3 +174,161 @@ export function cierreText(data) {
   }
   return lines.join('\n');
 }
+
+// ---------------------------------------------------------------- Exportación de Transferencias y Alias para Mica
+export async function downloadTransferenciasExcelForMica({ date, aliasConfig, transfers, totalTransfers, remaining, limit }) {
+  const ExcelJS = (await import('exceljs')).default;
+  const wb = new ExcelJS.Workbook();
+  wb.creator = 'Dulce Valentín';
+  wb.created = new Date();
+  const moneyStyle = { numFmt: MONEY_FMT };
+  const dateStyle = { numFmt: 'dd/mm/yyyy' };
+
+  const ws = wb.addWorksheet('Transferencias del Día', { views: [{ state: 'frozen', ySplit: 8 }] });
+
+  // Cabecera Principal
+  ws.mergeCells('A1:F1');
+  ws.getCell('A1').value = 'Dulce Valentín — Control Diario de Transferencias (Mica)';
+  ws.getCell('A1').font = { bold: true, size: 14, color: { argb: 'FFFFFFFF' } };
+  ws.getCell('A1').fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFA8175A' } };
+  ws.getCell('A1').alignment = { vertical: 'middle' };
+  ws.getRow(1).height = 25;
+
+  const pct = limit > 0 ? Math.round((totalTransfers / limit) * 100) : 0;
+  const statusLabel = totalTransfers >= limit ? '🚨 TOPE ALCANZADO / EXCEDIDO' : pct >= 80 ? '⚠️ CERCA DEL TOPE' : '✅ DENTRO DEL MARGEN';
+
+  // Fila 3
+  ws.getCell('A3').value = 'Fecha:';
+  ws.getCell('B3').value = fmtDate(date);
+  ws.getCell('A3').font = { bold: true };
+
+  ws.getCell('D3').value = 'Alias del Día:';
+  ws.getCell('E3').value = aliasConfig?.alias || 'No definido';
+  ws.getCell('D3').font = { bold: true };
+  ws.getCell('E3').font = { bold: true, color: { argb: 'FF0D9488' } };
+
+  // Fila 4
+  ws.getCell('A4').value = 'Titular / Banco:';
+  ws.getCell('B4').value = `${aliasConfig?.holder || '-'} ${aliasConfig?.bank ? `(${aliasConfig.bank})` : ''}`;
+  ws.getCell('A4').font = { bold: true };
+
+  ws.getCell('D4').value = 'Estado del Tope:';
+  ws.getCell('E4').value = `${statusLabel} (${pct}%)`;
+  ws.getCell('D4').font = { bold: true };
+  ws.getCell('E4').font = { bold: true };
+
+  // Fila 5
+  ws.getCell('A5').value = 'Monto Tope fijado:';
+  ws.getCell('B5').value = Number(limit || 0);
+  ws.getCell('B5').numFmt = MONEY_FMT;
+  ws.getCell('A5').font = { bold: true };
+
+  ws.getCell('D5').value = 'Total transferido:';
+  ws.getCell('E5').value = Number(totalTransfers || 0);
+  ws.getCell('E5').numFmt = MONEY_FMT;
+  ws.getCell('D5').font = { bold: true };
+  ws.getCell('E5').font = { bold: true, color: { argb: totalTransfers >= limit ? 'FFDC2626' : 'FF047857' } };
+
+  // Fila 6
+  ws.getCell('A6').value = 'Saldo disponible / resto:';
+  ws.getCell('B6').value = Number(remaining || 0);
+  ws.getCell('B6').numFmt = MONEY_FMT;
+  ws.getCell('A6').font = { bold: true };
+
+  ws.getCell('D6').value = 'Operaciones:';
+  ws.getCell('E6').value = `${transfers.length} transferencias`;
+  ws.getCell('D6').font = { bold: true };
+
+  // Configuración de Columnas
+  const cols = [
+    ['N°', 6],
+    ['Hora', 11],
+    ['Monto', 18],
+    ['Vendedora', 26],
+    ['Nota / Detalle', 34],
+    ['Estado', 16]
+  ];
+  cols.forEach(([, w], i) => { ws.getColumn(i + 1).width = w; });
+  const header = ws.getRow(8);
+  header.values = cols.map(([h]) => h);
+  styleHeader(header);
+
+  // Filas de Datos
+  transfers.forEach((t, i) => {
+    const row = ws.getRow(9 + i);
+    const hourStr = t.createdAt ? hour(t.createdAt) : '--:--';
+    row.values = [
+      i + 1,
+      hourStr,
+      Number(t.amount || 0),
+      t.sellerName || 'Directa',
+      t.note || '',
+      t.voided_at ? 'Anulada' : 'Válida'
+    ];
+    row.getCell(3).numFmt = MONEY_FMT;
+    if (t.voided_at) {
+      row.font = { color: { argb: 'FF9CA3AF' }, strike: true };
+    }
+  });
+
+  const totalRowNum = 9 + transfers.length;
+  const totalRow = ws.getRow(totalRowNum);
+  totalRow.values = ['TOTAL', '', { formula: `SUM(C9:C${Math.max(9, totalRowNum - 1)})` }, '', '', ''];
+  totalRow.font = { bold: true };
+  totalRow.border = { top: { style: 'thin' } };
+  totalRow.getCell(3).numFmt = MONEY_FMT;
+
+  const buffer = await wb.xlsx.writeBuffer();
+  const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  const cleanAlias = (aliasConfig?.alias || 'dia').replace(/[^a-z0-9_-]/gi, '_');
+  a.download = `transferencias_mica_${date}_${cleanAlias}.xlsx`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+}
+
+// Texto de reporte de transferencias del día para WhatsApp de Mica
+export function transferenciasWhatsAppText({ date, aliasConfig, transfers, totalTransfers, remaining, limit }) {
+  const pct = limit > 0 ? Math.round((totalTransfers / limit) * 100) : 0;
+  const isOver = totalTransfers >= limit;
+  const isNear = !isOver && pct >= 80;
+
+  const alertLine = isOver
+    ? `🚨 *¡ALERTA TOPE ALCANZADO!* (${pct}%) — Cambiar de alias urgente.`
+    : isNear
+      ? `⚠️ *¡ATENCIÓN!* Al ${pct}% del tope — Quedan ${money(remaining)} disponibles.`
+      : `✅ *DENTRO DEL TOPE* (${pct}%) — ${money(remaining)} disponibles.`;
+
+  const lines = [
+    `*DULCE VALENTÍN — CONTROL DE TRANSFERENCIAS*`,
+    `📅 *Fecha:* ${fmtDate(date)}`,
+    `🏦 *Alias del día:* \`${aliasConfig?.alias || 'No definido'}\``,
+    aliasConfig?.holder ? `👤 *Titular:* ${aliasConfig.holder}${aliasConfig.bank ? ` (${aliasConfig.bank})` : ''}` : null,
+    `🎯 *Monto Tope fijado:* ${money(limit)}`,
+    `💰 *Total transferido hoy:* ${money(totalTransfers)} (${transfers.length} ops)`,
+    `📊 *Saldo disponible:* ${remaining >= 0 ? money(remaining) : `Exceso: ${money(-remaining)}`}`,
+    alertLine,
+    '',
+    `*Historial de transferencias (${transfers.length}):*`
+  ].filter(Boolean);
+
+  if (transfers.length === 0) {
+    lines.push('_Sin transferencias registradas para esta fecha._');
+  } else {
+    transfers.forEach((t, i) => {
+      const h = t.createdAt ? hour(t.createdAt) : '--:--';
+      const v = t.sellerName ? `· ${t.sellerName}` : '';
+      const note = t.note ? ` (${t.note})` : '';
+      lines.push(`${i + 1}. *${h}* ➔ *${money(t.amount)}* ${v}${note}`);
+    });
+  }
+
+  lines.push('');
+  lines.push(`*Total a conciliar:* ${money(totalTransfers)}`);
+
+  return lines.join('\n');
+}
+

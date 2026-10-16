@@ -126,20 +126,65 @@ export default async function ProductPage({ params }) {
     : [product.image_url]
   ).filter(Boolean);
 
+  const categorySlug = product.category ? slugify(product.category) : '';
+  const subcategorySlug = product.subcategory ? slugify(product.subcategory) : '';
+
+  const breadcrumbTrail = [];
+  if (product.category) {
+    breadcrumbTrail.push({
+      name: product.category,
+      item: `${SITE_URL}/categoria/${categorySlug}`
+    });
+    if (product.subcategory) {
+      breadcrumbTrail.push({
+        name: product.subcategory,
+        item: `${SITE_URL}/categoria/${categorySlug}/${subcategorySlug}`
+      });
+    }
+  }
+  breadcrumbTrail.push({
+    name: product.name,
+    item: `${SITE_URL}${canonicalPath}`
+  });
+
+  const breadcrumbJsonLd = {
+    '@context': 'https://schema.org',
+    '@type': 'BreadcrumbList',
+    itemListElement: [
+      { '@type': 'ListItem', position: 1, name: 'Inicio', item: SITE_URL },
+      ...breadcrumbTrail.map((b, idx) => ({
+        '@type': 'ListItem',
+        position: idx + 2,
+        name: b.name,
+        item: b.item
+      }))
+    ]
+  };
+
   const productJsonLd = {
     '@context': 'https://schema.org',
     '@type': 'Product',
     name: product.name,
     description: product.description || `${product.name} — venta mayorista en Dulce Valentín, Rosario.`,
     image: images.length > 0 ? images : undefined,
+    brand: {
+      '@type': 'Brand',
+      name: 'Dulce Valentín'
+    },
+    sku: String(product.code || product.id),
     category: product.subcategory ? `${product.category} / ${product.subcategory}` : product.category,
     offers: {
       '@type': 'Offer',
       url: `${SITE_URL}${canonicalPath}`,
       priceCurrency: 'ARS',
       price: price || undefined,
+      priceValidUntil: `${new Date().getFullYear() + 1}-12-31`,
       availability: product.stock > 0 ? 'https://schema.org/InStock' : 'https://schema.org/OutOfStock',
-      itemCondition: 'https://schema.org/NewCondition'
+      itemCondition: 'https://schema.org/NewCondition',
+      seller: {
+        '@type': 'Organization',
+        name: 'Dulce Valentín'
+      }
     }
   };
 
@@ -148,6 +193,10 @@ export default async function ProductPage({ params }) {
       <script
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(productJsonLd) }}
+      />
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(breadcrumbJsonLd) }}
       />
 
       <header className="header-container">
@@ -172,9 +221,24 @@ export default async function ProductPage({ params }) {
       <main style={{ flex: 1, maxWidth: '1000px', width: '100%', margin: '0 auto', padding: '32px 24px' }}>
         <nav aria-label="breadcrumb" style={{ fontSize: '0.82rem', color: 'var(--text-muted)', marginBottom: '18px' }}>
           <Link href="/" style={{ color: 'var(--accent-gold-hover)', fontWeight: 600 }}>Inicio</Link>
+          {product.category && (
+            <>
+              {' / '}
+              <Link href={`/categoria/${categorySlug}`} style={{ color: 'var(--accent-gold-hover)', fontWeight: 600 }}>
+                {product.category}
+              </Link>
+            </>
+          )}
+          {product.subcategory && (
+            <>
+              {' / '}
+              <Link href={`/categoria/${categorySlug}/${subcategorySlug}`} style={{ color: 'var(--accent-gold-hover)', fontWeight: 600 }}>
+                {product.subcategory}
+              </Link>
+            </>
+          )}
           {' / '}
-          {product.category}
-          {product.subcategory ? ` / ${product.subcategory}` : ''}
+          <span>{product.name}</span>
         </nav>
 
         <div className="product-detail-grid" style={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-lg)', overflow: 'hidden', boxShadow: 'var(--shadow-md)', padding: '20px' }}>

@@ -46,6 +46,16 @@ export default async function sitemap() {
     };
   });
 
+  // Categorias grupales virtuales (como 'indumentaria' que agrupa Hombres, Mujeres e Infantil)
+  const groupEntries = [
+    {
+      url: `${SITE_URL}/categoria/indumentaria`,
+      lastModified: new Date(),
+      changeFrequency: 'weekly',
+      priority: 0.8
+    }
+  ];
+
   return [
     {
       url: SITE_URL,
@@ -53,6 +63,7 @@ export default async function sitemap() {
       changeFrequency: 'daily',
       priority: 1
     },
+    ...groupEntries,
     ...categoryEntries,
     ...subcategoryEntries,
     ...productEntries
