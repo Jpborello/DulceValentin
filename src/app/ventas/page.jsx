@@ -2237,6 +2237,31 @@ export default function VentasPage() {
     return () => { window.removeEventListener('online', tick); clearInterval(id); };
   }, [load]);
 
+  // Tiempo real: si Mica cambia un alias desde /supervisor, o se carga algo
+  // desde otra pantalla, se refresca solo (lo que se está tipeando no se pierde).
+  const loadRef = useRef(load);
+  useEffect(() => { loadRef.current = load; }, [load]);
+  useEffect(() => {
+    if (!authed || !supabase) return undefined;
+    let timer = null;
+    const refresh = () => {
+      clearTimeout(timer);
+      timer = setTimeout(() => loadRef.current(), 600);
+    };
+    let channel = supabase.channel('ventas-live');
+    ['payment_aliases', 'seller_sales', 'seller_advances', 'seller_payouts', 'cash_counts', 'seller_commission_rates'].forEach((table) => {
+      channel = channel.on('postgres_changes', { event: '*', schema: 'public', table }, refresh);
+    });
+    channel.subscribe();
+    const onVisible = () => { if (document.visibilityState === 'visible') loadRef.current(); };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => {
+      clearTimeout(timer);
+      document.removeEventListener('visibilitychange', onVisible);
+      supabase.removeChannel(channel);
+    };
+  }, [authed]);
+
   const afterSave = (queued) => {
     setQueueSize(readQueue().length);
     setNotice(queued ? 'Sin conexión: quedó guardado en este dispositivo y se envía solo cuando vuelva internet.' : '');
