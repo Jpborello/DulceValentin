@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useState, useMemo } from 'react';
+import { useCallback, useEffect, useRef, useState, useMemo } from 'react';
 import {
   ShieldCheck,
   Lock,
@@ -48,6 +48,25 @@ import {
 } from '@/lib/ventasExport';
 
 const SUPERVISOR_EMAIL = 'belenbarbieri93@gmail.com';
+
+// Tablas que, al cambiar, refrescan el panel en vivo (Supabase Realtime).
+const LIVE_TABLES = ['seller_sales', 'seller_advances', 'seller_payouts', 'cash_counts', 'seller_commission_rates'];
+const POLL_MS = 30000; // respaldo por si se corta el canal en vivo
+
+// adminFetch devuelve el Response crudo: hay que leer el JSON y chequear el status.
+async function api(path, options = {}) {
+  const res = await adminFetch(path, {
+    ...options,
+    headers: { 'Content-Type': 'application/json', ...(options.headers || {}) }
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    const err = new Error(data.error || 'Ocurrió un error.');
+    err.status = res.status;
+    throw err;
+  }
+  return data;
+}
 const PERIODS = { day: 'Día', week: 'Semana', month: 'Mes' };
 const todayAR = () => new Date().toLocaleString('sv-SE', { timeZone: 'America/Argentina/Buenos_Aires' }).slice(0, 10);
 const fmtDate = (d) => new Date(`${d}T12:00:00`).toLocaleDateString('es-AR', { weekday: 'short', day: 'numeric', month: 'short' });
@@ -414,6 +433,8 @@ export default function SupervisorPage() {
   const [copiedAlias, setCopiedAlias] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedSellerFilter, setSelectedSellerFilter] = useState('ALL');
+  const [lastUpdate, setLastUpdate] = useState(null);
+  const [live, setLive] = useState(false); // canal Realtime conectado
 
   // Formato de moneda con soporte de modo privacidad
   const money = useCallback((n) => {
@@ -422,13 +443,18 @@ export default function SupervisorPage() {
     return `${num < 0 ? '−' : ''}$${Math.abs(num).toLocaleString('es-AR', { maximumFractionDigits: 2 })}`;
   }, [privacyMode]);
 
-  const loadData = useCallback(async () => {
-    setLoading(true);
-    setLoadError('');
+  // silent: refresco en vivo, sin spinner ni borrar el error de la pantalla.
+  const loadData = useCallback(async (silent = false) => {
+    if (!silent) {
+      setLoading(true);
+      setLoadError('');
+    }
     try {
-      const res = await adminFetch(`/api/ventas?period=${period}&date=${date}&supervisor=1`);
+      const res = await api(`/api/ventas?period=${period}&date=${date}&supervisor=1`);
       setData(res);
       setAuthed(true);
+      setLastUpdate(new Date());
+      if (silent) setLoadError('');
     } catch (err) {
       if (err.status === 401 || err.status === 403) {
         setAuthed(false);
@@ -455,6 +481,43 @@ export default function SupervisorPage() {
       }
     });
   }, [loadData]);
+
+  // Tiempo real: cada venta, vale, pago o arqueo que se carga en /ventas
+  // dispara un refresco (agrupado para no pedir 10 veces seguidas). Además,
+  // respaldo cada 30 s y al volver a la pestaña.
+  const loadRef = useRef(loadData);
+  useEffect(() => { loadRef.current = loadData; }, [loadData]);
+
+  useEffect(() => {
+    if (!authed || !supabase) return undefined;
+    let timer = null;
+    const refresh = () => {
+      clearTimeout(timer);
+      timer = setTimeout(() => loadRef.current(true), 700);
+    };
+
+    let channel = supabase.channel('supervisor-live');
+    LIVE_TABLES.forEach((table) => {
+      channel = channel.on('postgres_changes', { event: '*', schema: 'public', table }, refresh);
+    });
+    channel.subscribe((status) => setLive(status === 'SUBSCRIBED'));
+
+    const poll = setInterval(() => {
+      if (document.visibilityState === 'visible') loadRef.current(true);
+    }, POLL_MS);
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') loadRef.current(true);
+    };
+    document.addEventListener('visibilitychange', onVisible);
+
+    return () => {
+      clearTimeout(timer);
+      clearInterval(poll);
+      document.removeEventListener('visibilitychange', onVisible);
+      supabase.removeChannel(channel);
+      setLive(false);
+    };
+  }, [authed]);
 
   const handleLogout = async () => {
     await supabase.auth.signOut();
@@ -560,7 +623,7 @@ export default function SupervisorPage() {
     if (!reason || !reason.trim()) return;
 
     try {
-      await adminFetch('/api/ventas', {
+      await api('/api/ventas', {
         method: 'POST',
         body: JSON.stringify({
           action: 'void',
@@ -823,7 +886,7 @@ export default function SupervisorPage() {
 
             <button
               type="button"
-              onClick={loadData}
+              onClick={() => loadData()}
               disabled={loading}
               className="qty-btn"
               style={{ width: '34px', height: '34px' }}
@@ -839,8 +902,19 @@ export default function SupervisorPage() {
           <p style={{ margin: 0, fontSize: '0.92rem', fontWeight: 800, color: 'var(--text-main)' }}>
             {PERIODS[period]}: <span style={{ color: 'var(--dv-accent-text)' }}>{rangeLabel}</span>
           </p>
-          <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
-            Supervisión: <strong style={{ color: 'var(--text-main)' }}>Micaela Barbieri</strong>
+          <span
+            style={{ fontSize: '0.78rem', color: 'var(--text-muted)', display: 'inline-flex', alignItems: 'center', gap: '6px' }}
+            title={live ? 'Se actualiza solo con cada venta, vale o pago que se carga' : 'Reconectando… igual se actualiza cada 30 segundos'}
+          >
+            <span style={{
+              width: '8px',
+              height: '8px',
+              borderRadius: '50%',
+              backgroundColor: live ? '#16A34A' : '#D97706',
+              boxShadow: live ? '0 0 0 3px rgba(22, 163, 74, 0.2)' : 'none'
+            }} />
+            <strong style={{ color: live ? '#16A34A' : '#D97706' }}>{live ? 'En vivo' : 'Conectando'}</strong>
+            {lastUpdate && <span>· actualizado {lastUpdate.toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</span>}
           </span>
         </div>
 
