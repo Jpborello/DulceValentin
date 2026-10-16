@@ -37,7 +37,9 @@ import {
   Sparkles,
   ExternalLink,
   PiggyBank,
-  CheckCheck
+  CheckCheck,
+  Plus,
+  TrendingDown
 } from 'lucide-react';
 import { supabase } from '@/lib/supabaseClient';
 import { adminFetch } from '@/lib/adminFetch';
@@ -147,29 +149,29 @@ function SupervisorLogin({ onLoginSuccess }) {
         {/* Cabecera del Portal */}
         <div style={{ textAlign: 'center', marginBottom: '28px' }}>
           <div style={{
-            width: '68px',
-            height: '68px',
-            borderRadius: '22px',
-            background: 'linear-gradient(135deg, rgba(236, 111, 166, 0.2) 0%, rgba(168, 23, 90, 0.2) 100%)',
-            color: 'var(--dv-accent-fill)',
+            width: '64px',
+            height: '64px',
+            borderRadius: '50%',
+            background: 'var(--dv-accent-fill)',
+            color: '#FFFFFF',
             display: 'inline-flex',
             alignItems: 'center',
             justifyContent: 'center',
-            marginBottom: '16px',
-            border: '1px solid rgba(236, 111, 166, 0.35)',
-            boxShadow: '0 8px 24px rgba(236, 111, 166, 0.25)'
-          }}>
-            <ShieldCheck size={38} />
+            marginBottom: '18px',
+            fontFamily: 'var(--font-display)',
+            fontSize: '1.5rem',
+            boxShadow: '0 0 0 4px var(--bg-card), 0 0 0 5px var(--accent-gold)'
+          }} aria-hidden="true">
+            DV
           </div>
           <h1 style={{
-            fontSize: '1.5rem',
-            fontWeight: 900,
+            fontSize: '2rem',
+            fontWeight: 400,
             margin: '0 0 6px 0',
-            letterSpacing: '-0.02em',
             color: 'var(--text-main)',
-            fontFamily: 'var(--font-heading)'
+            fontFamily: 'var(--font-display)'
           }}>
-            Panel de Supervisión
+            Supervisión
           </h1>
           <p style={{ margin: 0, fontSize: '0.88rem', color: 'var(--text-muted)' }}>
             Dulce Valentín · Acceso exclusivo para <strong style={{ color: 'var(--dv-accent-text)' }}>Micaela Barbieri</strong>
@@ -300,121 +302,6 @@ function SupervisorLogin({ onLoginSuccess }) {
         <div style={{ marginTop: '24px', textAlign: 'center', fontSize: '0.78rem', color: 'var(--text-light)' }}>
           <span>🔒 Panel encriptado y seguro · Rosario, Argentina</span>
         </div>
-      </div>
-    </div>
-  );
-}
-
-// ---------------------------------------------------------------- Tarjeta Ejecutiva Reutilizable (Senior Component)
-function ExecutiveCard({
-  title,
-  amount,
-  secondaryText,
-  badgeText,
-  badgeType = 'brand', // 'brand' | 'emerald' | 'amber' | 'teal' | 'blue'
-  icon: Icon,
-  gradientLine = 'linear-gradient(90deg, #A8175A, #EC6FA6)',
-  highlight = false,
-  tooltip = ''
-}) {
-  const badgeStyles = {
-    brand: { bg: 'rgba(236, 111, 166, 0.15)', text: 'var(--dv-accent-text)', border: 'rgba(236, 111, 166, 0.3)' },
-    emerald: { bg: 'rgba(16, 185, 129, 0.12)', text: '#059669', border: 'rgba(16, 185, 129, 0.3)' },
-    amber: { bg: 'rgba(245, 158, 11, 0.12)', text: '#D97706', border: 'rgba(245, 158, 11, 0.3)' },
-    teal: { bg: 'rgba(13, 148, 136, 0.12)', text: '#0D9488', border: 'rgba(13, 148, 136, 0.3)' },
-    blue: { bg: 'rgba(37, 99, 235, 0.12)', text: '#2563EB', border: 'rgba(37, 99, 235, 0.3)' }
-  }[badgeType];
-
-  return (
-    <div
-      style={{
-        backgroundColor: 'var(--bg-card)',
-        borderRadius: '20px',
-        padding: '22px 20px',
-        border: highlight ? '1.5px solid var(--dv-accent-fill)' : '1px solid var(--border-color)',
-        boxShadow: highlight
-          ? '0 10px 30px -5px rgba(168, 23, 90, 0.15), 0 2px 6px rgba(0, 0, 0, 0.04)'
-          : '0 4px 20px rgba(0, 0, 0, 0.03)',
-        position: 'relative',
-        overflow: 'hidden',
-        display: 'flex',
-        flexDirection: 'column',
-        justifyContent: 'space-between',
-        transition: 'transform 0.2s cubic-bezier(0.2, 0, 0, 1), box-shadow 0.2s cubic-bezier(0.2, 0, 0, 1)'
-      }}
-      title={tooltip}
-    >
-      {/* Línea de Acento Superior Luminosa */}
-      <div style={{
-        position: 'absolute',
-        top: 0,
-        left: 0,
-        right: 0,
-        height: '4px',
-        background: gradientLine
-      }} />
-
-      {/* Cabecera de la Tarjeta */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
-        <span style={{
-          fontSize: '0.78rem',
-          fontWeight: 800,
-          color: 'var(--text-muted)',
-          textTransform: 'uppercase',
-          letterSpacing: '0.05em'
-        }}>
-          {title}
-        </span>
-
-        <div style={{
-          width: '38px',
-          height: '38px',
-          borderRadius: '12px',
-          backgroundColor: badgeStyles.bg,
-          color: badgeStyles.text,
-          border: `1px solid ${badgeStyles.border}`,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          flexShrink: 0
-        }}>
-          <Icon size={20} />
-        </div>
-      </div>
-
-      {/* Monto Principal */}
-      <div style={{ marginBottom: '10px' }}>
-        <div style={{
-          fontSize: 'clamp(1.55rem, 2.4vw, 1.95rem)',
-          fontWeight: 900,
-          letterSpacing: '-0.03em',
-          color: 'var(--text-main)',
-          fontVariantNumeric: 'tabular-nums',
-          lineHeight: 1.1
-        }}>
-          {amount}
-        </div>
-      </div>
-
-      {/* Pie con Micro Badge y Subtítulo */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '8px', paddingTop: '10px', borderTop: '1px solid rgba(0,0,0,0.04)' }}>
-        <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)', fontWeight: 600 }}>
-          {secondaryText}
-        </span>
-        {badgeText && (
-          <span style={{
-            fontSize: '0.72rem',
-            fontWeight: 800,
-            padding: '2px 8px',
-            borderRadius: '6px',
-            backgroundColor: badgeStyles.bg,
-            color: badgeStyles.text,
-            border: `1px solid ${badgeStyles.border}`,
-            whiteSpace: 'nowrap'
-          }}>
-            {badgeText}
-          </span>
-        )}
       </div>
     </div>
   );
@@ -660,1111 +547,409 @@ export default function SupervisorPage() {
   const rangeLabel = !data ? '' : period === 'day' ? fmtDate(data.from) : `${fmtDate(data.from)} al ${fmtDate(data.to)}`;
   const isToday = date === todayAR();
 
-  return (
-    <div style={{
-      minHeight: '100vh',
-      backgroundColor: 'var(--bg-page)',
-      color: 'var(--text-main)',
-      fontFamily: 'var(--font-heading)',
-      paddingBottom: '50px'
-    }}>
-      {/* -------------------- BARRA SUPERIOR EJECUTIVA -------------------- */}
-      <header style={{
-        backgroundColor: 'var(--bg-card)',
-        borderBottom: '1px solid var(--border-color)',
-        position: 'sticky',
-        top: 0,
-        zIndex: 50,
-        boxShadow: '0 4px 20px rgba(0, 0, 0, 0.04)',
-        backdropFilter: 'blur(12px)'
-      }}>
-        <div style={{
-          maxWidth: '1240px',
-          margin: '0 auto',
-          padding: '12px 18px',
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          flexWrap: 'wrap',
-          gap: '12px'
-        }}>
-          {/* Logo de Marca y Título */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-            <div style={{
-              width: '42px',
-              height: '42px',
-              borderRadius: '14px',
-              background: 'linear-gradient(135deg, var(--dv-accent-fill) 0%, var(--accent-gold) 100%)',
-              color: '#FFFFFF',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              boxShadow: '0 4px 14px rgba(168, 23, 90, 0.28)',
-              flexShrink: 0
-            }}>
-              <ShieldCheck size={24} />
+  // ---- Datos derivados para el diseño
+  const prevTotal = (data?.sellers || []).reduce((acc, s) => acc + (Number(s.prevTotal) || 0), 0);
+  const delta = prevTotal > 0 ? Math.round(((totals.total - prevTotal) / prevTotal) * 100) : null;
+  const prevLabel = data?.prev ? (period === 'day' ? fmtDate(data.prev.from) : `${fmtDate(data.prev.from)} al ${fmtDate(data.prev.to)}`) : '';
+  const hourAR = Number(new Date().toLocaleString('en-US', { timeZone: 'America/Argentina/Buenos_Aires', hour: 'numeric', hour12: false }));
+  const greeting = hourAR < 12 ? 'Buen día' : hourAR < 20 ? 'Buenas tardes' : 'Buenas noches';
+  const bigLabel = period === 'day'
+    ? (isToday ? 'Vendido hoy' : `Vendido el ${rangeLabel}`)
+    : period === 'week' ? 'Vendido en la semana' : 'Vendido en el mes';
+  const cashPct = totals.total > 0 ? Math.round((totals.cash / totals.total) * 100) : 0;
+  const ranking = [...(data?.sellers || [])].sort((a, b) => b.total - a.total);
+  const topTotal = ranking[0]?.total || 0;
+  const aliases = data?.aliases || [];
+  const ringR = 46;
+  const ringC = 2 * Math.PI * ringR;
+
+  const tabs = [
+    { id: 'metrics', label: 'Resumen', icon: TrendingUp },
+    { id: 'aliases', label: 'Alias de cobro', icon: Wallet, count: aliases.length },
+    { id: 'transfers', label: 'Transferencias', icon: Landmark, count: transfersList.length },
+    { id: 'sellers', label: 'Vendedoras', icon: Users },
+    { id: 'history', label: 'Movimientos', icon: Receipt }
+  ];
+
+  const AliasCards = () => (
+    aliases.length === 0 ? (
+      <div className="sv-empty">Todavía no hay alias de cobro. Tocá <b>+ Agregar alias</b>.</div>
+    ) : (
+      <div className="sv-alias-grid">
+        {aliases.map((a, idx) => {
+          const rem = aliasLeft(a);
+          const pct = a.dailyLimit ? Math.round(((a.receivedToday || 0) / a.dailyLimit) * 100) : null;
+          const full = rem === 0;
+          const near = !full && pct !== null && pct >= 80;
+          const tone = !a.active ? 'off' : full ? 'bad' : near ? 'warn' : 'ok';
+          return (
+            <div key={a.id} className={`sv-alias sv-alias--${tone}`}>
+              <div className="sv-alias-top">
+                <span className="sv-label">{idx + 1} · {!a.active ? 'Pausado' : full ? 'Tope lleno' : near ? 'Casi lleno' : 'Activo'}</span>
+                <button type="button" className="sv-ghost" onClick={() => copyAliasToClipboard(a.alias)} title="Copiar alias">
+                  {copiedAlias === a.alias ? <Check size={15} /> : <Copy size={15} />}
+                </button>
+              </div>
+              <div className="sv-alias-name">{a.alias}</div>
+              <div className="sv-alias-sub">{[a.holder, a.bank].filter(Boolean).join(' · ') || 'Sin titular'}</div>
+              <div className="sv-alias-rules">{aliasRules(a)}</div>
+              {a.description && <div className="sv-alias-desc">“{a.description}”</div>}
+              <div className="sv-alias-foot">
+                <span className="sv-num">{money(a.receivedToday)}</span>
+                <span className="sv-alias-left">{rem !== null ? (full ? 'Lleno' : `quedan ${money(rem)}`) : 'sin tope'}</span>
+              </div>
+              {a.dailyLimit ? <div className="sv-meter"><span style={{ width: `${Math.min(100, pct)}%` }} /></div> : null}
+              <div className="sv-alias-count">{a.countToday} transferencia{a.countToday === 1 ? '' : 's'} el {fmtDate(date)}</div>
             </div>
+          );
+        })}
+      </div>
+    )
+  );
+
+  return (
+    <div className="sv">
+      <style>{SV_CSS}</style>
+
+      {/* ---------------- Barra superior ---------------- */}
+      <header className="sv-top">
+        <div className="sv-wrap sv-topin">
+          <div className="sv-brand">
+            <div className="sv-seal" aria-hidden="true">DV</div>
             <div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-                <span style={{ fontSize: '1.15rem', fontWeight: 900, color: 'var(--text-main)', letterSpacing: '-0.02em' }}>
-                  Panel de Supervisión
-                </span>
-                <span style={{
-                  fontSize: '0.72rem',
-                  fontWeight: 900,
-                  backgroundColor: 'var(--accent-gold-light)',
-                  color: 'var(--dv-accent-text)',
-                  border: '1px solid rgba(236, 111, 166, 0.4)',
-                  padding: '2px 8px',
-                  borderRadius: '6px'
-                }}>
-                  MICAELA
-                </span>
-              </div>
-              <div style={{ fontSize: '0.76rem', color: 'var(--text-muted)' }}>
-                Dulce Valentín · Control Financiero, Margen y Auditoría
-              </div>
+              <h1>Supervisión</h1>
+              <small>Dulce Valentín · panel de Micaela</small>
             </div>
           </div>
-
-          {/* Acciones Rápidas */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-            {/* Modo Privacidad */}
-            <button
-              type="button"
-              onClick={() => setPrivacyMode(!privacyMode)}
-              className="btn-secondary"
-              style={{
-                padding: '7px 11px',
-                fontSize: '0.8rem',
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: '5px',
-                backgroundColor: privacyMode ? '#FEE2E2' : undefined,
-                color: privacyMode ? '#DC2626' : undefined,
-                borderColor: privacyMode ? '#FCA5A5' : undefined
-              }}
-              title={privacyMode ? 'Mostrar cifras' : 'Ocultar cifras si hay personas cerca'}
-            >
-              {privacyMode ? <EyeOff size={15} /> : <Eye size={15} />}
-              <span>{privacyMode ? 'Oculto' : 'Ocultar $'}</span>
+          <div className="sv-tools">
+            <button type="button" onClick={() => setPrivacyMode(!privacyMode)} className={`sv-btn sv-icon ${privacyMode ? 'sv-btn--on' : ''}`} title={privacyMode ? 'Mostrar cifras' : 'Ocultar cifras si hay alguien mirando'}>
+              {privacyMode ? <EyeOff size={16} /> : <Eye size={16} />}
             </button>
-
-            {/* Alias de cobro: siempre a mano */}
-            <button
-              type="button"
-              onClick={() => { setActiveTab('aliases'); setShowAliasManager('new'); }}
-              className="btn-primary"
-              style={{ padding: '7px 12px', fontSize: '0.8rem', display: 'inline-flex', alignItems: 'center', gap: '5px', backgroundColor: '#0D9488', borderColor: '#0D9488' }}
-              title="Agregar un alias de cobro por transferencia"
-            >
-              <Landmark size={14} />
-              <span>+ Alias</span>
+            <button type="button" onClick={() => { setActiveTab('aliases'); setShowAliasManager('new'); }} className="sv-btn sv-btn--mag" title="Agregar un alias de cobro">
+              <Plus size={15} /><span>Alias</span>
             </button>
-
-            {/* Excel Gerencial */}
-            <button
-              type="button"
-              onClick={handleExportExcel}
-              disabled={exportingExcel || !data}
-              className="btn-secondary"
-              style={{ padding: '7px 12px', fontSize: '0.8rem', display: 'inline-flex', alignItems: 'center', gap: '5px' }}
-              title="Descargar Excel Gerencial Completo"
-            >
-              {exportingExcel ? <Loader2 size={15} className="animate-spin" /> : <Download size={15} />}
-              <span>Excel</span>
+            <button type="button" onClick={handleExportExcel} disabled={exportingExcel || !data} className="sv-btn" title="Descargar Excel">
+              {exportingExcel ? <Loader2 size={15} className="animate-spin" /> : <Download size={15} />}<span>Excel</span>
             </button>
-
-            {/* WhatsApp a Mica */}
-            <button
-              type="button"
-              onClick={handleSendWhatsApp}
-              disabled={!data}
-              className="btn-primary"
-              style={{
-                padding: '7px 12px',
-                fontSize: '0.8rem',
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: '5px',
-                backgroundColor: '#16A34A',
-                borderColor: '#16A34A'
-              }}
-              title="Enviar resumen estructurado a WhatsApp de Micaela"
-            >
-              <Send size={14} />
-              <span>WhatsApp</span>
+            <button type="button" onClick={handleSendWhatsApp} disabled={!data} className="sv-btn sv-btn--wa" title="Mandar resumen por WhatsApp">
+              <Send size={14} /><span>WhatsApp</span>
             </button>
-
-            {/* Acceso a pantalla de Mostrador / Ventas */}
-            <a
-              href="/ventas"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="btn-secondary"
-              style={{ padding: '7px 11px', fontSize: '0.8rem', display: 'inline-flex', alignItems: 'center', gap: '5px', textDecoration: 'none' }}
-              title="Abrir pantalla de mostrador en pestaña nueva"
-            >
-              <ShoppingBag size={14} />
-              <span>Mostrador</span>
-              <ExternalLink size={11} style={{ opacity: 0.6 }} />
+            <a href="/ventas" target="_blank" rel="noopener noreferrer" className="sv-btn" title="Abrir el mostrador en otra pestaña">
+              <ShoppingBag size={15} /><span>Mostrador</span>
             </a>
-
-            {/* Salir */}
-            <button
-              type="button"
-              onClick={handleLogout}
-              className="btn-secondary"
-              style={{ padding: '7px 10px', fontSize: '0.8rem', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
-            >
-              <LogOut size={14} /> Salir
+            <button type="button" onClick={handleLogout} className="sv-btn sv-icon" title="Salir">
+              <LogOut size={15} />
             </button>
           </div>
         </div>
       </header>
 
-      {/* -------------------- CONTENIDO PRINCIPAL -------------------- */}
-      <main style={{ maxWidth: '1240px', margin: '0 auto', padding: '16px 18px' }}>
-
-        {/* Barra de Período y Fechas (Estilo Dulce Valentín) */}
-        <div style={{
-          backgroundColor: 'var(--bg-card)',
-          borderRadius: '18px',
-          padding: '14px 18px',
-          marginBottom: '16px',
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          flexWrap: 'wrap',
-          gap: '12px',
-          border: '1px solid var(--border-color)',
-          boxShadow: '0 2px 10px rgba(0,0,0,0.02)'
-        }}>
-          {/* Tabs Período: Día / Semana / Mes */}
-          <div style={{ display: 'flex', gap: '6px' }}>
+      <main className="sv-wrap">
+        {/* ---------------- Período ---------------- */}
+        <div className="sv-period">
+          <div className="sv-seg" role="tablist" aria-label="Período">
             {Object.entries(PERIODS).map(([id, label]) => (
-              <button
-                key={id}
-                type="button"
-                onClick={() => setPeriod(id)}
-                className={`admin-tab-btn ${period === id ? 'active' : ''}`}
-                style={{
-                  padding: '7px 16px',
-                  borderRadius: '10px',
-                  fontSize: '0.86rem',
-                  fontWeight: 800
-                }}
-              >
-                {label}
-              </button>
+              <button key={id} type="button" className={period === id ? 'on' : ''} onClick={() => setPeriod(id)}>{label}</button>
             ))}
           </div>
-
-          {/* Selector de Fecha */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
-            <button
-              type="button"
-              className="qty-btn"
-              onClick={() => setDate(shiftDate(date, period, -1))}
-              aria-label="Anterior"
-            >
-              <ChevronLeft size={16} />
-            </button>
-
-            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <input
-                type="date"
-                value={date}
-                max={todayAR()}
-                onChange={(e) => e.target.value && setDate(e.target.value)}
-                className="form-input"
-                style={{ padding: '6px 10px', fontSize: '0.86rem', fontWeight: 700 }}
-              />
-            </div>
-
-            <button
-              type="button"
-              className="qty-btn"
-              onClick={() => setDate(shiftDate(date, period, 1))}
-              disabled={isToday}
-              aria-label="Siguiente"
-            >
-              <ChevronRight size={16} />
-            </button>
-
-            {!isToday && (
-              <button
-                type="button"
-                onClick={() => setDate(todayAR())}
-                className="btn-secondary"
-                style={{ padding: '6px 12px', fontSize: '0.8rem' }}
-              >
-                Hoy
-              </button>
-            )}
-
-            <button
-              type="button"
-              onClick={() => loadData()}
-              disabled={loading}
-              className="qty-btn"
-              style={{ width: '34px', height: '34px' }}
-              title="Refrescar datos en vivo"
-            >
-              <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
-            </button>
+          <div className="sv-date">
+            <button type="button" className="sv-btn sv-icon" onClick={() => setDate(shiftDate(date, period, -1))} aria-label="Anterior"><ChevronLeft size={16} /></button>
+            <input type="date" value={date} max={todayAR()} onChange={(e) => e.target.value && setDate(e.target.value)} />
+            <button type="button" className="sv-btn sv-icon" onClick={() => setDate(shiftDate(date, period, 1))} disabled={isToday} aria-label="Siguiente"><ChevronRight size={16} /></button>
+            {!isToday && <button type="button" className="sv-btn" onClick={() => setDate(todayAR())}>Hoy</button>}
+            <button type="button" className="sv-btn sv-icon" onClick={() => loadData()} disabled={loading} title="Actualizar"><RefreshCw size={14} className={loading ? 'animate-spin' : ''} /></button>
           </div>
         </div>
 
-        {/* Indicador de Rango */}
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-          <p style={{ margin: 0, fontSize: '0.92rem', fontWeight: 800, color: 'var(--text-main)' }}>
-            {PERIODS[period]}: <span style={{ color: 'var(--dv-accent-text)' }}>{rangeLabel}</span>
-          </p>
-          <span
-            style={{ fontSize: '0.78rem', color: 'var(--text-muted)', display: 'inline-flex', alignItems: 'center', gap: '6px' }}
-            title={live ? 'Se actualiza solo con cada venta, vale o pago que se carga' : 'Reconectando… igual se actualiza cada 30 segundos'}
-          >
-            <span style={{
-              width: '8px',
-              height: '8px',
-              borderRadius: '50%',
-              backgroundColor: live ? '#16A34A' : '#D97706',
-              boxShadow: live ? '0 0 0 3px rgba(22, 163, 74, 0.2)' : 'none'
-            }} />
-            <strong style={{ color: live ? '#16A34A' : '#D97706' }}>{live ? 'En vivo' : 'Conectando'}</strong>
-            {lastUpdate && <span>· actualizado {lastUpdate.toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</span>}
-          </span>
-        </div>
+        {loadError && <div role="alert" className="sv-alert">{loadError}</div>}
 
-        {loadError && (
-          <div role="alert" style={{ padding: '12px 14px', borderRadius: '12px', backgroundColor: '#FFFBEB', color: '#92400E', fontWeight: 700, marginBottom: '16px', border: '1px solid #FDE68A' }}>
-            {loadError}
-          </div>
-        )}
-
-        {/* -------------------- NAVEGACIÓN POR SOLAPAS -------------------- */}
-        <div style={{
-          display: 'flex',
-          gap: '8px',
-          marginBottom: '18px',
-          borderBottom: '1px solid var(--border-color)',
-          paddingBottom: '10px',
-          overflowX: 'auto',
-          WebkitOverflowScrolling: 'touch'
-        }}>
-          {[
-            { id: 'metrics', label: 'Ganancias & Rentabilidad', icon: TrendingUp },
-            { id: 'aliases', label: `Alias de Cobro (${(data?.aliases || []).length})`, icon: Wallet },
-            { id: 'transfers', label: `Auditoría Transferencias (${transfersList.length})`, icon: Landmark },
-            { id: 'sellers', label: 'Rendimiento de Vendedoras', icon: Users },
-            { id: 'history', label: 'Historial Transaccional', icon: Receipt }
-          ].map(({ id, label, icon: Icon }) => (
-            <button
-              key={id}
-              type="button"
-              onClick={() => setActiveTab(id)}
-              className={`admin-tab-btn ${activeTab === id ? 'active' : ''}`}
-              style={{
-                borderRadius: '12px',
-                padding: '9px 16px',
-                fontSize: '0.88rem',
-                fontWeight: 800,
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: '8px',
-                whiteSpace: 'nowrap'
-              }}
-            >
-              <Icon size={16} />
-              <span>{label}</span>
+        {/* ---------------- Solapas ---------------- */}
+        <nav className="sv-tabs" aria-label="Secciones">
+          {tabs.map(({ id, label, icon: Icon, count }) => (
+            <button key={id} type="button" className={`sv-tab ${activeTab === id ? 'on' : ''}`} onClick={() => setActiveTab(id)}>
+              <Icon size={15} /> {label}{count !== undefined && <span className="sv-count">{count}</span>}
             </button>
           ))}
-        </div>
+          <span className="sv-live" title={live ? 'Se actualiza solo con cada venta, vale, pago o cambio de alias' : 'Reconectando… igual se actualiza cada 30 segundos'}>
+            <i className={live ? 'sv-pulse' : 'sv-pulse sv-pulse--off'} /> {live ? 'En vivo' : 'Conectando'}
+            {lastUpdate && <em>{lastUpdate.toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })}</em>}
+          </span>
+        </nav>
 
-        {/* ==================== SOLAPA 1: GANANCIAS & RENTABILIDAD ==================== */}
+        {/* ==================== RESUMEN ==================== */}
         {activeTab === 'metrics' && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '18px' }}>
-
-            {/* 4 CARDS HERO PRIMARIAS (DISEÑO PROFESIONAL SENIOR) */}
-            <div style={{
-              display: 'grid',
-              gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))',
-              gap: '14px'
-            }}>
-
-              {/* 1. Facturación Bruta */}
-              <ExecutiveCard
-                title="Facturación Bruta (Ventas)"
-                amount={money(totals.total)}
-                secondaryText={`${totals.salesCount} operaciones`}
-                badgeText={totals.salesCount > 0 ? `Ticket prom: ${money(Math.round(totals.total / totals.salesCount))}` : '0 ventas'}
-                badgeType="brand"
-                icon={DollarSign}
-                gradientLine="linear-gradient(90deg, #A8175A, #EC6FA6)"
-                tooltip="Monto total cobrado en el período por todas las ventas"
-              />
-
-              {/* 2. Margen Neto Real (Ganancia Limpia) */}
-              <ExecutiveCard
-                title="Margen Neto del Negocio"
-                amount={money(netMargin)}
-                secondaryText="Limpio para el local"
-                badgeText={`${marginRetentionPct}% retenido`}
-                badgeType="emerald"
-                icon={Sparkles}
-                gradientLine="linear-gradient(90deg, #059669, #34D399)"
-                highlight={true}
-                tooltip="Facturación bruta menos comisiones a pagar a las vendedoras"
-              />
-
-              {/* 3. Recaudación Efectivo */}
-              <ExecutiveCard
-                title="Efectivo en Caja / Mano"
-                amount={money(totals.cash)}
-                secondaryText="Billetes cobrados"
-                badgeText={totals.total > 0 ? `${Math.round((totals.cash / totals.total) * 100)}% del total` : '0%'}
-                badgeType="amber"
-                icon={Banknote}
-                gradientLine="linear-gradient(90deg, #D97706, #FBBF24)"
-                tooltip="Total de cobros realizados en efectivo físico"
-              />
-
-              {/* 4. Recaudación Transferencias */}
-              <ExecutiveCard
-                title="Transferencias Bancarias"
-                amount={money(totals.transfer)}
-                secondaryText={`${transfersList.length} transferencias`}
-                badgeText={totals.total > 0 ? `${Math.round((totals.transfer / totals.total) * 100)}% del total` : '0%'}
-                badgeType="teal"
-                icon={Landmark}
-                gradientLine="linear-gradient(90deg, #0D9488, #2DD4BF)"
-                tooltip="Total de cobros ingresados a cuentas bancarias / alias"
-              />
-            </div>
-
-            {/* 4 CARDS SECUNDARIAS: PASIVO LABORAL, COMISIONES, VALES Y SALDOS */}
-            <div style={{
-              display: 'grid',
-              gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
-              gap: '12px'
-            }}>
-              <div style={{
-                backgroundColor: 'var(--bg-card)',
-                borderRadius: '16px',
-                padding: '16px 18px',
-                border: '1px solid var(--border-color)',
-                boxShadow: '0 2px 8px rgba(0,0,0,0.02)'
-              }}>
-                <span style={{ fontSize: '0.74rem', fontWeight: 800, color: 'var(--text-muted)', textTransform: 'uppercase', display: 'block', marginBottom: '6px' }}>
-                  Comisiones Devengadas
-                </span>
-                <div style={{ fontSize: '1.4rem', fontWeight: 900, color: 'var(--dv-accent-text)', marginBottom: '4px' }}>
-                  {money(totals.commission)}
+          <>
+            <section className="sv-hero">
+              <div className="sv-panel sv-hero-main">
+                <p className="sv-greet">{greeting}, Mica</p>
+                <span className="sv-label">{bigLabel}</span>
+                <div className="sv-big sv-num">{money(totals.total)}</div>
+                <div className="sv-hero-line">
+                  {delta !== null && (
+                    <span className={`sv-delta ${delta >= 0 ? 'sv-delta--up' : 'sv-delta--down'}`}>
+                      {delta >= 0 ? <TrendingUp size={13} /> : <TrendingDown size={13} />} {delta >= 0 ? '+' : ''}{delta}%
+                    </span>
+                  )}
+                  {prevLabel && <span className="sv-muted">vs {prevLabel} ({money(prevTotal)})</span>}
                 </div>
-                <span style={{ fontSize: '0.74rem', color: 'var(--text-muted)' }}>
-                  A pagar a las vendedoras
-                </span>
-              </div>
-
-              <div style={{
-                backgroundColor: 'var(--bg-card)',
-                borderRadius: '16px',
-                padding: '16px 18px',
-                border: '1px solid var(--border-color)',
-                boxShadow: '0 2px 8px rgba(0,0,0,0.02)'
-              }}>
-                <span style={{ fontSize: '0.74rem', fontWeight: 800, color: 'var(--text-muted)', textTransform: 'uppercase', display: 'block', marginBottom: '6px' }}>
-                  Vales / Adelantos
-                </span>
-                <div style={{ fontSize: '1.4rem', fontWeight: 900, color: '#DC2626', marginBottom: '4px' }}>
-                  {money(totals.advances)}
+                <div className="sv-meta">
+                  <span><b>{totals.salesCount}</b> ventas</span>
+                  <span>Ticket promedio <b>{money(totals.salesCount > 0 ? Math.round(totals.total / totals.salesCount) : 0)}</b></span>
+                  <span>{rangeLabel}</span>
                 </div>
-                <span style={{ fontSize: '0.74rem', color: 'var(--text-muted)' }}>
-                  Efectivo entregado a cuenta
-                </span>
-              </div>
-
-              <div style={{
-                backgroundColor: 'var(--bg-card)',
-                borderRadius: '16px',
-                padding: '16px 18px',
-                border: '1px solid var(--border-color)',
-                boxShadow: '0 2px 8px rgba(0,0,0,0.02)'
-              }}>
-                <span style={{ fontSize: '0.74rem', fontWeight: 800, color: 'var(--text-muted)', textTransform: 'uppercase', display: 'block', marginBottom: '6px' }}>
-                  Liquidaciones Pagadas
-                </span>
-                <div style={{ fontSize: '1.4rem', fontWeight: 900, color: '#2563EB', marginBottom: '4px' }}>
-                  {money(totals.paid)}
-                </div>
-                <span style={{ fontSize: '0.74rem', color: 'var(--text-muted)' }}>
-                  Saldadas en el período
-                </span>
-              </div>
-
-              <div style={{
-                backgroundColor: 'var(--bg-card)',
-                borderRadius: '16px',
-                padding: '16px 18px',
-                border: '1px solid var(--border-color)',
-                boxShadow: '0 2px 8px rgba(0,0,0,0.02)'
-              }}>
-                <span style={{ fontSize: '0.74rem', fontWeight: 800, color: 'var(--text-muted)', textTransform: 'uppercase', display: 'block', marginBottom: '6px' }}>
-                  Saldo Laboral Pendiente
-                </span>
-                <div style={{ fontSize: '1.4rem', fontWeight: 900, color: totals.balance > 0 ? '#D97706' : '#059669', marginBottom: '4px' }}>
-                  {money(totals.balance)}
-                </div>
-                <span style={{ fontSize: '0.74rem', color: 'var(--text-muted)' }}>
-                  {totals.balance > 0 ? 'Deuda actual con staff' : 'Sin deuda de comisiones'}
-                </span>
-              </div>
-            </div>
-
-            {/* Barra Visual de Proporción Efectivo vs Transferencias */}
-            {totals.total > 0 && (
-              <div style={{
-                backgroundColor: 'var(--bg-card)',
-                borderRadius: '18px',
-                padding: '20px',
-                border: '1px solid var(--border-color)',
-                boxShadow: '0 2px 10px rgba(0,0,0,0.02)'
-              }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px', flexWrap: 'wrap', gap: '8px' }}>
-                  <div>
-                    <h3 style={{ margin: 0, fontSize: '0.95rem', fontWeight: 800, color: 'var(--text-main)' }}>
-                      Mix de Medios de Cobro
-                    </h3>
-                    <p style={{ margin: 0, fontSize: '0.78rem', color: 'var(--text-muted)' }}>
-                      Comparativa porcentual entre dinero en mano y cuentas bancarias
-                    </p>
+                <div className="sv-split">
+                  <div className="sv-bar">
+                    <span style={{ width: `${cashPct}%`, background: 'var(--sv-cash)' }} />
+                    <span style={{ width: `${totals.total > 0 ? 100 - cashPct : 0}%`, background: 'var(--sv-sky)' }} />
                   </div>
-
-                  <div style={{ display: 'flex', gap: '14px', fontSize: '0.82rem', fontWeight: 700 }}>
-                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', color: '#B45309' }}>
-                      <span style={{ width: '10px', height: '10px', borderRadius: '50%', backgroundColor: '#F59E0B' }} />
-                      Efectivo: <strong>{money(totals.cash)}</strong> ({Math.round((totals.cash / totals.total) * 100)}%)
-                    </span>
-                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', color: '#0F766E' }}>
-                      <span style={{ width: '10px', height: '10px', borderRadius: '50%', backgroundColor: '#0D9488' }} />
-                      Transferencias: <strong>{money(totals.transfer)}</strong> ({Math.round((totals.transfer / totals.total) * 100)}%)
-                    </span>
+                  <div className="sv-legend">
+                    <span><i className="sv-dot" style={{ background: 'var(--sv-cash)' }} />Efectivo <b>{money(totals.cash)}</b> · {cashPct}%</span>
+                    <span><i className="sv-dot" style={{ background: 'var(--sv-sky)' }} />Transferencia <b>{money(totals.transfer)}</b> · {totals.total > 0 ? 100 - cashPct : 0}%</span>
                   </div>
                 </div>
+              </div>
 
-                <div style={{ height: '14px', borderRadius: '999px', backgroundColor: 'var(--bg-surface-elevated)', overflow: 'hidden', display: 'flex' }}>
-                  <div
-                    style={{
-                      width: `${(totals.cash / totals.total) * 100}%`,
-                      backgroundColor: '#F59E0B',
-                      transition: 'width 0.5s cubic-bezier(0.4, 0, 0.2, 1)'
-                    }}
-                    title={`Efectivo: ${money(totals.cash)}`}
-                  />
-                  <div
-                    style={{
-                      width: `${(totals.transfer / totals.total) * 100}%`,
-                      backgroundColor: '#0D9488',
-                      transition: 'width 0.5s cubic-bezier(0.4, 0, 0.2, 1)'
-                    }}
-                    title={`Transferencias: ${money(totals.transfer)}`}
-                  />
+              <div className="sv-panel sv-margin">
+                <div>
+                  <span className="sv-label sv-label--light">Queda para el local</span>
+                  <div className="sv-num sv-margin-num">{money(netMargin)}</div>
+                  <p className="sv-margin-sub">Ventas menos comisiones de las vendedoras ({money(totals.commission)}).</p>
+                </div>
+                <div className="sv-ring">
+                  <svg viewBox="0 0 120 120" width="120" height="120" aria-hidden="true">
+                    <circle cx="60" cy="60" r={ringR} fill="none" stroke="rgba(255,255,255,0.12)" strokeWidth="10" />
+                    <circle cx="60" cy="60" r={ringR} fill="none" stroke="url(#svRing)" strokeWidth="10" strokeLinecap="round"
+                      strokeDasharray={ringC} strokeDashoffset={ringC * (1 - Math.min(100, Math.max(0, marginRetentionPct)) / 100)} transform="rotate(-90 60 60)" />
+                    <defs>
+                      <linearGradient id="svRing" x1="0" y1="0" x2="1" y2="1">
+                        <stop offset="0%" stopColor="#EC6FA6" /><stop offset="100%" stopColor="#5FC1E8" />
+                      </linearGradient>
+                    </defs>
+                  </svg>
+                  <div className="sv-ring-label"><span className="sv-num">{privacyMode ? '••' : `${marginRetentionPct}%`}</span><small>retenido</small></div>
                 </div>
               </div>
-            )}
+            </section>
 
-            {/* Caja Diaria y Arqueo */}
-            {period === 'day' && data?.cash && (
-              <div style={{
-                backgroundColor: 'var(--bg-card)',
-                borderRadius: '18px',
-                padding: '18px 20px',
-                border: '1px solid var(--border-color)',
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'center',
-                flexWrap: 'wrap',
-                gap: '12px'
-              }}>
-                <div>
-                  <h4 style={{ margin: '0 0 4px 0', fontSize: '0.95rem', fontWeight: 800, color: 'var(--text-main)', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                    <PiggyBank size={18} style={{ color: 'var(--dv-accent-fill)' }} /> Conciliación de Efectivo Físico en Caja
-                  </h4>
-                  <p style={{ margin: 0, fontSize: '0.82rem', color: 'var(--text-muted)' }}>
-                    Efectivo esperado por ventas del día (menos vales y pagos): <strong style={{ color: 'var(--text-main)' }}>{money(data.cash.expected)}</strong>
-                  </p>
-                </div>
+            {/* Libro: comisiones, vales, pagos y saldo */}
+            <section className="sv-ledger" aria-label="Comisiones y saldos">
+              <div><span className="sv-label">Comisiones</span><span className="sv-num">{money(totals.commission)}</span><small>generadas en el período</small></div>
+              <div><span className="sv-label">Vales</span><span className="sv-num sv-c-bad">{money(totals.advances)}</span><small>adelantos entregados</small></div>
+              <div><span className="sv-label">Pagado</span><span className="sv-num sv-c-sky">{money(totals.paid)}</span><small>liquidaciones</small></div>
+              <div><span className="sv-label">Saldo a pagar</span><span className={`sv-num ${totals.balance > 0 ? 'sv-c-warn' : 'sv-c-ok'}`}>{money(totals.balance)}</span><small>{totals.balance > 0 ? 'se les debe a las vendedoras' : 'sin deuda pendiente'}</small></div>
+            </section>
 
-                <div>
-                  {data.cash.lastCount ? (
-                    <div style={{ textAlign: 'right' }}>
-                      <span style={{
-                        fontSize: '0.84rem',
-                        fontWeight: 900,
-                        padding: '4px 10px',
-                        borderRadius: '8px',
-                        backgroundColor: Number(data.cash.lastCount.difference) === 0 ? '#ECFDF5' : '#FEF2F2',
-                        color: Number(data.cash.lastCount.difference) === 0 ? '#047857' : '#B91C1C',
-                        border: `1px solid ${Number(data.cash.lastCount.difference) === 0 ? '#A7F3D0' : '#FECACA'}`
-                      }}>
+            <section className="sv-grid2">
+              <div className="sv-panel">
+                <div className="sv-h"><h3>Quién vendió</h3><button type="button" className="sv-link" onClick={() => setActiveTab('sellers')}>Ver todas <ArrowUpRight size={13} /></button></div>
+                {ranking.filter((s) => s.total > 0).length === 0 ? (
+                  <div className="sv-empty">Todavía no hay ventas en el período.</div>
+                ) : (
+                  <div className="sv-rank">
+                    {ranking.filter((s) => s.total > 0).slice(0, 6).map((s, idx) => (
+                      <div key={s.id} className="sv-row">
+                        <span className="sv-av" style={{ background: AV_COLORS[idx % AV_COLORS.length] }}>{initials(s.name)}</span>
+                        <div>
+                          <div className="sv-row-name">{s.name} <span className="sv-muted">· {s.salesCount} venta{s.salesCount === 1 ? '' : 's'} · {s.pct}%</span></div>
+                          <div className="sv-track"><span style={{ width: `${topTotal > 0 ? Math.max(4, Math.round((s.total / topTotal) * 100)) : 0}%` }} /></div>
+                        </div>
+                        <div className="sv-row-amt"><span className="sv-num">{money(s.total)}</span><small>comisión {money(s.commission)}</small></div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              <div className="sv-stack">
+                {period === 'day' && data?.cash && (
+                  <div className="sv-panel">
+                    <div className="sv-h"><h3>Caja del día</h3><PiggyBank size={18} className="sv-muted" /></div>
+                    <span className="sv-label">Efectivo que tiene que haber</span>
+                    <div className="sv-num sv-mid">{money(data.cash.expected)}</div>
+                    <p className="sv-muted sv-small">Ventas en efectivo menos vales y pagos en efectivo (sin el fondo inicial).</p>
+                    {data.cash.lastCount ? (
+                      <div className={`sv-pill ${Number(data.cash.lastCount.difference) === 0 ? 'sv-pill--ok' : 'sv-pill--bad'}`}>
                         {Number(data.cash.lastCount.difference) === 0
-                          ? '✅ Arqueo cerró exacto'
+                          ? 'El arqueo cerró justo'
                           : Number(data.cash.lastCount.difference) > 0
                             ? `Sobran ${money(data.cash.lastCount.difference)}`
                             : `Faltan ${money(-data.cash.lastCount.difference)}`}
-                      </span>
-                      <span style={{ display: 'block', fontSize: '0.74rem', color: 'var(--text-muted)', marginTop: '4px' }}>
-                        Contado: {money(data.cash.lastCount.counted)} ({hour(data.cash.lastCount.created_at)})
-                      </span>
-                    </div>
+                        <small> · contado {money(data.cash.lastCount.counted)} a las {hour(data.cash.lastCount.created_at)}</small>
+                      </div>
+                    ) : (
+                      <div className="sv-pill">Todavía no se hizo el arqueo</div>
+                    )}
+                  </div>
+                )}
+                <div className="sv-panel">
+                  <div className="sv-h"><h3>Alias hoy</h3><button type="button" className="sv-link" onClick={() => setActiveTab('aliases')}>Administrar <ArrowUpRight size={13} /></button></div>
+                  {aliases.length === 0 ? (
+                    <div className="sv-empty">Sin alias cargados.</div>
                   ) : (
-                    <span style={{ fontSize: '0.82rem', color: 'var(--text-muted)', fontStyle: 'italic' }}>
-                      Sin arqueo registrado para la fecha
-                    </span>
+                    <div className="sv-mini-alias">
+                      {aliases.filter((a) => a.active).slice(0, 5).map((a) => {
+                        const pct = a.dailyLimit ? Math.min(100, Math.round(((a.receivedToday || 0) / a.dailyLimit) * 100)) : null;
+                        return (
+                          <div key={a.id}>
+                            <div className="sv-mini-row"><code>{a.alias}</code><span className="sv-num">{money(a.receivedToday)}</span></div>
+                            {pct !== null && <div className="sv-meter sv-meter--thin"><span style={{ width: `${pct}%` }} className={pct >= 100 ? 'bad' : pct >= 80 ? 'warn' : ''} /></div>}
+                          </div>
+                        );
+                      })}
+                    </div>
                   )}
                 </div>
               </div>
-            )}
-
-          </div>
+            </section>
+          </>
         )}
 
-        {/* ==================== SOLAPA: ALIAS DE COBRO ==================== */}
+        {/* ==================== ALIAS DE COBRO ==================== */}
         {activeTab === 'aliases' && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '18px' }}>
-            {/* Alias de cobro: lo recibido en cada uno el día elegido */}
-            <div style={{
-              backgroundColor: 'var(--bg-card)',
-              borderRadius: '20px',
-              padding: '20px 22px',
-              border: '1px solid var(--border-color)',
-              boxShadow: '0 4px 20px rgba(0,0,0,0.03)'
-            }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px', marginBottom: '14px' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                  <div style={{ width: '36px', height: '36px', borderRadius: '10px', backgroundColor: 'rgba(13, 148, 136, 0.12)', color: '#0D9488', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                    <Landmark size={20} />
-                  </div>
-                  <div>
-                    <h3 style={{ margin: 0, fontSize: '1.1rem', fontWeight: 900, color: 'var(--text-main)' }}>Alias de cobro</h3>
-                    <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
-                      Recibido el <strong style={{ color: 'var(--text-main)' }}>{fmtDate(date)}</strong> · al cobrar se sugiere el primero que acepta el monto
-                    </div>
-                  </div>
-                </div>
-                <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-                  <button
-                    type="button"
-                    onClick={() => setShowAliasManager('new')}
-                    className="btn-primary"
-                    style={{ padding: '9px 16px', fontSize: '0.88rem', fontWeight: 800, display: 'inline-flex', alignItems: 'center', gap: '6px', backgroundColor: '#0D9488', borderColor: '#0D9488' }}
-                  >
-                    + Agregar alias
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setShowAliasManager('edit')}
-                    className="btn-secondary"
-                    style={{ padding: '9px 14px', fontSize: '0.88rem', fontWeight: 800, display: 'inline-flex', alignItems: 'center', gap: '6px' }}
-                  >
-                    <Landmark size={15} /> Editar / pausar / ordenar
-                  </button>
-                </div>
+          <section className="sv-panel">
+            <div className="sv-h sv-h--wrap">
+              <div>
+                <h3>Alias de cobro</h3>
+                <p className="sv-muted sv-small">Lo recibido el {fmtDate(date)}. Al cobrar, el mostrador sugiere el primero de la lista que acepta el monto.</p>
               </div>
-
-              {(data?.aliases || []).length === 0 ? (
-                <div style={{ padding: '16px', textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.86rem', border: '1px dashed var(--border-color)', borderRadius: '12px' }}>
-                  No hay alias de cobro cargados. Tocá <strong>+ Agregar alias</strong>.
-                </div>
-              ) : (
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(230px, 1fr))', gap: '12px' }}>
-                  {data.aliases.map((a, idx) => {
-                    const rem = aliasLeft(a);
-                    const pct = a.dailyLimit ? Math.round(((a.receivedToday || 0) / a.dailyLimit) * 100) : null;
-                    const full = rem === 0;
-                    const near = !full && pct !== null && pct >= 80;
-                    const color = !a.active ? 'var(--text-muted)' : full ? '#DC2626' : near ? '#D97706' : '#10B981';
-                    return (
-                      <div key={a.id} style={{ border: `1.5px solid ${a.active ? color : 'var(--border-color)'}`, borderRadius: '14px', padding: '12px 14px', backgroundColor: 'var(--bg-surface-elevated)', opacity: a.active ? 1 : 0.6 }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '6px' }}>
-                          <div style={{ minWidth: 0 }}>
-                            <div style={{ fontSize: '0.68rem', fontWeight: 800, color: 'var(--text-muted)' }}>
-                              {idx + 1}. {!a.active ? 'PAUSADO' : full ? 'TOPE LLENO' : near ? 'CASI LLENO' : 'ACTIVO'}
-                            </div>
-                            <div style={{ fontFamily: 'monospace', fontWeight: 900, fontSize: '1rem', color: 'var(--text-main)', wordBreak: 'break-all' }}>{a.alias}</div>
-                          </div>
-                          <button type="button" onClick={() => copyAliasToClipboard(a.alias)} title="Copiar alias" style={{ background: 'none', border: 'none', cursor: 'pointer', color: copiedAlias === a.alias ? '#059669' : 'var(--text-muted)', flexShrink: 0 }}>
-                            {copiedAlias === a.alias ? <Check size={15} /> : <Copy size={15} />}
-                          </button>
-                        </div>
-                        <div style={{ fontSize: '0.74rem', color: 'var(--text-muted)' }}>{[a.holder, a.bank].filter(Boolean).join(' · ') || 'Sin titular'} · {aliasRules(a)}</div>
-                        {a.description && <div style={{ fontSize: '0.78rem', fontWeight: 800, color: 'var(--dv-accent-text)', marginTop: '2px' }}>“{a.description}”</div>}
-                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.84rem', fontWeight: 800, marginTop: '8px' }}>
-                          <span style={{ color: 'var(--text-main)' }}>{money(a.receivedToday)} <span style={{ fontWeight: 600, color: 'var(--text-muted)', fontSize: '0.76rem' }}>({a.countToday} ops)</span></span>
-                          <span style={{ color }}>{rem !== null ? (full ? 'Lleno' : `quedan ${money(rem)}`) : 'sin tope'}</span>
-                        </div>
-                        {a.dailyLimit ? (
-                          <div style={{ height: '7px', borderRadius: '999px', backgroundColor: 'var(--border-color)', overflow: 'hidden', marginTop: '5px' }}>
-                            <div style={{ height: '100%', width: `${Math.min(100, pct)}%`, backgroundColor: color, transition: 'width 0.4s' }} />
-                          </div>
-                        ) : null}
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
+              <div className="sv-tools">
+                <button type="button" className="sv-btn sv-btn--mag" onClick={() => setShowAliasManager('new')}><Plus size={15} /> Agregar alias</button>
+                <button type="button" className="sv-btn" onClick={() => setShowAliasManager('edit')}>Editar · pausar · ordenar</button>
+              </div>
             </div>
-
-          </div>
+            <AliasCards />
+          </section>
         )}
 
-        {/* ==================== SOLAPA 2: AUDITORÍA DE TRANSFERENCIAS ==================== */}
+        {/* ==================== TRANSFERENCIAS ==================== */}
         {activeTab === 'transfers' && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '18px' }}>
-
-            {/* Filtros y Buscador */}
-            <div style={{
-              display: 'flex',
-              gap: '10px',
-              flexWrap: 'wrap',
-              alignItems: 'center',
-              backgroundColor: 'var(--bg-card)',
-              padding: '12px 16px',
-              borderRadius: '16px',
-              border: '1px solid var(--border-color)'
-            }}>
-              <div style={{ position: 'relative', flex: 1, minWidth: '220px' }}>
-                <Search size={16} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-light)' }} />
-                <input
-                  type="text"
-                  placeholder="Buscar vendedora, monto o detalle..."
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  className="form-input"
-                  style={{ width: '100%', padding: '7px 10px 7px 36px', fontSize: '0.84rem' }}
-                />
+          <section className="sv-panel sv-panel--flush">
+            <div className="sv-h sv-h--pad">
+              <div>
+                <h3>Transferencias</h3>
+                <p className="sv-muted sv-small">{rangeLabel} · {filteredTransfers.length} de {transfersList.length} · total <b>{money(filteredTransfers.reduce((a, b) => a + (b.amount || 0), 0))}</b></p>
               </div>
-
-              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                <Filter size={15} style={{ color: 'var(--text-muted)' }} />
-                <select
-                  value={selectedSellerFilter}
-                  onChange={(e) => setSelectedSellerFilter(e.target.value)}
-                  className="form-input"
-                  style={{ padding: '6px 10px', fontSize: '0.84rem', fontWeight: 600 }}
-                >
+              <div className="sv-filter">
+                <div className="sv-search"><Search size={15} /><input type="text" placeholder="Buscar vendedora, monto o nota" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} /></div>
+                <select className="sv-input" value={selectedSellerFilter} onChange={(e) => setSelectedSellerFilter(e.target.value)}>
                   <option value="ALL">Todas las vendedoras</option>
-                  {(data?.sellers || []).map((s) => (
-                    <option key={s.id} value={s.id}>{s.name}</option>
-                  ))}
+                  {(data?.sellers || []).map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
                 </select>
               </div>
-
-              <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginLeft: 'auto', fontWeight: 700 }}>
-                {filteredTransfers.length} transferencias · Total: <strong style={{ color: '#0D9488' }}>{money(filteredTransfers.reduce((a, b) => a + (b.amount || 0), 0))}</strong>
-              </span>
             </div>
-
-            {/* Tabla Detallada con soporte Móvil Responsivo */}
-            <div style={{
-              backgroundColor: 'var(--bg-card)',
-              borderRadius: '18px',
-              border: '1px solid var(--border-color)',
-              overflow: 'hidden',
-              boxShadow: '0 2px 10px rgba(0,0,0,0.02)'
-            }}>
-              <div style={{ overflowX: 'auto' }}>
-                <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.86rem' }}>
-                  <thead>
-                    <tr style={{ backgroundColor: 'var(--bg-surface-elevated)', borderBottom: '1px solid var(--border-color)', color: 'var(--text-muted)' }}>
-                      <th style={{ padding: '12px 16px', fontWeight: 800 }}>Hora / Fecha</th>
-                      <th style={{ padding: '12px 16px', fontWeight: 800 }}>Monto</th>
-                      <th style={{ padding: '12px 16px', fontWeight: 800 }}>Vendedora</th>
-                      <th style={{ padding: '12px 16px', fontWeight: 800 }}>Alias Destino</th>
-                      <th style={{ padding: '12px 16px', fontWeight: 800 }}>Nota / Comprobante</th>
-                      <th style={{ padding: '12px 16px', fontWeight: 800, textAlign: 'right' }}>Acción</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {filteredTransfers.length === 0 ? (
-                      <tr>
-                        <td colSpan={6} style={{ padding: '36px', textAlign: 'center', color: 'var(--text-muted)' }}>
-                          Sin transferencias registradas para la búsqueda.
-                        </td>
-                      </tr>
-                    ) : (
-                      filteredTransfers.map((t) => {
-                        const aliasInfo = (data.supervisorData?.aliasByDate && data.supervisorData.aliasByDate[t.date]) || data.dailyAlias || {};
-                        return (
-                          <tr key={t.id} style={{ borderBottom: '1px solid var(--border-color)', transition: 'background-color 0.15s' }}>
-                            <td style={{ padding: '12px 16px', whiteSpace: 'nowrap' }}>
-                              <strong style={{ display: 'block', color: 'var(--text-main)' }}>
-                                {t.createdAt ? hour(t.createdAt) : '--:--'}
-                              </strong>
-                              <span style={{ fontSize: '0.74rem', color: 'var(--text-muted)' }}>
-                                {fmtDate(t.date)}
-                              </span>
-                            </td>
-                            <td style={{ padding: '12px 16px', whiteSpace: 'nowrap' }}>
-                              <strong style={{ color: '#0D9488', fontSize: '1rem', fontVariantNumeric: 'tabular-nums' }}>
-                                {money(t.amount)}
-                              </strong>
-                            </td>
-                            <td style={{ padding: '12px 16px' }}>
-                              <span style={{
-                                fontWeight: 800,
-                                color: t.sellerName.toLowerCase().trim() === 'mostrador' ? '#2563EB' : 'var(--text-main)'
-                              }}>
-                                {t.sellerName}
-                              </span>
-                              {t.sellerName.toLowerCase().trim() === 'mostrador' && (
-                                <span style={{ display: 'block', fontSize: '0.7rem', color: '#3B82F6' }}>
-                                  Venta directa caja
-                                </span>
-                              )}
-                            </td>
-                            <td style={{ padding: '12px 16px' }}>
-                              <span style={{
-                                fontFamily: 'monospace',
-                                fontSize: '0.8rem',
-                                color: 'var(--text-main)',
-                                backgroundColor: 'var(--bg-surface-elevated)',
-                                padding: '3px 8px',
-                                borderRadius: '6px'
-                              }}>
-                                {t.aliasName || (t.aliasId ? 'Alias archivado' : aliasInfo.alias || 'Sin alias')}
-                              </span>
-                            </td>
-                            <td style={{ padding: '12px 16px', color: 'var(--text-muted)' }}>
-                              {t.note || <span style={{ fontStyle: 'italic', color: 'var(--text-light)' }}>Sin nota</span>}
-                            </td>
-                            <td style={{ padding: '12px 16px', textAlign: 'right', whiteSpace: 'nowrap' }}>
-                              <button
-                                type="button"
-                                onClick={() => handleVoidItem('sale', t.id, t.amount, `Transferencia de ${t.sellerName}`)}
-                                style={{
-                                  backgroundColor: '#FEF2F2',
-                                  color: '#DC2626',
-                                  border: '1px solid #FECACA',
-                                  borderRadius: '6px',
-                                  padding: '4px 8px',
-                                  fontSize: '0.74rem',
-                                  fontWeight: 700,
-                                  cursor: 'pointer'
-                                }}
-                                title="Anular si fue un cobro por error"
-                              >
-                                Anular
-                              </button>
-                            </td>
-                          </tr>
-                        );
-                      })
-                    )}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-
-          </div>
-        )}
-
-        {/* ==================== SOLAPA 3: RENDIMIENTO DE VENDEDORAS ==================== */}
-        {activeTab === 'sellers' && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '18px' }}>
-
-            {/* Podio / Leaderboard de Rendimiento */}
-            <div style={{
-              backgroundColor: 'var(--bg-card)',
-              borderRadius: '20px',
-              padding: '22px',
-              border: '1px solid var(--border-color)',
-              boxShadow: '0 4px 20px rgba(0,0,0,0.03)'
-            }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', flexWrap: 'wrap', gap: '8px' }}>
-                <h3 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 900, display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <Trophy size={20} style={{ color: '#F59E0B' }} />
-                  Ranking de Ventas del Período
-                </h3>
-                <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
-                  Total vendido entre vendedoras: <strong style={{ color: 'var(--text-main)' }}>{money(totals.total)}</strong>
-                </span>
-              </div>
-
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                {[...(data?.sellers || [])]
-                  .sort((a, b) => b.total - a.total)
-                  .map((s, idx) => {
-                    const pctOfStore = totals.total > 0 ? Math.round((s.total / totals.total) * 100) : 0;
+            <div className="sv-tablewrap">
+              <table className="sv-table">
+                <thead><tr><th>Hora</th><th>Monto</th><th>Vendedora</th><th>Alias</th><th>Nota</th><th className="r" /></tr></thead>
+                <tbody>
+                  {filteredTransfers.length === 0 ? (
+                    <tr><td colSpan={6} className="sv-empty-cell">No hay transferencias para mostrar.</td></tr>
+                  ) : filteredTransfers.map((t) => {
+                    const aliasInfo = (data.supervisorData?.aliasByDate && data.supervisorData.aliasByDate[t.date]) || data.dailyAlias || {};
                     return (
-                      <div
-                        key={s.id}
-                        style={{
-                          backgroundColor: 'var(--bg-surface-elevated)',
-                          borderRadius: '14px',
-                          padding: '12px 16px',
-                          border: '1px solid var(--border-color)',
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: '14px',
-                          flexWrap: 'wrap'
-                        }}
-                      >
-                        <span style={{ fontSize: '1.15rem', width: '28px', textAlign: 'center', fontWeight: 900 }}>
-                          {idx === 0 ? '🥇' : idx === 1 ? '🥈' : idx === 2 ? '🥉' : `${idx + 1}.`}
-                        </span>
-
-                        <div style={{ flex: 1, minWidth: '150px' }}>
-                          <span style={{ fontWeight: 800, color: 'var(--text-main)', fontSize: '0.96rem' }}>{s.name}</span>
-                          <span style={{ display: 'block', fontSize: '0.74rem', color: 'var(--text-muted)' }}>
-                            {s.salesCount} ventas · % Com: <strong style={{ color: 'var(--dv-accent-text)' }}>{s.pct}%</strong>
-                          </span>
-                        </div>
-
-                        {/* Barra proporcional */}
-                        <div style={{ width: '120px', height: '8px', backgroundColor: 'var(--bg-card)', borderRadius: '999px', overflow: 'hidden' }}>
-                          <div style={{ width: `${pctOfStore}%`, height: '100%', backgroundColor: 'var(--dv-accent-fill)', borderRadius: '999px' }} />
-                        </div>
-
-                        <div style={{ textAlign: 'right', minWidth: '110px' }}>
-                          <strong style={{ display: 'block', fontSize: '1.05rem', color: 'var(--text-main)' }}>
-                            {money(s.total)}
-                          </strong>
-                          <span style={{ fontSize: '0.74rem', color: '#059669', fontWeight: 700 }}>
-                            Comisión: {money(s.commission)}
-                          </span>
-                        </div>
-                      </div>
+                      <tr key={t.id}>
+                        <td><b>{t.createdAt ? hour(t.createdAt) : '--:--'}</b><small className="sv-block sv-muted">{fmtDate(t.date)}</small></td>
+                        <td><span className="sv-num sv-amt">{money(t.amount)}</span></td>
+                        <td>{t.sellerName}</td>
+                        <td><span className="sv-chip">{t.aliasName || (t.aliasId ? 'Alias archivado' : aliasInfo.alias || 'Sin alias')}</span></td>
+                        <td className="sv-muted">{t.note || '—'}</td>
+                        <td className="r"><button type="button" className="sv-void" onClick={() => handleVoidItem('sale', t.id, t.amount, `Transferencia de ${t.sellerName}`)}>Anular</button></td>
+                      </tr>
                     );
                   })}
-              </div>
+                </tbody>
+              </table>
             </div>
+          </section>
+        )}
 
-            {/* Consolidado Laboral Completo */}
-            <div style={{
-              backgroundColor: 'var(--bg-card)',
-              borderRadius: '20px',
-              border: '1px solid var(--border-color)',
-              overflow: 'hidden',
-              boxShadow: '0 4px 20px rgba(0,0,0,0.03)'
-            }}>
-              <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--border-color)' }}>
-                <h3 style={{ margin: 0, fontSize: '1rem', fontWeight: 900 }}>
-                  Consolidado Laboral y Liquidaciones
-                </h3>
-                <p style={{ margin: 0, fontSize: '0.78rem', color: 'var(--text-muted)' }}>
-                  Auditoría de comisiones devengadas, vales en efectivo y saldo acumulado.
-                </p>
+        {/* ==================== VENDEDORAS ==================== */}
+        {activeTab === 'sellers' && (
+          <>
+            {ranking.filter((s) => s.total > 0).length > 0 && (
+              <section className="sv-podium">
+                {ranking.filter((s) => s.total > 0).slice(0, 3).map((s, idx) => (
+                  <div key={s.id} className={`sv-panel sv-pod ${idx === 0 ? 'sv-pod--first' : ''}`}>
+                    <span className="sv-pod-place">{idx + 1}°</span>
+                    <span className="sv-av sv-av--lg" style={{ background: AV_COLORS[idx % AV_COLORS.length] }}>{initials(s.name)}</span>
+                    <div className="sv-pod-name">{s.name}</div>
+                    <div className="sv-num sv-pod-amt">{money(s.total)}</div>
+                    <small>{s.salesCount} venta{s.salesCount === 1 ? '' : 's'} · comisión {money(s.commission)}</small>
+                  </div>
+                ))}
+              </section>
+            )}
+            <section className="sv-panel sv-panel--flush">
+              <div className="sv-h sv-h--pad">
+                <div>
+                  <h3>Comisiones y saldos</h3>
+                  <p className="sv-muted sv-small">Saldo = comisiones − vales − pagos, acumulado hasta el cierre del período.</p>
+                </div>
               </div>
-
-              <div style={{ overflowX: 'auto' }}>
-                <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.86rem' }}>
-                  <thead>
-                    <tr style={{ backgroundColor: 'var(--bg-surface-elevated)', borderBottom: '1px solid var(--border-color)', color: 'var(--text-muted)' }}>
-                      <th style={{ padding: '12px 16px', fontWeight: 800 }}>Vendedora</th>
-                      <th style={{ padding: '12px 16px', fontWeight: 800 }}>Total Vendido</th>
-                      <th style={{ padding: '12px 16px', fontWeight: 800 }}>Efectivo</th>
-                      <th style={{ padding: '12px 16px', fontWeight: 800 }}>Transferencia</th>
-                      <th style={{ padding: '12px 16px', fontWeight: 800 }}>% Com.</th>
-                      <th style={{ padding: '12px 16px', fontWeight: 800 }}>Comisión</th>
-                      <th style={{ padding: '12px 16px', fontWeight: 800 }}>Vales</th>
-                      <th style={{ padding: '12px 16px', fontWeight: 800 }}>Liquidado</th>
-                      <th style={{ padding: '12px 16px', fontWeight: 800, textAlign: 'right' }}>Saldo Pendiente</th>
-                    </tr>
-                  </thead>
+              <div className="sv-tablewrap">
+                <table className="sv-table">
+                  <thead><tr><th>Vendedora</th><th className="r">Vendido</th><th className="r">Efectivo</th><th className="r">Transf.</th><th className="r">%</th><th className="r">Comisión</th><th className="r">Vales</th><th className="r">Pagado</th><th className="r">Saldo</th></tr></thead>
                   <tbody>
-                    {(data?.sellers || []).map((s) => (
-                      <tr key={s.id} style={{ borderBottom: '1px solid var(--border-color)' }}>
-                        <td style={{ padding: '12px 16px', fontWeight: 800, color: 'var(--text-main)' }}>
-                          {s.name}
-                        </td>
-                        <td style={{ padding: '12px 16px', fontWeight: 700 }}>
-                          {money(s.total)}
-                        </td>
-                        <td style={{ padding: '12px 16px', color: '#B45309' }}>
-                          {money(s.cash)}
-                        </td>
-                        <td style={{ padding: '12px 16px', color: '#0F766E' }}>
-                          {money(s.transfer)}
-                        </td>
-                        <td style={{ padding: '12px 16px', fontWeight: 800, color: 'var(--dv-accent-text)' }}>
-                          {s.pct}%
-                        </td>
-                        <td style={{ padding: '12px 16px', fontWeight: 800, color: '#059669' }}>
-                          {money(s.commission)}
-                        </td>
-                        <td style={{ padding: '12px 16px', color: '#DC2626' }}>
-                          − {money(s.advances)}
-                        </td>
-                        <td style={{ padding: '12px 16px', color: '#2563EB' }}>
-                          − {money(s.paid)}
-                        </td>
-                        <td style={{ padding: '12px 16px', textAlign: 'right' }}>
-                          <strong style={{
-                            fontSize: '0.98rem',
-                            color: s.balance > 0 ? '#D97706' : s.balance < 0 ? '#DC2626' : '#059669'
-                          }}>
-                            {money(s.balance)}
-                          </strong>
-                        </td>
+                    {ranking.map((s, idx) => (
+                      <tr key={s.id} className={s.total === 0 && s.balance === 0 ? 'dim' : ''}>
+                        <td><span className="sv-who"><span className="sv-av sv-av--sm" style={{ background: AV_COLORS[idx % AV_COLORS.length] }}>{initials(s.name)}</span>{s.name}</span></td>
+                        <td className="r"><span className="sv-num sv-amt">{money(s.total)}</span></td>
+                        <td className="r sv-muted">{money(s.cash)}</td>
+                        <td className="r sv-muted">{money(s.transfer)}</td>
+                        <td className="r">{s.pct}%</td>
+                        <td className="r">{money(s.commission)}</td>
+                        <td className="r sv-c-bad">{s.advances ? `− ${money(s.advances)}` : '—'}</td>
+                        <td className="r sv-c-sky">{s.paid ? `− ${money(s.paid)}` : '—'}</td>
+                        <td className="r"><b className={s.balance > 0 ? 'sv-c-warn' : s.balance < 0 ? 'sv-c-bad' : 'sv-c-ok'}>{money(s.balance)}</b></td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
               </div>
-            </div>
-
-          </div>
+            </section>
+          </>
         )}
 
-        {/* ==================== SOLAPA 4: HISTORIAL COMPLETO ==================== */}
+        {/* ==================== MOVIMIENTOS ==================== */}
         {activeTab === 'history' && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '18px' }}>
-
-            <div style={{
-              backgroundColor: 'var(--bg-card)',
-              borderRadius: '20px',
-              padding: '20px',
-              border: '1px solid var(--border-color)',
-              boxShadow: '0 4px 20px rgba(0,0,0,0.03)'
-            }}>
-              <h3 style={{ margin: '0 0 4px 0', fontSize: '1.05rem', fontWeight: 900 }}>
-                Auditoría Transaccional y Movimientos
-              </h3>
-              <p style={{ margin: '0 0 16px 0', fontSize: '0.8rem', color: 'var(--text-muted)' }}>
-                Registro completo de todas las ventas, vales y liquidaciones registradas en el período. Nada se borra, todo se audita.
-              </p>
-
-              {/* Solapas secundarias */}
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-                {/* Ventas */}
-                <h4 style={{ margin: '8px 0 4px 0', fontSize: '0.92rem', fontWeight: 800, color: 'var(--text-main)' }}>
-                  Ventas Registradas ({data?.supervisorData?.sales?.length || 0})
-                </h4>
-                <div style={{ maxHeight: '320px', overflowY: 'auto', border: '1px solid var(--border-color)', borderRadius: '12px' }}>
-                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.84rem', textAlign: 'left' }}>
-                    <thead style={{ backgroundColor: 'var(--bg-surface-elevated)', position: 'sticky', top: 0 }}>
-                      <tr style={{ color: 'var(--text-muted)' }}>
-                        <th style={{ padding: '9px 12px' }}>Hora / Fecha</th>
-                        <th style={{ padding: '9px 12px' }}>Vendedora</th>
-                        <th style={{ padding: '9px 12px' }}>Monto</th>
-                        <th style={{ padding: '9px 12px' }}>Medio</th>
-                        <th style={{ padding: '9px 12px' }}>Nota</th>
-                        <th style={{ padding: '9px 12px', textAlign: 'right' }}>Acción</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {(data?.supervisorData?.sales || []).map((x) => (
-                        <tr key={x.id} style={{ borderBottom: '1px solid var(--border-color)', opacity: x.voided_at ? 0.4 : 1, textDecoration: x.voided_at ? 'line-through' : 'none' }}>
-                          <td style={{ padding: '9px 12px' }}>{hour(x.created_at)} ({fmtDate(x.sale_date)})</td>
-                          <td style={{ padding: '9px 12px', fontWeight: 700 }}>{x.seller_name}</td>
-                          <td style={{ padding: '9px 12px', fontWeight: 800, color: 'var(--text-main)' }}>{money(x.amount)}</td>
-                          <td style={{ padding: '9px 12px', textTransform: 'capitalize' }}>{x.payment_method}</td>
-                          <td style={{ padding: '9px 12px', color: 'var(--text-muted)' }}>{x.note || '-'}</td>
-                          <td style={{ padding: '9px 12px', textAlign: 'right' }}>
-                            {!x.voided_at && (
-                              <button
-                                type="button"
-                                onClick={() => handleVoidItem('sale', x.id, x.amount, `Venta de ${x.seller_name}`)}
-                                style={{ backgroundColor: '#FEF2F2', color: '#DC2626', border: '1px solid #FECACA', borderRadius: '4px', padding: '2px 6px', fontSize: '0.72rem', cursor: 'pointer' }}
-                              >
-                                Anular
-                              </button>
-                            )}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-
-                {/* Vales */}
-                <h4 style={{ margin: '12px 0 4px 0', fontSize: '0.92rem', fontWeight: 800, color: '#DC2626' }}>
-                  Vales y Adelantos Entregados ({data?.supervisorData?.advances?.length || 0})
-                </h4>
-                <div style={{ maxHeight: '240px', overflowY: 'auto', border: '1px solid var(--border-color)', borderRadius: '12px' }}>
-                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.84rem', textAlign: 'left' }}>
-                    <thead style={{ backgroundColor: 'var(--bg-surface-elevated)', position: 'sticky', top: 0 }}>
-                      <tr style={{ color: 'var(--text-muted)' }}>
-                        <th style={{ padding: '9px 12px' }}>Hora / Fecha</th>
-                        <th style={{ padding: '9px 12px' }}>Vendedora</th>
-                        <th style={{ padding: '9px 12px' }}>Monto Retirado</th>
-                        <th style={{ padding: '9px 12px' }}>Medio</th>
-                        <th style={{ padding: '9px 12px' }}>Nota</th>
-                        <th style={{ padding: '9px 12px', textAlign: 'right' }}>Acción</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {(data?.supervisorData?.advances || []).map((x) => (
-                        <tr key={x.id} style={{ borderBottom: '1px solid var(--border-color)', opacity: x.voided_at ? 0.4 : 1, textDecoration: x.voided_at ? 'line-through' : 'none' }}>
-                          <td style={{ padding: '9px 12px' }}>{hour(x.created_at)} ({fmtDate(x.advance_date)})</td>
-                          <td style={{ padding: '9px 12px', fontWeight: 700 }}>{x.seller_name}</td>
-                          <td style={{ padding: '9px 12px', fontWeight: 800, color: '#DC2626' }}>{money(x.amount)}</td>
-                          <td style={{ padding: '9px 12px', textTransform: 'capitalize' }}>{x.payment_method}</td>
-                          <td style={{ padding: '9px 12px', color: 'var(--text-muted)' }}>{x.note || '-'}</td>
-                          <td style={{ padding: '9px 12px', textAlign: 'right' }}>
-                            {!x.voided_at && (
-                              <button
-                                type="button"
-                                onClick={() => handleVoidItem('advance', x.id, x.amount, `Vale de ${x.seller_name}`)}
-                                style={{ backgroundColor: '#FEF2F2', color: '#DC2626', border: '1px solid #FECACA', borderRadius: '4px', padding: '2px 6px', fontSize: '0.72rem', cursor: 'pointer' }}
-                              >
-                                Anular
-                              </button>
-                            )}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-
-                {/* Liquidaciones */}
-                <h4 style={{ margin: '12px 0 4px 0', fontSize: '0.92rem', fontWeight: 800, color: '#059669' }}>
-                  Liquidaciones Pagadas a Vendedoras ({data?.supervisorData?.payouts?.length || 0})
-                </h4>
-                <div style={{ maxHeight: '240px', overflowY: 'auto', border: '1px solid var(--border-color)', borderRadius: '12px' }}>
-                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.84rem', textAlign: 'left' }}>
-                    <thead style={{ backgroundColor: 'var(--bg-surface-elevated)', position: 'sticky', top: 0 }}>
-                      <tr style={{ color: 'var(--text-muted)' }}>
-                        <th style={{ padding: '9px 12px' }}>Fecha Pago</th>
-                        <th style={{ padding: '9px 12px' }}>Vendedora</th>
-                        <th style={{ padding: '9px 12px' }}>Monto Pagado</th>
-                        <th style={{ padding: '9px 12px' }}>Período</th>
-                        <th style={{ padding: '9px 12px' }}>Nota</th>
-                        <th style={{ padding: '9px 12px', textAlign: 'right' }}>Acción</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {(data?.supervisorData?.payouts || []).map((x) => (
-                        <tr key={x.id} style={{ borderBottom: '1px solid var(--border-color)', opacity: x.voided_at ? 0.4 : 1, textDecoration: x.voided_at ? 'line-through' : 'none' }}>
-                          <td style={{ padding: '9px 12px' }}>{fmtDate(x.paid_date)} ({hour(x.created_at)})</td>
-                          <td style={{ padding: '9px 12px', fontWeight: 700 }}>{x.seller_name}</td>
-                          <td style={{ padding: '9px 12px', fontWeight: 800, color: '#059669' }}>{money(x.amount)}</td>
-                          <td style={{ padding: '9px 12px', color: 'var(--text-muted)' }}>{x.period_from ? `${fmtDate(x.period_from)} al ${fmtDate(x.period_to)}` : 'A cuenta'}</td>
-                          <td style={{ padding: '9px 12px', color: 'var(--text-muted)' }}>{x.note || '-'}</td>
-                          <td style={{ padding: '9px 12px', textAlign: 'right' }}>
-                            {!x.voided_at && (
-                              <button
-                                type="button"
-                                onClick={() => handleVoidItem('payout', x.id, x.amount, `Pago a ${x.seller_name}`)}
-                                style={{ backgroundColor: '#FEF2F2', color: '#DC2626', border: '1px solid #FECACA', borderRadius: '4px', padding: '2px 6px', fontSize: '0.72rem', cursor: 'pointer' }}
-                              >
-                                Anular
-                              </button>
-                            )}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-
+          <section className="sv-panel">
+            <div className="sv-h sv-h--wrap">
+              <div>
+                <h3>Movimientos del período</h3>
+                <p className="sv-muted sv-small">Nada se borra: lo anulado queda tachado con su motivo.</p>
               </div>
             </div>
-
-          </div>
+            {[
+              { key: 'sales', title: 'Ventas', kind: 'sale', dateKey: 'sale_date', tone: '' , label: (x) => `Venta de ${x.seller_name}` },
+              { key: 'advances', title: 'Vales', kind: 'advance', dateKey: 'advance_date', tone: 'sv-c-bad', label: (x) => `Vale de ${x.seller_name}` },
+              { key: 'payouts', title: 'Pagos a vendedoras', kind: 'payout', dateKey: 'paid_date', tone: 'sv-c-sky', label: (x) => `Pago a ${x.seller_name}` }
+            ].map((sec) => {
+              const rows = data?.supervisorData?.[sec.key] || [];
+              return (
+                <div key={sec.key} className="sv-mov">
+                  <div className="sv-mov-h"><span className="sv-label">{sec.title}</span><span className="sv-count">{rows.length}</span></div>
+                  {rows.length === 0 ? <div className="sv-empty">Sin {sec.title.toLowerCase()} en el período.</div> : (
+                    <div className="sv-scroll">
+                      <table className="sv-table">
+                        <thead><tr><th>Fecha</th><th>Vendedora</th><th className="r">Monto</th><th>{sec.kind === 'payout' ? 'Período' : 'Medio'}</th><th>Nota</th><th className="r" /></tr></thead>
+                        <tbody>
+                          {rows.map((x) => (
+                            <tr key={x.id} className={x.voided_at ? 'void' : ''}>
+                              <td><b>{hour(x.created_at)}</b> <span className="sv-muted">{fmtDate(x[sec.dateKey])}</span></td>
+                              <td>{x.seller_name}</td>
+                              <td className="r"><span className={`sv-num sv-amt ${sec.tone}`}>{money(x.amount)}</span></td>
+                              <td className="sv-muted">{sec.kind === 'payout' ? (x.period_from ? `${fmtDate(x.period_from)} al ${fmtDate(x.period_to)}` : 'A cuenta') : (x.payment_method === 'transferencia' ? 'Transferencia' : 'Efectivo')}</td>
+                              <td className="sv-muted">{x.voided_at ? `Anulado: ${x.void_reason || ''}` : (x.note || '—')}</td>
+                              <td className="r">{!x.voided_at && <button type="button" className="sv-void" onClick={() => handleVoidItem(sec.kind, x.id, x.amount, sec.label(x))}>Anular</button>}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </section>
         )}
 
         {aliasModal}
@@ -1772,3 +957,205 @@ export default function SupervisorPage() {
     </div>
   );
 }
+
+// ---------------------------------------------------------------- Estilos del panel
+// Identidad Dulce Valentín: DM Serif Display para cifras y títulos, magenta
+// #A8175A + rosa + celeste de la marca, tarjeta ciruela para la ganancia.
+const AV_COLORS = ['#A8175A', '#EC6FA6', '#3FA9D6', '#7B4FB5', '#C98A1B', '#2E9E6A'];
+const initials = (name = '') => name.trim().split(/\s+/).slice(0, 2).map((w) => w[0]?.toUpperCase() || '').join('') || '·';
+
+const SV_CSS = `
+.sv{min-height:100vh;background:var(--bg-page);color:var(--text-main);font-family:var(--font-body);padding-bottom:64px;
+  --sv-line:var(--border-color);--sv-card:var(--bg-card);--sv-soft:var(--bg-surface-elevated);--sv-mute:var(--text-muted);
+  --sv-mag:var(--dv-accent-fill);--sv-magt:var(--dv-accent-text);--sv-pink:var(--accent-gold);--sv-sky:var(--accent-secondary);
+  --sv-ok:var(--accent-emerald);--sv-bad:var(--accent-crimson);--sv-warn:#D98A0B;--sv-cash:#D9A13B}
+.sv *{box-sizing:border-box}
+.sv-wrap{max-width:1180px;margin:0 auto;padding:0 20px}
+.sv-num{font-family:var(--font-display);font-weight:400;font-variant-numeric:tabular-nums;letter-spacing:-.01em}
+.sv-label{display:block;font-size:.66rem;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:var(--sv-mute)}
+.sv-label--light{color:rgba(255,248,250,.7)}
+.sv-muted{color:var(--sv-mute)}
+.sv-small{font-size:.8rem;margin:4px 0 0}
+.sv-block{display:block}
+.sv-c-ok{color:var(--sv-ok)}.sv-c-bad{color:var(--sv-bad)}.sv-c-warn{color:var(--sv-warn)}.sv-c-sky{color:var(--sv-sky)}
+
+.sv-top{position:sticky;top:0;z-index:50;background:color-mix(in srgb,var(--bg-page) 88%,transparent);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);border-bottom:1px solid var(--sv-line)}
+.sv-topin{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 20px;flex-wrap:wrap}
+.sv-brand{display:flex;align-items:center;gap:12px}
+.sv-seal{width:42px;height:42px;border-radius:50%;background:var(--sv-mag);color:#fff;display:grid;place-items:center;font-family:var(--font-display);font-size:1.05rem;letter-spacing:.02em;box-shadow:0 0 0 3px var(--bg-page),0 0 0 4px var(--sv-pink)}
+.sv-brand h1{font-family:var(--font-display);font-weight:400;font-size:1.45rem;margin:0;line-height:1}
+.sv-brand small{display:block;font-size:.72rem;color:var(--sv-mute);margin-top:4px;letter-spacing:.03em}
+.sv-tools{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+.sv-btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;height:36px;padding:0 13px;border-radius:999px;border:1px solid var(--sv-line);background:var(--sv-card);color:var(--text-main);font:700 .8rem var(--font-body);cursor:pointer;text-decoration:none;transition:border-color .15s,background .15s,transform .1s;white-space:nowrap}
+.sv-btn:hover:not(:disabled){border-color:var(--sv-pink)}
+.sv-btn:active:not(:disabled){transform:scale(.97)}
+.sv-btn:disabled{opacity:.45;cursor:not-allowed}
+.sv-btn:focus-visible,.sv-tab:focus-visible,.sv-seg button:focus-visible{outline:2px solid var(--sv-pink);outline-offset:2px}
+.sv-btn--mag{background:var(--sv-mag);border-color:var(--sv-mag);color:#fff}
+.sv-btn--mag:hover:not(:disabled){background:var(--dv-accent-fill-hover);border-color:var(--dv-accent-fill-hover)}
+.sv-btn--wa{background:#1E9E52;border-color:#1E9E52;color:#fff}
+.sv-btn--on{background:var(--accent-gold-light);border-color:var(--sv-pink);color:var(--sv-magt)}
+.sv-icon{width:36px;padding:0}
+.sv-ghost{background:none;border:0;color:var(--sv-mute);cursor:pointer;padding:4px;border-radius:8px;display:inline-flex}
+.sv-ghost:hover{color:var(--sv-magt)}
+.sv-link{background:none;border:0;color:var(--sv-magt);font:700 .78rem var(--font-body);cursor:pointer;display:inline-flex;align-items:center;gap:3px}
+
+.sv-period{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-top:20px}
+.sv-seg{display:inline-flex;background:var(--sv-soft);border-radius:999px;padding:3px}
+.sv-seg button{border:0;background:none;padding:8px 18px;border-radius:999px;font:700 .82rem var(--font-body);color:var(--sv-mute);cursor:pointer}
+.sv-seg button.on{background:var(--sv-card);color:var(--text-main);box-shadow:var(--shadow-sm)}
+.sv-date{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.sv-date input{height:36px;border-radius:999px;border:1px solid var(--sv-line);background:var(--sv-card);color:var(--text-main);padding:0 14px;font:700 .84rem var(--font-body);color-scheme:light dark}
+.sv-alert{margin-top:14px;padding:10px 14px;border-radius:12px;background:color-mix(in srgb,var(--sv-warn) 14%,transparent);color:var(--sv-warn);font-weight:700;font-size:.86rem}
+
+.sv-tabs{display:flex;align-items:center;gap:24px;border-bottom:1px solid var(--sv-line);margin:18px 0 22px;overflow-x:auto;scrollbar-width:none}
+.sv-tab{background:none;border:0;padding:13px 0;font:700 .86rem var(--font-body);color:var(--sv-mute);cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-1px;white-space:nowrap;display:inline-flex;gap:7px;align-items:center}
+.sv-tab:hover{color:var(--text-main)}
+.sv-tab.on{color:var(--text-main);border-color:var(--sv-mag)}
+.sv-count{font-size:.68rem;font-weight:700;background:var(--sv-soft);border-radius:999px;padding:1px 8px;color:var(--sv-mute)}
+.sv-live{margin-left:auto;display:inline-flex;align-items:center;gap:7px;font-size:.76rem;font-weight:700;color:var(--sv-mute);white-space:nowrap}
+.sv-live em{font-style:normal;font-weight:500}
+.sv-pulse{width:8px;height:8px;border-radius:50%;background:var(--sv-ok);animation:svp 2s infinite}
+.sv-pulse--off{background:var(--sv-warn);animation:none}
+@keyframes svp{0%{box-shadow:0 0 0 0 color-mix(in srgb,var(--sv-ok) 55%,transparent)}70%{box-shadow:0 0 0 8px transparent}100%{box-shadow:0 0 0 0 transparent}}
+
+.sv-panel{background:var(--sv-card);border:1px solid var(--sv-line);border-radius:22px;padding:22px 24px}
+.sv-panel--flush{padding:0;overflow:hidden}
+.sv-h{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:16px}
+.sv-h--wrap{flex-wrap:wrap;align-items:flex-start}
+.sv-h--pad{padding:20px 22px 14px;margin:0;flex-wrap:wrap;align-items:flex-start}
+.sv-h h3{font-family:var(--font-display);font-weight:400;font-size:1.35rem;margin:0;line-height:1.1}
+.sv-empty{padding:18px;text-align:center;color:var(--sv-mute);font-size:.86rem;border:1px dashed var(--sv-line);border-radius:14px}
+
+.sv-hero{display:grid;grid-template-columns:1.45fr 1fr;gap:18px;margin-bottom:18px}
+.sv-hero-main{position:relative;overflow:hidden}
+.sv-hero-main::before{content:"";position:absolute;right:-90px;top:-90px;width:280px;height:280px;border-radius:50%;background:radial-gradient(circle,color-mix(in srgb,var(--sv-pink) 22%,transparent),transparent 68%);pointer-events:none}
+.sv-greet{font-family:var(--font-display);font-style:italic;font-size:1.2rem;color:var(--sv-magt);margin:0 0 14px}
+.sv-big{font-size:clamp(2.7rem,6.2vw,4.4rem);line-height:.95;margin:8px 0 12px;color:var(--text-main)}
+.sv-hero-line{display:flex;align-items:center;gap:10px;flex-wrap:wrap;font-size:.82rem}
+.sv-delta{display:inline-flex;align-items:center;gap:4px;font-size:.78rem;font-weight:800;padding:4px 10px;border-radius:999px}
+.sv-delta--up{background:color-mix(in srgb,var(--sv-ok) 15%,transparent);color:var(--sv-ok)}
+.sv-delta--down{background:color-mix(in srgb,var(--sv-bad) 14%,transparent);color:var(--sv-bad)}
+.sv-meta{display:flex;gap:18px;flex-wrap:wrap;font-size:.82rem;color:var(--sv-mute);margin-top:16px;padding-top:14px;border-top:1px dashed var(--sv-line)}
+.sv-meta b{color:var(--text-main)}
+.sv-split{margin-top:18px}
+.sv-bar{display:flex;height:10px;border-radius:999px;overflow:hidden;background:var(--sv-soft);gap:3px}
+.sv-bar span{display:block;height:100%;border-radius:999px;transition:width .5s ease}
+.sv-legend{display:flex;justify-content:space-between;flex-wrap:wrap;gap:6px;font-size:.78rem;margin-top:9px;color:var(--sv-mute)}
+.sv-legend b{color:var(--text-main)}
+.sv-dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:6px;vertical-align:1px}
+
+.sv-margin{display:flex;align-items:center;justify-content:space-between;gap:16px;background:linear-gradient(150deg,#3A2147 0%,#26172F 100%);border-color:transparent;color:#FFF8FA;position:relative;overflow:hidden}
+.sv-margin::after{content:"";position:absolute;left:-40px;bottom:-60px;width:180px;height:180px;border-radius:50%;background:radial-gradient(circle,rgba(95,193,232,.18),transparent 70%)}
+.sv-margin-num{font-size:clamp(2rem,4vw,2.8rem);line-height:1;margin:10px 0 10px}
+.sv-margin-sub{font-size:.8rem;color:rgba(255,248,250,.7);margin:0;max-width:240px}
+.sv-ring{position:relative;flex-shrink:0;width:120px;height:120px}
+.sv-ring circle{transition:stroke-dashoffset .8s ease}
+.sv-ring-label{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center}
+.sv-ring-label .sv-num{font-size:1.6rem;line-height:1}
+.sv-ring-label small{font-size:.66rem;letter-spacing:.12em;text-transform:uppercase;color:rgba(255,248,250,.65)}
+
+.sv-ledger{display:grid;grid-template-columns:repeat(4,1fr);background:var(--sv-card);border:1px solid var(--sv-line);border-radius:20px;margin-bottom:18px}
+.sv-ledger>div{padding:18px 22px;border-left:1px solid var(--sv-line)}
+.sv-ledger>div:first-child{border-left:0}
+.sv-ledger .sv-num{display:block;font-size:1.75rem;margin:8px 0 2px;line-height:1.05}
+.sv-ledger small{font-size:.74rem;color:var(--sv-mute)}
+
+.sv-grid2{display:grid;grid-template-columns:1.3fr 1fr;gap:18px;align-items:start}
+.sv-stack{display:flex;flex-direction:column;gap:18px}
+.sv-rank{display:flex;flex-direction:column;gap:14px}
+.sv-row{display:grid;grid-template-columns:38px 1fr auto;gap:12px;align-items:center}
+.sv-av{width:38px;height:38px;border-radius:50%;display:grid;place-items:center;font:800 .78rem var(--font-body);color:#fff;letter-spacing:.02em;flex-shrink:0}
+.sv-av--lg{width:60px;height:60px;font-size:1.1rem;margin:12px auto 10px}
+.sv-av--sm{width:26px;height:26px;font-size:.62rem}
+.sv-row-name{font-weight:700;font-size:.9rem}
+.sv-row-name .sv-muted{font-weight:500;font-size:.78rem}
+.sv-track{height:6px;background:var(--sv-soft);border-radius:999px;margin-top:6px;overflow:hidden}
+.sv-track span{display:block;height:100%;border-radius:999px;background:linear-gradient(90deg,var(--sv-mag),var(--sv-pink))}
+.sv-row-amt{text-align:right}
+.sv-row-amt .sv-num{font-size:1.2rem}
+.sv-row-amt small{display:block;font-size:.72rem;color:var(--sv-mute)}
+.sv-mid{font-size:2rem;margin:6px 0 2px}
+.sv-pill{display:inline-block;margin-top:12px;padding:7px 12px;border-radius:12px;font-size:.82rem;font-weight:700;background:var(--sv-soft);color:var(--sv-mute)}
+.sv-pill small{font-weight:500}
+.sv-pill--ok{background:color-mix(in srgb,var(--sv-ok) 14%,transparent);color:var(--sv-ok)}
+.sv-pill--bad{background:color-mix(in srgb,var(--sv-bad) 13%,transparent);color:var(--sv-bad)}
+.sv-mini-alias{display:flex;flex-direction:column;gap:12px}
+.sv-mini-row{display:flex;justify-content:space-between;align-items:baseline;gap:8px}
+.sv-mini-row code{font-size:.82rem;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.sv-mini-row .sv-num{font-size:1.05rem}
+.sv-meter{height:6px;border-radius:999px;background:var(--sv-soft);overflow:hidden;margin-top:6px}
+.sv-meter--thin{height:4px;margin-top:5px}
+.sv-meter span{display:block;height:100%;border-radius:999px;background:var(--sv-ok);transition:width .4s ease}
+.sv-meter span.warn{background:var(--sv-warn)}.sv-meter span.bad{background:var(--sv-bad)}
+
+.sv-alias-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:14px}
+.sv-alias{border:1px solid var(--sv-line);border-radius:18px;padding:16px;background:var(--sv-card);position:relative;overflow:hidden}
+.sv-alias::before{content:"";position:absolute;left:0;top:0;bottom:0;width:4px;background:var(--sv-ok)}
+.sv-alias--warn::before{background:var(--sv-warn)}.sv-alias--bad::before{background:var(--sv-bad)}.sv-alias--off{opacity:.6}.sv-alias--off::before{background:var(--sv-line)}
+.sv-alias--warn .sv-meter span{background:var(--sv-warn)}.sv-alias--bad .sv-meter span{background:var(--sv-bad)}
+.sv-alias-top{display:flex;justify-content:space-between;align-items:center}
+.sv-alias-name{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-weight:800;font-size:1rem;margin:6px 0 2px;word-break:break-all}
+.sv-alias-sub{font-size:.78rem;color:var(--sv-mute)}
+.sv-alias-rules{display:inline-block;margin-top:8px;font-size:.72rem;font-weight:700;padding:3px 9px;border-radius:999px;background:var(--sv-soft);color:var(--sv-mute)}
+.sv-alias-desc{margin-top:8px;font-family:var(--font-display);font-style:italic;font-size:.95rem;color:var(--sv-magt)}
+.sv-alias-foot{display:flex;justify-content:space-between;align-items:baseline;margin-top:14px}
+.sv-alias-foot .sv-num{font-size:1.45rem}
+.sv-alias-left{font-size:.78rem;font-weight:700;color:var(--sv-mute)}
+.sv-alias-count{font-size:.72rem;color:var(--sv-mute);margin-top:8px}
+
+.sv-filter{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.sv-search{position:relative;display:flex;align-items:center}
+.sv-search svg{position:absolute;left:12px;color:var(--sv-mute)}
+.sv-search input,.sv-input{height:38px;border-radius:999px;border:1px solid var(--sv-line);background:var(--sv-card);color:var(--text-main);padding:0 14px;font:500 .84rem var(--font-body)}
+.sv-search input{padding-left:34px;width:250px}
+.sv-tablewrap{overflow-x:auto}
+.sv-scroll{max-height:340px;overflow:auto;border:1px solid var(--sv-line);border-radius:14px}
+.sv-table{width:100%;border-collapse:collapse;font-size:.85rem}
+.sv-table th{text-align:left;font-size:.64rem;letter-spacing:.13em;text-transform:uppercase;color:var(--sv-mute);font-weight:700;padding:11px 16px;border-bottom:1px solid var(--sv-line);background:var(--sv-card);position:sticky;top:0;white-space:nowrap}
+.sv-table td{padding:12px 16px;border-bottom:1px solid var(--sv-line);vertical-align:middle}
+.sv-table tbody tr:last-child td{border-bottom:0}
+.sv-table tbody tr:hover td{background:color-mix(in srgb,var(--sv-soft) 55%,transparent)}
+.sv-table .r{text-align:right}
+.sv-table tr.void td{opacity:.45;text-decoration:line-through}
+.sv-table tr.dim td{opacity:.5}
+.sv-amt{font-size:1.05rem}
+.sv-chip{display:inline-block;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:.76rem;padding:3px 9px;border-radius:8px;background:var(--sv-soft)}
+.sv-who{display:inline-flex;align-items:center;gap:8px;font-weight:700}
+.sv-void{background:none;border:1px solid color-mix(in srgb,var(--sv-bad) 35%,transparent);color:var(--sv-bad);border-radius:999px;padding:4px 11px;font:700 .72rem var(--font-body);cursor:pointer}
+.sv-void:hover{background:color-mix(in srgb,var(--sv-bad) 10%,transparent)}
+.sv-empty-cell{text-align:center;color:var(--sv-mute);padding:36px!important}
+.sv-mov{margin-top:20px}
+.sv-mov:first-of-type{margin-top:6px}
+.sv-mov-h{display:flex;align-items:center;gap:8px;margin-bottom:8px}
+
+.sv-podium{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-bottom:18px;align-items:end}
+.sv-pod{text-align:center;padding:22px 18px}
+.sv-pod small{font-size:.74rem;color:var(--sv-mute)}
+.sv-pod-place{font-family:var(--font-display);font-size:2.4rem;line-height:1;color:var(--sv-pink)}
+.sv-pod-name{font-weight:800;font-size:.95rem}
+.sv-pod-amt{font-size:1.8rem;margin:4px 0}
+.sv-pod--first{background:linear-gradient(150deg,#3A2147 0%,#26172F 100%);border-color:transparent;color:#FFF8FA;padding-top:30px;padding-bottom:30px}
+.sv-pod--first small{color:rgba(255,248,250,.7)}
+
+@media (max-width:960px){
+  .sv-hero,.sv-grid2{grid-template-columns:1fr}
+  .sv-ledger{grid-template-columns:repeat(2,1fr)}
+  .sv-ledger>div:nth-child(3){border-left:0}
+  .sv-ledger>div:nth-child(n+3){border-top:1px solid var(--sv-line)}
+  .sv-podium{grid-template-columns:1fr}
+}
+@media (max-width:640px){
+  .sv-wrap,.sv-topin{padding-left:16px;padding-right:16px}
+  .sv-tools .sv-btn span{display:none}
+  .sv-tools .sv-btn{width:36px;padding:0}
+  .sv-panel{padding:18px;border-radius:18px}
+  .sv-panel--flush{padding:0}
+  .sv-margin{flex-direction:column;align-items:flex-start}
+  .sv-search input{width:100%}
+  .sv-search,.sv-filter{width:100%}
+  .sv-live{display:none}
+  .sv-ledger>div{padding:14px 16px}
+  .sv-ledger .sv-num{font-size:1.4rem}
+}
+`;

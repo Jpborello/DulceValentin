@@ -11,7 +11,7 @@ export default function FloatingWidgets() {
 
   // No mostrar los widgets flotantes (son para clientes) en las pantallas
   // internas: panel de administración, caja y ventas de vendedoras.
-  if (pathname && ['/admin', '/caja', '/ventas'].some((p) => pathname.startsWith(p))) {
+  if (pathname && ['/admin', '/caja', '/ventas', '/supervisor'].some((p) => pathname.startsWith(p))) {
     return null;
   }
 

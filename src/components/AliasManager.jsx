@@ -155,7 +155,7 @@ export default function AliasManager({ aliases = [], post, onChanged, onClose, s
       <div style={{ width: '100%', maxWidth: '720px', backgroundColor: 'var(--bg-card)', color: 'var(--text-main)', borderRadius: '16px', border: '1px solid var(--border-color)', padding: '18px', boxShadow: '0 20px 50px rgba(0,0,0,0.25)' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '10px', marginBottom: '12px' }}>
           <div>
-            <h3 style={{ margin: 0, fontSize: '1.1rem', fontWeight: 900 }}>Alias de cobro</h3>
+            <h3 style={{ margin: 0, fontSize: '1.5rem', fontWeight: 400, fontFamily: 'var(--font-display)' }}>Alias de cobro</h3>
             <p style={{ margin: '2px 0 0', fontSize: '0.8rem', color: 'var(--text-muted)' }}>
               Al cobrar por transferencia se sugiere el <strong>primero de la lista</strong> que acepte el monto. Ordenalos con las flechas.
             </p>
