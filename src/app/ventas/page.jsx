@@ -2223,6 +2223,9 @@ export default function VentasPage() {
                 {exporting ? <Loader2 size={14} className="animate-spin" /> : <Download size={14} />} Excel
               </button>
             )}
+            <a href="/supervisor" className="btn-secondary" style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', textDecoration: 'none', fontSize: '0.8rem' }} title="Acceso exclusivo supervisora">
+              🔒 Panel Supervisora
+            </a>
             <button type="button" onClick={logout} className="btn-secondary" style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}><LogOut size={14} /> Salir</button>
           </div>
         </header>
@@ -2273,25 +2276,6 @@ export default function VentasPage() {
                 onRefresh={load}
               />
             )}
-
-            {/* Termómetro de ventas / Meta del local */}
-            <GoalThermometer
-              period={period}
-              total={totals.total}
-              salesCount={totals.salesCount}
-              goal={goals[period] || DEFAULT_GOALS[period]}
-              onEditGoal={() => setShowGoalModal(true)}
-            />
-
-            {/* Totales */}
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: '10px', marginBottom: '12px' }}>
-              {[['Total vendido', totals.total], ['Efectivo', totals.cash], ['Transferencia', totals.transfer], ['Comisiones', totals.commission], ['Vales', totals.advances], ['Pagado', totals.paid], ['Saldo pendiente', totals.balance]].map(([label, value]) => (
-                <div key={label} style={{ backgroundColor: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: '12px', padding: '10px 12px' }}>
-                  <div style={{ fontSize: '0.74rem', fontWeight: 700, color: 'var(--text-muted)' }}>{label}</div>
-                  <div style={{ fontSize: '1.1rem', fontWeight: 900 }}>{money(value)}</div>
-                </div>
-              ))}
-            </div>
 
             {/* Caja del dia */}
             {period === 'day' && data.cash && (

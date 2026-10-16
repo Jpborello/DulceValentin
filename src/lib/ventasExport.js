@@ -332,3 +332,268 @@ export function transferenciasWhatsAppText({ date, aliasConfig, transfers, total
   return lines.join('\n');
 }
 
+// ---------------------------------------------------------------- Exportación Gerencial Completa para Supervisora (Mica)
+export async function downloadSupervisorExcel({ data, period, date, supervisorData }) {
+  const ExcelJS = (await import('exceljs')).default;
+  const wb = new ExcelJS.Workbook();
+  wb.creator = 'Dulce Valentín — Panel Supervisora';
+  wb.created = new Date();
+  const periodLabel = data.from === data.to ? fmtDate(data.from) : `${fmtDate(data.from)} al ${fmtDate(data.to)}`;
+  const moneyStyle = { numFmt: MONEY_FMT };
+  const dateStyle = { numFmt: 'dd/mm/yyyy' };
+
+  const totals = (data?.sellers || []).reduce((t, s) => ({
+    total: t.total + s.total,
+    cash: t.cash + s.cash,
+    transfer: t.transfer + s.transfer,
+    commission: t.commission + s.commission,
+    advances: t.advances + s.advances,
+    paid: t.paid + s.paid,
+    balance: t.balance + s.balance,
+    salesCount: t.salesCount + s.salesCount
+  }), { total: 0, cash: 0, transfer: 0, commission: 0, advances: 0, paid: 0, balance: 0, salesCount: 0 });
+
+  const netMargin = totals.total - totals.commission;
+  const marginPct = totals.total > 0 ? Math.round((netMargin / totals.total) * 1000) / 10 : 100;
+
+  // --- Solapa 1: Resumen Gerencial
+  const ws1 = wb.addWorksheet('Resumen Gerencial', { views: [{ state: 'frozen', ySplit: 5 }] });
+  ws1.mergeCells('A1:G1');
+  ws1.getCell('A1').value = 'Dulce Valentín — Informe Gerencial Ejecutivo';
+  ws1.getCell('A1').font = { bold: true, size: 15, color: { argb: 'FFFFFFFF' } };
+  ws1.getCell('A1').fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1E293B' } };
+  ws1.getCell('A1').alignment = { vertical: 'middle' };
+  ws1.getRow(1).height = 26;
+
+  ws1.mergeCells('A2:G2');
+  ws1.getCell('A2').value = `Período: ${periodLabel}  ·  Supervisora: Micaela Barbieri  ·  Generado: ${new Date().toLocaleString('es-AR')}`;
+  ws1.getCell('A2').font = { italic: true, color: { argb: 'FF64748B' } };
+
+  // KPIs en filas
+  const kpiRows = [
+    ['Métrica Gerencial', 'Valor / Monto', 'Detalle'],
+    ['Facturación Bruta (Venta Total)', totals.total, `${totals.salesCount} operaciones`],
+    ['Margen Neto del Local', netMargin, `${marginPct}% de retención comercial`],
+    ['Recaudación en Efectivo', totals.cash, `${totals.total > 0 ? Math.round((totals.cash / totals.total) * 100) : 0}% del total`],
+    ['Recaudación en Transferencias', totals.transfer, `${totals.total > 0 ? Math.round((totals.transfer / totals.total) * 100) : 0}% del total`],
+    ['Comisiones Devengadas', totals.commission, 'A favor del personal'],
+    ['Vales / Adelantos Entregados', totals.advances, 'Efectivo retirado'],
+    ['Liquidaciones Pagadas', totals.paid, 'Comisiones ya saldadas'],
+    ['Saldo Laboral Pendiente', totals.balance, 'Pasivo acumulado por liquidar'],
+    ['Ticket Promedio General', totals.salesCount > 0 ? Math.round(totals.total / totals.salesCount) : 0, 'Por operación']
+  ];
+
+  kpiRows.forEach((r, idx) => {
+    const row = ws1.addRow(r);
+    if (idx === 0) {
+      styleHeader(row);
+      row.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF334155' } };
+    } else {
+      row.getCell(2).numFmt = MONEY_FMT;
+      row.getCell(1).font = { bold: true };
+      if (idx === 1 || idx === 2) {
+        row.font = { bold: true };
+        row.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF1F5F9' } };
+      }
+    }
+  });
+
+  ws1.getColumn(1).width = 30;
+  ws1.getColumn(2).width = 20;
+  ws1.getColumn(3).width = 30;
+
+  // --- Solapa 2: Auditoría de Transferencias
+  const transfers = data.periodTransfers || data.dayTransfers || [];
+  const aliasByDate = supervisorData?.aliasByDate || {};
+  addTableSheet(wb, 'Transferencias', [
+    { header: 'Fecha', key: 'fecha', width: 12, style: dateStyle },
+    { header: 'Hora', key: 'hora', width: 10 },
+    { header: 'Monto', key: 'monto', width: 16, style: moneyStyle },
+    { header: 'Vendedora', key: 'vendedora', width: 22 },
+    { header: 'Alias Destino', key: 'alias', width: 24 },
+    { header: 'Titular / Banco', key: 'titular', width: 26 },
+    { header: 'Nota / Detalle', key: 'nota', width: 32 }
+  ], transfers.map((t) => {
+    const aliasInfo = aliasByDate[t.date] || data.dailyAlias || {};
+    return {
+      fecha: asDate(t.date),
+      hora: t.createdAt ? hour(t.createdAt) : '--:--',
+      monto: Number(t.amount || 0),
+      vendedora: t.sellerName || 'Vendedora',
+      alias: aliasInfo.alias || 'dulce.valentin.rioja',
+      titular: `${aliasInfo.holder || '-'} ${aliasInfo.bank ? `(${aliasInfo.bank})` : ''}`,
+      nota: t.note || ''
+    };
+  }));
+
+  // --- Solapa 3: Rendimiento de Vendedoras
+  addTableSheet(wb, 'Rendimiento Vendedoras', [
+    { header: 'Vendedora', key: 'name', width: 24 },
+    { header: 'Ventas', key: 'salesCount', width: 10 },
+    { header: 'Total Vendido', key: 'total', width: 18, style: moneyStyle },
+    { header: 'Ticket Promedio', key: 'avgTicket', width: 16, style: moneyStyle },
+    { header: 'Efectivo', key: 'cash', width: 15, style: moneyStyle },
+    { header: 'Transferencia', key: 'transfer', width: 15, style: moneyStyle },
+    { header: '% Comisión', key: 'pct', width: 12 },
+    { header: 'Comisión Devengada', key: 'commission', width: 18, style: moneyStyle },
+    { header: 'Vales Retirados', key: 'advances', width: 16, style: moneyStyle },
+    { header: 'Liquidaciones Pagadas', key: 'paid', width: 16, style: moneyStyle },
+    { header: 'Saldo Pendiente', key: 'balance', width: 18, style: moneyStyle }
+  ], (data.sellers || []).map((s) => ({
+    name: s.name,
+    salesCount: s.salesCount,
+    total: Number(s.total || 0),
+    avgTicket: s.salesCount > 0 ? Math.round(s.total / s.salesCount) : 0,
+    cash: Number(s.cash || 0),
+    transfer: Number(s.transfer || 0),
+    pct: `${s.pct}%`,
+    commission: Number(s.commission || 0),
+    advances: Number(s.advances || 0),
+    paid: Number(s.paid || 0),
+    balance: Number(s.balance || 0)
+  })));
+
+  // --- Solapa 4: Historial de Ventas (si hay datos)
+  if (supervisorData?.sales?.length > 0) {
+    addTableSheet(wb, 'Historial Ventas', [
+      { header: 'Fecha', key: 'fecha', width: 12, style: dateStyle },
+      { header: 'Hora', key: 'hora', width: 10 },
+      { header: 'Vendedora', key: 'vendedora', width: 22 },
+      { header: 'Monto', key: 'monto', width: 16, style: moneyStyle },
+      { header: 'Medio', key: 'medio', width: 14 },
+      { header: 'Nota', key: 'nota', width: 26 },
+      { header: 'Estado', key: 'estado', width: 18 }
+    ], supervisorData.sales.map((x) => ({
+      fecha: asDate(x.date),
+      hora: hour(x.created_at),
+      vendedora: x.seller_name || '',
+      monto: Number(x.amount || 0),
+      medio: METHOD[x.payment_method] || x.payment_method,
+      nota: x.note || '',
+      estado: x.voided_at ? `Anulado: ${x.void_reason || ''}` : 'Válido'
+    })));
+  }
+
+  // --- Solapa 5: Vales y Liquidaciones (si hay datos)
+  const allStaffMoves = [
+    ...(supervisorData?.advances || []).map((a) => ({ ...a, tipo: 'Vale / Adelanto' })),
+    ...(supervisorData?.payouts || []).map((p) => ({ ...p, tipo: 'Liquidación' }))
+  ].sort((a, b) => (a.date === b.date ? (a.created_at < b.created_at ? 1 : -1) : (a.date < b.date ? 1 : -1)));
+
+  if (allStaffMoves.length > 0) {
+    addTableSheet(wb, 'Vales y Liquidaciones', [
+      { header: 'Fecha', key: 'fecha', width: 12, style: dateStyle },
+      { header: 'Hora', key: 'hora', width: 10 },
+      { header: 'Tipo', key: 'tipo', width: 18 },
+      { header: 'Vendedora', key: 'vendedora', width: 22 },
+      { header: 'Monto', key: 'monto', width: 16, style: moneyStyle },
+      { header: 'Medio', key: 'medio', width: 14 },
+      { header: 'Nota', key: 'nota', width: 26 },
+      { header: 'Estado', key: 'estado', width: 18 }
+    ], allStaffMoves.map((x) => ({
+      fecha: asDate(x.date),
+      hora: hour(x.created_at),
+      tipo: x.tipo,
+      vendedora: x.seller_name || '',
+      monto: Number(x.amount || 0),
+      medio: METHOD[x.payment_method] || x.payment_method,
+      nota: x.note || '',
+      estado: x.voided_at ? `Anulado: ${x.void_reason || ''}` : 'Válido'
+    })));
+  }
+
+  // --- Solapa 6: Control de Caja
+  if (supervisorData?.cashCounts?.length > 0) {
+    addTableSheet(wb, 'Control de Caja', [
+      { header: 'Fecha', key: 'fecha', width: 12, style: dateStyle },
+      { header: 'Hora', key: 'hora', width: 10 },
+      { header: 'Fondo Inicial', key: 'fondo', width: 15, style: moneyStyle },
+      { header: 'Efectivo Esperado', key: 'esperado', width: 16, style: moneyStyle },
+      { header: 'Efectivo Contado', key: 'contado', width: 16, style: moneyStyle },
+      { header: 'Diferencia', key: 'diferencia', width: 15, style: moneyStyle },
+      { header: 'Nota', key: 'nota', width: 26 }
+    ], supervisorData.cashCounts.map((x) => ({
+      fecha: asDate(x.count_date),
+      hora: hour(x.created_at),
+      fondo: Number(x.opening_float || 0),
+      esperado: Number(x.expected || 0),
+      contado: Number(x.counted || 0),
+      diferencia: Number(x.difference || 0),
+      nota: x.note || ''
+    })));
+  }
+
+  const buffer = await wb.xlsx.writeBuffer();
+  const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `informe_supervisora_micaela_${data.from}${data.to !== data.from ? `_a_${data.to}` : ''}.xlsx`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+}
+
+// ---------------------------------------------------------------- Mensaje WhatsApp Ejecutivo para Micaela
+export function supervisorWhatsAppText({ data, period, date }) {
+  const periodLabel = data.from === data.to ? fmtDate(data.from) : `${fmtDate(data.from)} al ${fmtDate(data.to)}`;
+  const totals = (data?.sellers || []).reduce((t, s) => ({
+    total: t.total + s.total,
+    cash: t.cash + s.cash,
+    transfer: t.transfer + s.transfer,
+    commission: t.commission + s.commission,
+    advances: t.advances + s.advances,
+    paid: t.paid + s.paid,
+    balance: t.balance + s.balance,
+    salesCount: t.salesCount + s.salesCount
+  }), { total: 0, cash: 0, transfer: 0, commission: 0, advances: 0, paid: 0, balance: 0, salesCount: 0 });
+
+  const netMargin = totals.total - totals.commission;
+  const marginPct = totals.total > 0 ? Math.round((netMargin / totals.total) * 100) : 100;
+  const avgTicket = totals.salesCount > 0 ? money(Math.round(totals.total / totals.salesCount)) : '−';
+
+  const transfers = data.periodTransfers || data.dayTransfers || [];
+  const totalTransfers = transfers.reduce((acc, t) => acc + (t.amount || 0), 0);
+
+  const lines = [
+    `👑 *INFORME GERENCIAL — Dulce Valentín*`,
+    `📅 *Período:* ${periodLabel}`,
+    `👤 *Supervisora:* Micaela Barbieri`,
+    '',
+    `💰 *FACTURACIÓN BRUTA: ${money(totals.total)}*`,
+    `   • Operaciones: *${totals.salesCount}* · Ticket prom: *${avgTicket}*`,
+    `   • 💵 Efectivo: *${money(totals.cash)}*`,
+    `   • 💳 Transferencias: *${money(totals.transfer)}*`,
+    '',
+    `💎 *MARGEN NETO LOCAL: ${money(netMargin)}* (${marginPct}% de retención)`,
+    `🧾 *Comisiones personal:* ${money(totals.commission)}`,
+    `💸 *Vales entregados:* ${money(totals.advances)}`,
+    `✅ *Liquidaciones pagadas:* ${money(totals.paid)}`,
+    `⏳ *Saldo laboral pendiente:* ${money(totals.balance)}`,
+    '',
+    `🏦 *AUDITORÍA DE TRANSFERENCIAS:*`,
+    `   • Total transferido: *${money(totalTransfers)}* (${transfers.length} transferencias)`,
+    `   • Alias configurado: \`${data.dailyAlias?.alias || 'dulce.valentin.rioja'}\``,
+    `   • Titular: ${data.dailyAlias?.holder || '-'}`
+  ];
+
+  const ranking = [...(data.sellers || [])]
+    .filter((s) => s.total > 0)
+    .sort((a, b) => b.total - a.total);
+
+  if (ranking.length > 0) {
+    lines.push('');
+    lines.push(`🏆 *RANKING VENDEDORAS (${ranking.length}):*`);
+    ranking.slice(0, 5).forEach((s, idx) => {
+      const medal = idx === 0 ? '🥇' : idx === 1 ? '🥈' : idx === 2 ? '🥉' : `${idx + 1}.`;
+      lines.push(`${medal} *${s.name}*: ${money(s.total)} (${s.salesCount} vtas · com: ${money(s.commission)})`);
+    });
+  }
+
+  lines.push('');
+  lines.push(`🌐 _Generado desde www.dulcevalentin.com.ar/supervisor_`);
+
+  return lines.join('\n');
+}
+
+

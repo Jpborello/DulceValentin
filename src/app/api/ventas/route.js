@@ -258,74 +258,116 @@ export async function GET(req) {
   }
 
   // Alias del día y registro de transferencias
-  let dailyAlias = null;
-  let dayTransfers = [];
-  if (period === 'day') {
-    const nameById = Object.fromEntries((sellers || []).map((s) => [s.id, s.name]));
-    dayTransfers = ledger.sales
-      .filter((x) => !x.voided_at && x.sale_date === date && x.payment_method === 'transferencia')
-      .map((x) => ({
-        id: x.id,
-        clientRef: x.client_ref,
-        amount: Number(x.amount),
-        sellerId: x.seller_id,
-        sellerName: nameById[x.seller_id] || 'Vendedora',
-        date: x.sale_date,
-        createdAt: x.created_at,
-        note: x.note || ''
-      }))
-      .sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
+  const nameById = Object.fromEntries((sellers || []).map((s) => [s.id, s.name]));
+  const periodTransfers = ledger.sales
+    .filter((x) => !x.voided_at && inRange(x.sale_date, from, to) && x.payment_method === 'transferencia')
+    .map((x) => ({
+      id: x.id,
+      clientRef: x.client_ref,
+      amount: Number(x.amount),
+      sellerId: x.seller_id,
+      sellerName: nameById[x.seller_id] || 'Vendedora',
+      date: x.sale_date,
+      createdAt: x.created_at,
+      note: x.note || ''
+    }))
+    .sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
 
-    try {
-      const { data: aliasRow } = await db
+  const dayTransfers = periodTransfers.filter((x) => x.date === date);
+
+  let dailyAlias = null;
+  try {
+    const { data: aliasRow } = await db
+      .from('categories')
+      .select('*')
+      .eq('id', `_config_alias_day_${date}`)
+      .maybeSingle();
+
+    if (aliasRow?.name) {
+      let sub = aliasRow.subcategories;
+      if (typeof sub === 'string') {
+        try { sub = JSON.parse(sub); } catch {}
+      }
+      const limit = Array.isArray(sub) ? Number(sub[0]) : Number(sub?.limit);
+      const holder = Array.isArray(sub) ? sub[1] : sub?.holder;
+      const bank = Array.isArray(sub) ? sub[2] : sub?.bank;
+      dailyAlias = {
+        alias: aliasRow.name,
+        limit: limit && !isNaN(limit) ? limit : 1000000,
+        holder: holder || '',
+        bank: bank || ''
+      };
+    } else {
+      const { data: defaultRow } = await db
         .from('categories')
         .select('*')
-        .eq('id', `_config_alias_day_${date}`)
+        .eq('id', '_config_alias1')
         .maybeSingle();
-
-      if (aliasRow?.name) {
-        let sub = aliasRow.subcategories;
-        if (typeof sub === 'string') {
-          try { sub = JSON.parse(sub); } catch {}
-        }
-        const limit = Array.isArray(sub) ? Number(sub[0]) : Number(sub?.limit);
-        const holder = Array.isArray(sub) ? sub[1] : sub?.holder;
-        const bank = Array.isArray(sub) ? sub[2] : sub?.bank;
-        dailyAlias = {
-          alias: aliasRow.name,
-          limit: limit && !isNaN(limit) ? limit : 1000000,
-          holder: holder || '',
-          bank: bank || ''
-        };
-      } else {
-        const { data: defaultRow } = await db
-          .from('categories')
-          .select('*')
-          .eq('id', '_config_alias1')
-          .maybeSingle();
-        const { data: holderRow } = await db
-          .from('categories')
-          .select('*')
-          .eq('id', '_config_holder')
-          .maybeSingle();
-        dailyAlias = {
-          alias: defaultRow?.name || 'dulce.valentin.rioja',
-          limit: 1000000,
-          holder: holderRow?.name || '',
-          bank: ''
-        };
-      }
-    } catch {
+      const { data: holderRow } = await db
+        .from('categories')
+        .select('*')
+        .eq('id', '_config_holder')
+        .maybeSingle();
       dailyAlias = {
-        alias: 'dulce.valentin.rioja',
+        alias: defaultRow?.name || 'dulce.valentin.rioja',
         limit: 1000000,
-        holder: '',
+        holder: holderRow?.name || '',
         bank: ''
       };
     }
+  } catch {
+    dailyAlias = {
+      alias: 'dulce.valentin.rioja',
+      limit: 1000000,
+      holder: '',
+      bank: ''
+    };
   }
 
-  const body = { period, date, from, to, prev, sellers: summary, cash, dailyAlias, dayTransfers };
+  const isSupervisor = searchParams.get('supervisor') === '1';
+  let supervisorData = null;
+  if (isSupervisor) {
+    const rows = (list, key) => list
+      .filter((x) => inRange(x[key], from, to))
+      .map((x) => ({ ...x, date: x[key], seller_name: nameById[x.seller_id] || '' }))
+      .sort((a, b) => (a.date === b.date ? (a.created_at < b.created_at ? 1 : -1) : (a.date < b.date ? 1 : -1)));
+
+    const { data: counts } = await db.from('cash_counts').select('*').gte('count_date', from).lte('count_date', to).order('created_at', { ascending: false });
+    
+    // Traer todos los alias configurados
+    const { data: allAliasRows } = await db
+      .from('categories')
+      .select('id, name, subcategories')
+      .ilike('id', '_config_alias_day_%');
+
+    const aliasByDate = {};
+    (allAliasRows || []).forEach((row) => {
+      const dayKey = row.id.replace('_config_alias_day_', '');
+      let sub = row.subcategories;
+      if (typeof sub === 'string') {
+        try { sub = JSON.parse(sub); } catch {}
+      }
+      const limit = Array.isArray(sub) ? Number(sub[0]) : Number(sub?.limit);
+      const holder = Array.isArray(sub) ? sub[1] : sub?.holder;
+      const bank = Array.isArray(sub) ? sub[2] : sub?.bank;
+      aliasByDate[dayKey] = {
+        alias: row.name,
+        limit: limit && !isNaN(limit) ? limit : 1000000,
+        holder: holder || '',
+        bank: bank || ''
+      };
+    });
+
+    supervisorData = {
+      sales: rows(ledger.sales, 'sale_date'),
+      advances: rows(ledger.advances, 'advance_date'),
+      payouts: rows(ledger.payouts, 'paid_date'),
+      cashCounts: counts || [],
+      aliasByDate
+    };
+  }
+
+  const body = { period, date, from, to, prev, sellers: summary, cash, dailyAlias, dayTransfers, periodTransfers, supervisorData };
   if (sellerId) {
     const mine = (rows, key) => rows.filter((x) => x.seller_id === sellerId && inRange(x[key], from, to));
     body.detail = {
@@ -338,7 +380,6 @@ export async function GET(req) {
   // Exportacion a Excel: todos los movimientos del periodo (incluidos los
   // anulados, marcados) + arqueos de caja.
   if (searchParams.get('export') === '1') {
-    const nameById = Object.fromEntries((sellers || []).map((s) => [s.id, s.name]));
     const rows = (list, key) => list
       .filter((x) => inRange(x[key], from, to))
       .map((x) => ({ ...x, date: x[key], seller_name: nameById[x.seller_id] || '' }))

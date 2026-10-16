@@ -33,6 +33,11 @@ export async function requireAdmin(req, supabaseAdmin) {
     return NextResponse.json({ error: 'Sesión inválida o vencida' }, { status: 401 });
   }
 
+  const userEmail = (user.email || '').trim().toLowerCase();
+  if (userEmail === 'belenbarbieri93@gmail.com') {
+    return null; // Micaela Barbieri (Supervisora / Dueña)
+  }
+
   const staffClient = supabaseAdmin || serviceClient;
   if (staffClient) {
     const { data: staff, error: staffError } = await staffClient
