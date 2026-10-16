@@ -886,7 +886,96 @@ function QuickSaleBar({ sellers, numberMap, date, dailyAlias, dayTransfers = [],
     }
   };
 
+  const jumpToAmount = () => {
+    setTimeout(() => {
+      if (amountRef.current) {
+        amountRef.current.focus();
+        amountRef.current.select?.();
+      }
+    }, 40);
+  };
+
+  // Foco inicial automático al abrir la pantalla de ventas
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      if (sellerInputRef.current) sellerInputRef.current.focus();
+    }, 120);
+    return () => clearTimeout(timer);
+  }, []);
+
+  // Salto automático para números de 1 dígito si hay pausa de 350ms
+  useEffect(() => {
+    const trimmed = sellerInput.trim();
+    if (/^[1-9]$/.test(trimmed)) {
+      const num = parseInt(trimmed, 10);
+      const matched = sellerByNumber.get(trimmed) || sellerByNumber.get(num);
+      if (matched) {
+        const timer = setTimeout(() => {
+          jumpToAmount();
+        }, 350);
+        return () => clearTimeout(timer);
+      }
+    }
+  }, [sellerInput, sellerByNumber]);
+
+  // Atajo global Ctrl + Z para deshacer venta
+  useEffect(() => {
+    const handleGlobalKeyDown = (e) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z' && undoToast) {
+        e.preventDefault();
+        handleUndo();
+      }
+    };
+    window.addEventListener('keydown', handleGlobalKeyDown);
+    return () => window.removeEventListener('keydown', handleGlobalKeyDown);
+  }, [undoToast]);
+
+  const handleSellerInputChange = (e) => {
+    const raw = e.target.value;
+    setSellerInput(raw);
+    setSelectedSellerId(null);
+    setError('');
+
+    const trimmed = raw.trim();
+
+    // Si escribe comando con espacio (ej: "00 25000" o "4 15000"), permitir que termine de tipear
+    if (trimmed.includes(' ') || trimmed.includes('/') || trimmed.includes('.')) {
+      return;
+    }
+
+    // Caso 1: "00" o "0" (Mostrador directo a caja) -> Salta inmediatamente
+    if (trimmed === '00') {
+      jumpToAmount();
+      return;
+    }
+
+    // Caso 2: número de 2 dígitos (ej: "01", "04", "12", "20") -> Salta inmediatamente
+    if (/^\d{2}$/.test(trimmed)) {
+      const num = parseInt(trimmed, 10);
+      const matched = sellerByNumber.get(trimmed) || sellerByNumber.get(num);
+      if (matched) {
+        jumpToAmount();
+      }
+    }
+  };
+
   const handleSellerKeyDown = (e) => {
+    // Espacio o Tab sobre número de vendedora salta directo al monto sin esperar
+    if (e.key === ' ' || e.key === 'Tab') {
+      const trimmed = sellerInput.trim();
+      if (trimmed && !trimmed.includes(' ')) {
+        const num = parseInt(trimmed, 10);
+        const matched = (trimmed === '00' || trimmed === '0')
+          ? activeSellers.find((s) => s.name.toLowerCase().trim() === 'mostrador')
+          : (sellerByNumber.get(trimmed) || sellerByNumber.get(num));
+        if (matched) {
+          e.preventDefault();
+          jumpToAmount();
+          return;
+        }
+      }
+    }
+
     if (e.key === 'Enter') {
       e.preventDefault();
       const val = sellerInput.trim();
@@ -906,16 +995,57 @@ function QuickSaleBar({ sellers, numberMap, date, dailyAlias, dayTransfers = [],
         }
       }
 
-      if (parsedSeller && amountRef.current) {
-        amountRef.current.focus();
+      if (parsedSeller) {
+        jumpToAmount();
       }
     }
   };
 
   const handleAmountKeyDown = (e) => {
+    // Atajo numérico rápido para alternar Efectivo / Transferencia: 't', '+', '*', 'F2'
+    if (e.key === 't' || e.key === 'T' || e.key === '+' || e.key === '*') {
+      e.preventDefault();
+      setMethod((prev) => (prev === 'efectivo' ? 'transferencia' : 'efectivo'));
+      return;
+    }
+    if (e.key === 'e' || e.key === 'E') {
+      e.preventDefault();
+      setMethod('efectivo');
+      return;
+    }
+
+    // Si el monto está vacío y presiona Backspace o Flecha Izquierda, vuelve al campo N° Vendedora
+    if ((e.key === 'Backspace' || e.key === 'ArrowLeft') && (!amount || amount === '')) {
+      e.preventDefault();
+      if (sellerInputRef.current) {
+        sellerInputRef.current.focus();
+        sellerInputRef.current.select?.();
+      }
+      return;
+    }
+
+    // Si presiona Escape, limpia todo y vuelve al inicio
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      setAmount('');
+      setSellerInput('');
+      setSelectedSellerId(null);
+      if (sellerInputRef.current) sellerInputRef.current.focus();
+      return;
+    }
+
     if (e.key === 'Enter') {
       e.preventDefault();
-      executeSale(parsedSeller, amount, method);
+      let cleanAmount = amount.trim().toLowerCase();
+      let chosenMethod = method;
+      if (cleanAmount.endsWith('t')) {
+        cleanAmount = cleanAmount.slice(0, -1).trim();
+        chosenMethod = 'transferencia';
+      } else if (cleanAmount.endsWith('e')) {
+        cleanAmount = cleanAmount.slice(0, -1).trim();
+        chosenMethod = 'efectivo';
+      }
+      executeSale(parsedSeller, cleanAmount, chosenMethod);
     }
   };
 
@@ -961,10 +1091,10 @@ function QuickSaleBar({ sellers, numberMap, date, dailyAlias, dayTransfers = [],
           </div>
           <div>
             <h3 style={{ margin: 0, fontSize: '1rem', fontWeight: 900, color: 'var(--text-main)', display: 'flex', alignItems: 'center', gap: '6px' }}>
-              Carga Rápida Express <span style={{ fontSize: '0.72rem', backgroundColor: '#FEF3C7', color: '#92400E', padding: '2px 7px', borderRadius: '6px', fontWeight: 800 }}>⚡ HORA PICO</span>
+              Carga Rápida Express <span style={{ fontSize: '0.72rem', backgroundColor: '#FEF3C7', color: '#92400E', padding: '2px 7px', borderRadius: '6px', fontWeight: 800 }}>⚡ 100% TECLADO (SIN MOUSE)</span>
             </h3>
             <p style={{ margin: 0, fontSize: '0.76rem', color: 'var(--text-muted)' }}>
-              Tocá la vendedora o poné su N° (<strong>00 Mostrador</strong>, 1-20) + monto. Podés escribir <code>00 25000</code> y dar Enter directo.
+              Pones el N° de vendedora (<strong>00</strong> o <strong>1-20</strong>) ➔ <strong>pasa solo al monto</strong> ➔ escribís el $ y das <strong>Enter</strong>.
             </p>
           </div>
         </div>
@@ -1048,7 +1178,7 @@ function QuickSaleBar({ sellers, numberMap, date, dailyAlias, dayTransfers = [],
         })}
       </div>
 
-      {/* Inputs Bar */}
+      {/* Inputs Bar con Auto-Salto */}
       <div style={{
         display: 'grid',
         gridTemplateColumns: 'minmax(140px, 1.2fr) minmax(160px, 1.5fr) minmax(180px, 1fr) minmax(130px, auto)',
@@ -1057,26 +1187,28 @@ function QuickSaleBar({ sellers, numberMap, date, dailyAlias, dayTransfers = [],
       }}>
         {/* N° Vendedora */}
         <div>
-          <label style={{ display: 'block', fontSize: '0.74rem', fontWeight: 700, color: 'var(--text-muted)', marginBottom: '3px' }}>
-            N° Vendedora (00 o 1-20)
+          <label style={{ display: 'block', fontSize: '0.74rem', fontWeight: 800, color: 'var(--text-main)', marginBottom: '3px' }}>
+            1. N° Vendedora (00 o 1-20)
           </label>
           <input
             ref={sellerInputRef}
             type="text"
             value={sellerInput}
-            onChange={(e) => {
-              setSellerInput(e.target.value);
-              setSelectedSellerId(null);
-              setError('');
-            }}
+            onChange={handleSellerInputChange}
             onKeyDown={handleSellerKeyDown}
             placeholder="Ej: 00 o 4"
             className="form-input"
-            style={{ width: '100%', fontSize: '1.05rem', fontWeight: 800, padding: '9px 12px' }}
+            style={{
+              width: '100%',
+              fontSize: '1.15rem',
+              fontWeight: 900,
+              padding: '9px 12px',
+              border: parsedSeller ? '2px solid #10B981' : undefined
+            }}
           />
           {parsedSeller ? (
-            <div style={{ fontSize: '0.76rem', fontWeight: 800, color: '#047857', marginTop: '3px', display: 'flex', alignItems: 'center', gap: '3px' }}>
-              <Check size={14} /> #{numberMap[parsedSeller.id] || (parsedSeller.name.toLowerCase().trim() === 'mostrador' ? '00' : '')} {parsedSeller.name} {parsedSeller.name.toLowerCase().trim() === 'mostrador' ? '(Directo Caja)' : ''}
+            <div style={{ fontSize: '0.78rem', fontWeight: 800, color: '#047857', marginTop: '4px', display: 'flex', alignItems: 'center', gap: '3px' }}>
+              <Check size={15} /> #{numberMap[parsedSeller.id] || (parsedSeller.name.toLowerCase().trim() === 'mostrador' ? '00' : '')} {parsedSeller.name} {parsedSeller.name.toLowerCase().trim() === 'mostrador' ? '(Directo Caja)' : ''}
             </div>
           ) : sellerInput.trim() !== '' ? (
             <div style={{ fontSize: '0.72rem', color: '#B91C1C', fontWeight: 600, marginTop: '3px' }}>
@@ -1084,15 +1216,15 @@ function QuickSaleBar({ sellers, numberMap, date, dailyAlias, dayTransfers = [],
             </div>
           ) : (
             <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '3px' }}>
-              00 Mostrador o N° 1-20
+              Tipeá 00 o el número (salta solo al monto)
             </div>
           )}
         </div>
 
-        {/* Monto */}
+        {/* Monto con Confirmación Enter */}
         <div>
-          <label style={{ display: 'block', fontSize: '0.74rem', fontWeight: 700, color: 'var(--text-muted)', marginBottom: '3px' }}>
-            Monto $
+          <label style={{ display: 'block', fontSize: '0.74rem', fontWeight: 800, color: 'var(--text-main)', marginBottom: '3px' }}>
+            2. Monto $ (Enter para guardar)
           </label>
           <input
             ref={amountRef}
@@ -1106,10 +1238,16 @@ function QuickSaleBar({ sellers, numberMap, date, dailyAlias, dayTransfers = [],
             onKeyDown={handleAmountKeyDown}
             placeholder="$ 0"
             className="form-input"
-            style={{ width: '100%', fontSize: '1.15rem', fontWeight: 900, padding: '8px 12px' }}
+            style={{
+              width: '100%',
+              fontSize: '1.2rem',
+              fontWeight: 900,
+              padding: '8px 12px',
+              border: amountOk(amount) ? '2px solid var(--accent-gold, #D97706)' : undefined
+            }}
           />
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '4px', marginTop: '3px' }}>
-            <span style={{ fontSize: '0.72rem', fontWeight: 600, color: 'var(--text-muted)' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '4px', marginTop: '4px' }}>
+            <span style={{ fontSize: '0.74rem', fontWeight: 700, color: amountOk(amount) ? 'var(--text-main)' : 'var(--text-muted)' }}>
               {amountOk(amount) ? `= ${money(amount)}` : 'Entero sin puntos'}
             </span>
             <div style={{ display: 'flex', gap: '4px' }}>
@@ -1119,15 +1257,16 @@ function QuickSaleBar({ sellers, numberMap, date, dailyAlias, dayTransfers = [],
           </div>
         </div>
 
-        {/* Método Toggle */}
+        {/* Método Toggle con atajos de teclado */}
         <div>
           <label style={{ display: 'block', fontSize: '0.74rem', fontWeight: 700, color: 'var(--text-muted)', marginBottom: '3px' }}>
-            Medio de pago
+            Medio [T] o [E]
           </label>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '4px' }}>
             <button
               type="button"
               onClick={() => setMethod('efectivo')}
+              title="Presioná la letra E para Efectivo"
               style={{
                 padding: '9px 4px',
                 borderRadius: '8px',
@@ -1139,11 +1278,12 @@ function QuickSaleBar({ sellers, numberMap, date, dailyAlias, dayTransfers = [],
                 color: method === 'efectivo' ? 'var(--bg-page)' : 'var(--text-main)'
               }}
             >
-              Efectivo (E)
+              Efectivo [E]
             </button>
             <button
               type="button"
               onClick={() => setMethod('transferencia')}
+              title="Presioná la letra T o tecla + para Transferencia"
               style={{
                 padding: '9px 4px',
                 borderRadius: '8px',
@@ -1155,7 +1295,7 @@ function QuickSaleBar({ sellers, numberMap, date, dailyAlias, dayTransfers = [],
                 color: method === 'transferencia' ? 'var(--bg-page)' : 'var(--text-main)'
               }}
             >
-              Transfer (T)
+              Transfer [T]
             </button>
           </div>
         </div>
@@ -1184,9 +1324,30 @@ function QuickSaleBar({ sellers, numberMap, date, dailyAlias, dayTransfers = [],
               cursor: (!parsedSeller || !amountOk(amount) || busy) ? 'not-allowed' : 'pointer'
             }}
           >
-            {busy ? <Loader2 size={16} className="animate-spin" /> : <Plus size={16} />} Cargar Venta
+            {busy ? <Loader2 size={16} className="animate-spin" /> : <Plus size={16} />} Cargar [Enter]
           </button>
         </div>
+      </div>
+
+      {/* Leyenda de Atajos de Teclado Rápidos */}
+      <div style={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        flexWrap: 'wrap',
+        gap: '6px',
+        marginTop: '10px',
+        paddingTop: '8px',
+        borderTop: '1px solid var(--border-color)',
+        fontSize: '0.74rem',
+        color: 'var(--text-muted)'
+      }}>
+        <span>
+          ⌨️ <strong>Atajos rápidos:</strong> <kbd style={{ padding: '1px 5px', borderRadius: '4px', backgroundColor: 'var(--bg-surface-elevated)', border: '1px solid var(--border-color)' }}>Enter</kbd> Guardar · <kbd style={{ padding: '1px 5px', borderRadius: '4px', backgroundColor: 'var(--bg-surface-elevated)', border: '1px solid var(--border-color)' }}>T</kbd> o <kbd style={{ padding: '1px 5px', borderRadius: '4px', backgroundColor: 'var(--bg-surface-elevated)', border: '1px solid var(--border-color)' }}>+</kbd> Transfer · <kbd style={{ padding: '1px 5px', borderRadius: '4px', backgroundColor: 'var(--bg-surface-elevated)', border: '1px solid var(--border-color)' }}>E</kbd> Efectivo · <kbd style={{ padding: '1px 5px', borderRadius: '4px', backgroundColor: 'var(--bg-surface-elevated)', border: '1px solid var(--border-color)' }}>Backspace</kbd> Corregir N° · <kbd style={{ padding: '1px 5px', borderRadius: '4px', backgroundColor: 'var(--bg-surface-elevated)', border: '1px solid var(--border-color)' }}>Esc</kbd> Limpiar
+        </span>
+        <span style={{ color: '#047857', fontWeight: 700 }}>
+          ⚡ 0 clicks de mouse requeridos
+        </span>
       </div>
 
       {/* Alerta de Alias al cobrar por Transferencia */}
