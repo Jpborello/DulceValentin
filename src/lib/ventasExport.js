@@ -249,6 +249,7 @@ export async function downloadTransferenciasExcelForMica({ date, aliasConfig, al
     ['Vendedora', 26],
     ['Alias', 24],
     ['Nota / Detalle', 34],
+    ['Comprobante / Drive', 36],
     ['Estado', 16]
   ];
   cols.forEach(([, w], i) => { ws.getColumn(i + 1).width = w; });
@@ -260,6 +261,7 @@ export async function downloadTransferenciasExcelForMica({ date, aliasConfig, al
   transfers.forEach((t, i) => {
     const row = ws.getRow(9 + i);
     const hourStr = t.createdAt ? hour(t.createdAt) : '--:--';
+    const compStr = t.attachment ? (t.attachment.driveUrl || t.attachment.url || t.attachment.fileName || 'Adjuntado') : 'Sin comprobante';
     row.values = [
       i + 1,
       hourStr,
@@ -267,6 +269,7 @@ export async function downloadTransferenciasExcelForMica({ date, aliasConfig, al
       t.sellerName || 'Directa',
       t.aliasName || '',
       t.note || '',
+      compStr,
       t.voided_at ? 'Anulada' : 'Válida'
     ];
     row.getCell(3).numFmt = MONEY_FMT;
@@ -277,7 +280,7 @@ export async function downloadTransferenciasExcelForMica({ date, aliasConfig, al
 
   const totalRowNum = 9 + transfers.length;
   const totalRow = ws.getRow(totalRowNum);
-  totalRow.values = ['TOTAL', '', { formula: `SUM(C9:C${Math.max(9, totalRowNum - 1)})` }, '', '', '', ''];
+  totalRow.values = ['TOTAL', '', { formula: `SUM(C9:C${Math.max(9, totalRowNum - 1)})` }, '', '', '', '', ''];
   totalRow.font = { bold: true };
   totalRow.border = { top: { style: 'thin' } };
   totalRow.getCell(3).numFmt = MONEY_FMT;
@@ -289,20 +292,25 @@ export async function downloadTransferenciasExcelForMica({ date, aliasConfig, al
       { header: 'Titular', key: 'holder', width: 22 },
       { header: 'Banco', key: 'bank', width: 16 },
       { header: 'Descripción', key: 'description', width: 32 },
+      { header: 'Anotación del día', key: 'note', width: 32 },
       { header: 'Mínimo', key: 'min', width: 13, style: { numFmt: MONEY_FMT } },
       { header: 'Máximo', key: 'max', width: 13, style: { numFmt: MONEY_FMT } },
       { header: 'Tope del día', key: 'limit', width: 14, style: { numFmt: MONEY_FMT } },
       { header: 'Recibido', key: 'received', width: 14, style: { numFmt: MONEY_FMT } },
       { header: 'Transferencias', key: 'count', width: 14 },
-      { header: 'Estado', key: 'state', width: 12 }
+      { header: 'Estado', key: 'state', width: 16 }
     ];
     styleHeader(wa.getRow(1));
-    aliases.forEach((x) => wa.addRow({
-      alias: x.alias, holder: x.holder, bank: x.bank, description: x.description,
-      min: x.minAmount, max: x.maxAmount, limit: x.dailyLimit,
-      received: Number(x.receivedToday || 0), count: x.countToday || 0,
-      state: x.active ? 'Activo' : 'Pausado'
-    }));
+    aliases.forEach((x) => {
+      const isOver = x.dailyLimit && (x.receivedToday || 0) >= x.dailyLimit;
+      wa.addRow({
+        alias: x.alias, holder: x.holder, bank: x.bank, description: x.description,
+        note: x.note || '—',
+        min: x.minAmount, max: x.maxAmount, limit: x.dailyLimit,
+        received: Number(x.receivedToday || 0), count: x.countToday || 0,
+        state: !x.active ? 'Pausado' : isOver ? '🚨 Tope superado' : 'Activo'
+      });
+    });
   }
 
   const buffer = await wb.xlsx.writeBuffer();
@@ -463,19 +471,46 @@ export async function downloadSupervisorExcel({ data, period, date, supervisorDa
     { header: 'Vendedora', key: 'vendedora', width: 22 },
     { header: 'Alias Destino', key: 'alias', width: 24 },
     { header: 'Titular / Banco', key: 'titular', width: 26 },
-    { header: 'Nota / Detalle', key: 'nota', width: 32 }
+    { header: 'Nota / Detalle', key: 'nota', width: 32 },
+    { header: 'Comprobante / Enlace', key: 'comprobante', width: 36 }
   ], transfers.map((t) => {
     const aliasInfo = aliasByDate[t.date] || data.dailyAlias || {};
+    const compStr = t.attachment ? (t.attachment.driveUrl || t.attachment.url || t.attachment.fileName || 'Adjuntado') : 'Sin comprobante';
     return {
       fecha: asDate(t.date),
       hora: t.createdAt ? hour(t.createdAt) : '--:--',
       monto: Number(t.amount || 0),
       vendedora: t.sellerName || 'Vendedora',
-      alias: aliasInfo.alias || 'dulce.valentin.rioja',
+      alias: t.aliasName || aliasInfo.alias || 'dulce.valentin.rioja',
       titular: `${aliasInfo.holder || '-'} ${aliasInfo.bank ? `(${aliasInfo.bank})` : ''}`,
-      nota: t.note || ''
+      nota: t.note || '',
+      comprobante: compStr
     };
   }));
+
+  // --- Solapa: Alias y Anotaciones
+  if (data.aliases && data.aliases.length > 0) {
+    addTableSheet(wb, 'Alias y Anotaciones', [
+      { header: 'Alias', key: 'alias', width: 26 },
+      { header: 'Titular / Banco', key: 'titular', width: 26 },
+      { header: 'Anotación del día', key: 'nota', width: 36 },
+      { header: 'Recibido hoy', key: 'recibido', width: 16, style: moneyStyle },
+      { header: 'Tope diario', key: 'tope', width: 16, style: moneyStyle },
+      { header: 'Operaciones', key: 'ops', width: 14 },
+      { header: 'Estado', key: 'estado', width: 16 }
+    ], data.aliases.map((a) => {
+      const isOver = a.dailyLimit && (a.receivedToday || 0) >= a.dailyLimit;
+      return {
+        alias: a.alias,
+        titular: [a.holder, a.bank].filter(Boolean).join(' · ') || '—',
+        nota: a.note || '—',
+        recibido: Number(a.receivedToday || 0),
+        tope: Number(a.dailyLimit || 0),
+        ops: a.countToday || 0,
+        estado: !a.active ? 'Pausado' : isOver ? '🚨 Tope superado' : 'Activo'
+      };
+    }));
+  }
 
   // --- Solapa 3: Rendimiento de Vendedoras
   addTableSheet(wb, 'Rendimiento Vendedoras', [

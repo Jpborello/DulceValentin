@@ -9,30 +9,58 @@ export function aliasRemaining(a) {
   return Math.max(0, a.dailyLimit - (a.receivedToday || 0));
 }
 
-// { ok, reason } — reason es corto para mostrar en el chip.
+// { ok, reason, overLimit } — reason es corto para mostrar en el chip.
+// Si se superó el tope diario, overLimit = true pero ok = true
+// (se muestra en rojo pero permite seguir cobrando sin bloquear).
 export function aliasStatus(a, amount) {
-  if (!a) return { ok: false, reason: 'Sin alias' };
-  if (!a.active) return { ok: false, reason: 'Pausado' };
+  if (!a) return { ok: false, reason: 'Sin alias', overLimit: false };
+  if (!a.active) return { ok: false, reason: 'Pausado', overLimit: false };
   const amt = Number(amount) || 0;
   const remaining = aliasRemaining(a);
-  if (remaining !== null && remaining <= 0) return { ok: false, reason: 'Tope lleno' };
+  const isOver = remaining !== null && (remaining <= 0 || (amt > 0 && amt > remaining));
+
   if (amt > 0) {
-    if (a.minAmount && amt < a.minAmount) return { ok: false, reason: `Desde ${fmt(a.minAmount)}` };
-    if (a.maxAmount && amt > a.maxAmount) return { ok: false, reason: `Hasta ${fmt(a.maxAmount)}` };
-    if (remaining !== null && amt > remaining) return { ok: false, reason: `Le quedan ${fmt(remaining)}` };
+    if (a.minAmount && amt < a.minAmount) return { ok: false, reason: `Desde ${fmt(a.minAmount)}`, overLimit: isOver };
+    if (a.maxAmount && amt > a.maxAmount) return { ok: false, reason: `Hasta ${fmt(a.maxAmount)}`, overLimit: isOver };
   }
-  return { ok: true, reason: '' };
+
+  if (isOver) {
+    return {
+      ok: true,
+      reason: remaining <= 0 ? 'Tope alcanzado' : `Supera tope (${fmt(remaining)} disp.)`,
+      overLimit: true
+    };
+  }
+
+  return { ok: true, reason: '', overLimit: false };
 }
 
-// Devuelve el alias a usar: el elegido a mano si acepta el monto, si no el
-// primero que lo acepte. null si ninguno sirve.
+// Devuelve el alias a usar:
+// 1. Si se eligió uno a mano y está activo, se usa (incluso si pasó el tope).
+// 2. Si no, busca el primer activo que acepte el monto y NO haya superado el tope.
+// 3. Si todos superaron el tope, devuelve el primer activo (en rojo) para no bloquear.
+// null solo si no hay ningún alias activo.
 export function pickAlias(aliases, amount, preferredId) {
   const list = (aliases || []).filter((a) => a.active);
+  if (list.length === 0) return null;
+
   if (preferredId) {
     const chosen = list.find((a) => a.id === preferredId);
     if (chosen && aliasStatus(chosen, amount).ok) return chosen;
   }
-  return list.find((a) => aliasStatus(a, amount).ok) || null;
+
+  // Primero intentamos con uno activo que no supere el tope
+  const perfect = list.find((a) => {
+    const st = aliasStatus(a, amount);
+    return st.ok && !st.overLimit;
+  });
+  if (perfect) return perfect;
+
+  // Si todos superaron el tope, el primero activo permitido
+  const acceptable = list.find((a) => aliasStatus(a, amount).ok);
+  if (acceptable) return acceptable;
+
+  return list[0];
 }
 
 // Texto corto de las reglas: "desde $100.000 · tope $500.000"

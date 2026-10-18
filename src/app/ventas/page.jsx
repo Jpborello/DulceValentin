@@ -1384,7 +1384,13 @@ function QuickSaleBar({ sellers, numberMap, date, aliases = [], onSaleCreated, o
 
       {/* Alias de cobro al cobrar por Transferencia */}
       {method === 'transferencia' && (
-        <div style={{ marginTop: '10px', padding: '10px 12px', borderRadius: '10px', border: `1.5px solid ${chosenAlias ? '#10B981' : '#FCA5A5'}`, backgroundColor: chosenAlias ? '#ECFDF5' : '#FEF2F2' }}>
+        <div style={{
+          marginTop: '10px',
+          padding: '10px 12px',
+          borderRadius: '10px',
+          border: `1.5px solid ${chosenAlias ? (aliasStatus(chosenAlias, amountNum).overLimit ? '#EF4444' : '#10B981') : '#FCA5A5'}`,
+          backgroundColor: chosenAlias ? (aliasStatus(chosenAlias, amountNum).overLimit ? '#FEF2F2' : '#ECFDF5') : '#FEF2F2'
+        }}>
           {activeAliases.length === 0 ? (
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px', flexWrap: 'wrap', fontSize: '0.84rem', fontWeight: 700, color: '#B91C1C' }}>
               <span>No hay alias de cobro activos. La transferencia se carga igual, sin alias.</span>
@@ -1394,18 +1400,32 @@ function QuickSaleBar({ sellers, numberMap, date, aliases = [], onSaleCreated, o
             <>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px', flexWrap: 'wrap' }}>
                 {chosenAlias ? (
-                  <div style={{ color: '#065F46', minWidth: 0 }}>
-                    <div style={{ fontSize: '0.72rem', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.03em' }}>🏦 Pasale este alias{amountNum ? ` · ${money(amountNum)}` : ''}</div>
-                    <div style={{ fontSize: '1.25rem', fontWeight: 900, fontFamily: 'monospace', wordBreak: 'break-all', color: 'var(--text-main)' }}>{chosenAlias.alias}</div>
+                  <div style={{ color: aliasStatus(chosenAlias, amountNum).overLimit ? '#991B1B' : '#065F46', minWidth: 0 }}>
+                    <div style={{ fontSize: '0.72rem', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.03em', display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+                      <span>🏦 Pasale este alias{amountNum ? ` · ${money(amountNum)}` : ''}</span>
+                      {aliasStatus(chosenAlias, amountNum).overLimit && (
+                        <span style={{ backgroundColor: '#EF4444', color: '#FFF', padding: '1px 6px', borderRadius: '4px', fontSize: '0.68rem', fontWeight: 900 }}>
+                          🚨 Límite alcanzado (habilitado)
+                        </span>
+                      )}
+                    </div>
+                    <div style={{ fontSize: '1.25rem', fontWeight: 900, fontFamily: 'monospace', wordBreak: 'break-all', color: aliasStatus(chosenAlias, amountNum).overLimit ? '#B91C1C' : 'var(--text-main)' }}>
+                      {chosenAlias.alias}
+                    </div>
                     <div style={{ fontSize: '0.78rem', fontWeight: 600 }}>
                       {[chosenAlias.holder, chosenAlias.bank].filter(Boolean).join(' · ')}
-                      {aliasRemaining(chosenAlias) !== null ? ` · le quedan ${money(aliasRemaining(chosenAlias))} hoy` : ''}
+                      {aliasRemaining(chosenAlias) !== null ? ` · ${aliasRemaining(chosenAlias) <= 0 ? 'Tope superado' : `le quedan ${money(aliasRemaining(chosenAlias))} hoy`}` : ''}
                     </div>
-                    {chosenAlias.description && <div style={{ fontSize: '0.8rem', fontWeight: 800, color: '#92400E' }}>“{chosenAlias.description}”</div>}
+                    {chosenAlias.note && (
+                      <div style={{ fontSize: '0.78rem', fontWeight: 800, color: '#92400E', backgroundColor: '#FEF3C7', border: '1px solid #FCD34D', padding: '3px 8px', borderRadius: '6px', marginTop: '4px', display: 'inline-block' }}>
+                        📝 Anotación del día: “{chosenAlias.note}”
+                      </div>
+                    )}
+                    {chosenAlias.description && <div style={{ fontSize: '0.8rem', fontWeight: 800, color: '#92400E', marginTop: '2px' }}>“{chosenAlias.description}”</div>}
                   </div>
                 ) : (
                   <div style={{ fontSize: '0.86rem', fontWeight: 800, color: '#B91C1C' }}>
-                    🚫 Ningún alias acepta {money(amountNum)}. Revisá mínimos y topes o cobralo en efectivo.
+                    🚫 Ningún alias acepta {money(amountNum)}. Cobralo en efectivo o revisá los alias.
                   </div>
                 )}
                 {chosenAlias && (
@@ -1418,26 +1438,33 @@ function QuickSaleBar({ sellers, numberMap, date, aliases = [], onSaleCreated, o
                 {activeAliases.map((a) => {
                   const st = aliasStatus(a, amountNum);
                   const sel = chosenAlias?.id === a.id;
+                  const isOver = st.overLimit;
                   return (
                     <button
                       key={a.id}
                       type="button"
                       disabled={!st.ok}
                       onClick={() => { setAliasChoice(a.id); amountRef.current?.focus(); }}
-                      title={a.description || aliasRules(a)}
+                      title={`${a.description || aliasRules(a)}${a.note ? ` | Anotación: ${a.note}` : ''}`}
                       style={{
                         padding: '4px 9px',
                         borderRadius: '8px',
                         fontSize: '0.74rem',
                         fontWeight: 800,
                         cursor: st.ok ? 'pointer' : 'not-allowed',
-                        border: sel ? '2px solid #047857' : '1px solid var(--border-color)',
-                        backgroundColor: sel ? '#047857' : st.ok ? 'var(--bg-card)' : 'transparent',
-                        color: sel ? '#FFFFFF' : st.ok ? 'var(--text-main)' : 'var(--text-muted)',
+                        border: sel
+                          ? isOver ? '2px solid #DC2626' : '2px solid #047857'
+                          : isOver ? '1.5px solid #F87171' : '1px solid var(--border-color)',
+                        backgroundColor: sel
+                          ? isOver ? '#DC2626' : '#047857'
+                          : isOver ? '#FEE2E2' : st.ok ? 'var(--bg-card)' : 'transparent',
+                        color: sel
+                          ? '#FFFFFF'
+                          : isOver ? '#B91C1C' : st.ok ? 'var(--text-main)' : 'var(--text-muted)',
                         textDecoration: st.ok ? 'none' : 'line-through'
                       }}
                     >
-                      {a.alias}{!st.ok ? ` · ${st.reason}` : ''}
+                      {a.alias}{isOver ? ' · 🚨 Lleno' : (!st.ok ? ` · ${st.reason}` : '')}
                     </button>
                   );
                 })}
@@ -1595,12 +1622,18 @@ function DirectTransferModal({ date, sellers, numberMap, aliases = [], onClose, 
               className="form-input"
               style={{ width: '100%', fontSize: '0.92rem', fontWeight: 700 }}
             >
-              {!chosenAlias && <option value="">— Ningún alias acepta este monto —</option>}
+              {!chosenAlias && <option value="">— Sin alias —</option>}
               {activeAliases.map((a) => {
                 const st = aliasStatus(a, Number(amount) || 0);
-                return <option key={a.id} value={a.id} disabled={!st.ok}>{a.alias}{st.ok ? '' : ` (${st.reason})`}</option>;
+                const tag = st.overLimit ? ' · 🚨 Tope superado (habilitado)' : (!st.ok ? ` (${st.reason})` : '');
+                return <option key={a.id} value={a.id} disabled={!st.ok}>{a.alias}{tag}</option>;
               })}
             </select>
+            {chosenAlias && aliasStatus(chosenAlias, Number(amount) || 0).overLimit && (
+              <div style={{ fontSize: '0.74rem', fontWeight: 800, color: '#DC2626', marginTop: '4px' }}>
+                🚨 Este alias alcanzó su tope diario, pero podés registrar la transferencia igual.
+              </div>
+            )}
           </div>
         )}
 

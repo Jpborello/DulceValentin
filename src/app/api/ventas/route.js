@@ -81,13 +81,26 @@ function commissionOf(sales, rates, sellerId) {
 // Alias de cobro (tabla payment_aliases). Montos numericos o null.
 const numOrNull = (v) => (v === null || v === undefined || v === '' ? null : Number(v));
 async function loadAliases(date, sales) {
-  const { data, error } = await db
-    .from('payment_aliases')
-    .select('*')
-    .eq('archived', false)
-    .order('sort', { ascending: true })
-    .order('created_at', { ascending: true });
-  if (error) return [];
+  const [aliasRes, noteRes] = await Promise.all([
+    db
+      .from('payment_aliases')
+      .select('*')
+      .eq('archived', false)
+      .order('sort', { ascending: true })
+      .order('created_at', { ascending: true }),
+    db
+      .from('categories')
+      .select('id, name')
+      .like('id', `_config_alias_note_${date}_%`)
+  ]);
+
+  if (aliasRes.error) return [];
+  const notesByAliasId = {};
+  (noteRes.data || []).forEach((r) => {
+    const aId = r.id.replace(`_config_alias_note_${date}_`, '');
+    notesByAliasId[aId] = r.name || '';
+  });
+
   const received = {};
   const counts = {};
   sales
@@ -96,7 +109,8 @@ async function loadAliases(date, sales) {
       received[x.alias_id] = (received[x.alias_id] || 0) + Number(x.amount);
       counts[x.alias_id] = (counts[x.alias_id] || 0) + 1;
     });
-  return (data || []).map((a) => ({
+
+  return (aliasRes.data || []).map((a) => ({
     id: a.id,
     alias: a.alias,
     holder: a.holder || '',
@@ -108,7 +122,8 @@ async function loadAliases(date, sales) {
     sort: a.sort,
     active: a.active,
     receivedToday: round2(received[a.id] || 0),
-    countToday: counts[a.id] || 0
+    countToday: counts[a.id] || 0,
+    note: notesByAliasId[a.id] || ''
   }));
 }
 
@@ -308,10 +323,35 @@ export async function GET(req) {
     }))
     .sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
 
-  const aliases = await loadAliases(date, ledger.sales);
-  const aliasNameById = Object.fromEntries(aliases.map((a) => [a.id, a.alias]));
-  periodTransfers.forEach((t) => { t.aliasName = t.aliasId ? (aliasNameById[t.aliasId] || 'Alias archivado') : ''; });
+  const [aliases, attRes, gdriveRes] = await Promise.all([
+    loadAliases(date, ledger.sales),
+    db.from('categories').select('id, name, subcategories').like('id', '_config_transfer_att_%'),
+    db.from('categories').select('name').eq('id', '_config_transfers_gdrive_url').maybeSingle()
+  ]);
 
+  const aliasNameById = Object.fromEntries(aliases.map((a) => [a.id, a.alias]));
+  const attMap = {};
+  (attRes?.data || []).forEach((r) => {
+    const key = r.id.replace('_config_transfer_att_', '');
+    let sub = r.subcategories;
+    if (typeof sub === 'string') {
+      try { sub = JSON.parse(sub); } catch {}
+    }
+    attMap[key] = {
+      url: r.name || '',
+      fileName: Array.isArray(sub) ? sub[0] : (sub?.fileName || ''),
+      fileType: Array.isArray(sub) ? sub[1] : (sub?.fileType || ''),
+      driveUrl: Array.isArray(sub) ? sub[2] : (sub?.driveUrl || ''),
+      uploadedAt: Array.isArray(sub) ? sub[3] : (sub?.uploadedAt || '')
+    };
+  });
+
+  periodTransfers.forEach((t) => {
+    t.aliasName = t.aliasId ? (aliasNameById[t.aliasId] || 'Alias archivado') : '';
+    t.attachment = attMap[String(t.id)] || attMap[t.clientRef] || null;
+  });
+
+  const driveFolderUrl = gdriveRes?.data?.name || '';
   const dayTransfers = periodTransfers.filter((x) => x.date === date);
 
   let dailyAlias = null;
@@ -406,7 +446,7 @@ export async function GET(req) {
     };
   }
 
-  const body = { period, date, from, to, prev, sellers: summary, cash, dailyAlias, aliases, dayTransfers, periodTransfers, supervisorData };
+  const body = { period, date, from, to, prev, sellers: summary, cash, dailyAlias, aliases, dayTransfers, periodTransfers, supervisorData, driveFolderUrl };
   if (sellerId) {
     const mine = (rows, key) => rows.filter((x) => x.seller_id === sellerId && inRange(x[key], from, to));
     body.detail = {
@@ -575,6 +615,63 @@ export async function POST(req) {
         success: true,
         dailyAlias: { alias, limit, holder, bank }
       });
+    }
+
+    case 'saveAliasNote': {
+      const targetDate = dateOk(body.date);
+      const aliasId = String(body.aliasId || '').trim();
+      if (!uuidRe.test(aliasId)) return fail(400, 'Alias inválido.');
+      const note = String(body.note || '').trim().slice(0, 500);
+      const key = `_config_alias_note_${targetDate}_${aliasId}`;
+      if (!note) {
+        await db.from('categories').delete().eq('id', key);
+      } else {
+        const { error } = await db.from('categories').upsert({
+          id: key,
+          name: note,
+          subcategories: [new Date().toISOString()]
+        }, { onConflict: 'id' });
+        if (error) return fail(500, 'No se pudo guardar la anotación.');
+      }
+      return NextResponse.json({ success: true, note });
+    }
+
+    case 'saveTransferAttachment': {
+      const keyId = String(body.saleId || body.clientRef || '').trim();
+      if (!keyId) return fail(400, 'Falta identificar la transferencia.');
+      const fileUrl = String(body.fileUrl || '').trim();
+      const fileName = String(body.fileName || '').trim().slice(0, 150);
+      const fileType = String(body.fileType || '').trim().slice(0, 80);
+      const driveUrl = String(body.driveUrl || '').trim();
+      if (!fileUrl && !driveUrl) return fail(400, 'Se requiere un archivo o enlace.');
+      const key = `_config_transfer_att_${keyId}`;
+      const { error } = await db.from('categories').upsert({
+        id: key,
+        name: fileUrl || driveUrl,
+        subcategories: [fileName, fileType, driveUrl, new Date().toISOString()]
+      }, { onConflict: 'id' });
+      if (error) return fail(500, 'No se pudo guardar el comprobante.');
+      return NextResponse.json({ success: true });
+    }
+
+    case 'deleteTransferAttachment': {
+      const keyId = String(body.saleId || body.clientRef || '').trim();
+      if (!keyId) return fail(400, 'Falta identificar la transferencia.');
+      const key = `_config_transfer_att_${keyId}`;
+      const { error } = await db.from('categories').delete().eq('id', key);
+      if (error) return fail(500, 'No se pudo eliminar el comprobante.');
+      return NextResponse.json({ success: true });
+    }
+
+    case 'setDriveFolderUrl': {
+      const url = String(body.url || '').trim();
+      const { error } = await db.from('categories').upsert({
+        id: '_config_transfers_gdrive_url',
+        name: url,
+        subcategories: [new Date().toISOString()]
+      }, { onConflict: 'id' });
+      if (error) return fail(500, 'No se pudo guardar el enlace de Google Drive.');
+      return NextResponse.json({ success: true, url });
     }
 
     case 'addSale':

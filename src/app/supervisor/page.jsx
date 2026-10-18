@@ -39,7 +39,13 @@ import {
   PiggyBank,
   CheckCheck,
   Plus,
-  TrendingDown
+  TrendingDown,
+  Paperclip,
+  FolderSymlink,
+  UploadCloud,
+  Trash2,
+  Edit3,
+  X
 } from 'lucide-react';
 import { supabase } from '@/lib/supabaseClient';
 import { adminFetch } from '@/lib/adminFetch';
@@ -323,6 +329,16 @@ export default function SupervisorPage() {
   const [showAliasManager, setShowAliasManager] = useState(false); // false | 'edit' | 'new'
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedSellerFilter, setSelectedSellerFilter] = useState('ALL');
+  const [selectedAliasFilter, setSelectedAliasFilter] = useState('ALL');
+  const [editingNoteAlias, setEditingNoteAlias] = useState(null);
+  const [noteText, setNoteText] = useState('');
+  const [savingNote, setSavingNote] = useState(false);
+  const [attachmentTransfer, setAttachmentTransfer] = useState(null);
+  const [attachmentDriveUrl, setAttachmentDriveUrl] = useState('');
+  const [uploadingAttachment, setUploadingAttachment] = useState(false);
+  const [driveFolderModal, setDriveFolderModal] = useState(false);
+  const [driveFolderInput, setDriveFolderInput] = useState('');
+  const [savingDriveFolder, setSavingDriveFolder] = useState(false);
   const [lastUpdate, setLastUpdate] = useState(null);
   const [live, setLive] = useState(false); // canal Realtime conectado
 
@@ -452,19 +468,171 @@ export default function SupervisorPage() {
   }, [transfersList]);
 
 
-  // Filtrado de transferencias
+  // Filtrado de transferencias (soporta vendedora, alias y búsqueda)
   const filteredTransfers = useMemo(() => {
     return transfersList.filter((t) => {
       const matchSeller = selectedSellerFilter === 'ALL' || t.sellerId === selectedSellerFilter;
+      const matchAlias = selectedAliasFilter === 'ALL'
+        || t.aliasId === selectedAliasFilter
+        || (selectedAliasFilter === '__NO_ALIAS__' && !t.aliasId);
+      if (!matchSeller || !matchAlias) return false;
       const q = searchQuery.toLowerCase().trim();
-      if (!q) return matchSeller;
+      if (!q) return true;
       const matchText = (t.sellerName || '').toLowerCase().includes(q)
+        || (t.aliasName || '').toLowerCase().includes(q)
         || (t.note || '').toLowerCase().includes(q)
         || String(t.amount || '').includes(q)
         || (t.date || '').includes(q);
-      return matchSeller && matchText;
+      return matchText;
     });
-  }, [transfersList, selectedSellerFilter, searchQuery]);
+  }, [transfersList, selectedSellerFilter, selectedAliasFilter, searchQuery]);
+
+  // Guardar anotación del día de un alias
+  const handleSaveAliasNote = async (e, directText = null) => {
+    if (e) e.preventDefault();
+    if (!editingNoteAlias) return;
+    setSavingNote(true);
+    const targetNote = directText !== null ? directText : noteText;
+    try {
+      await api('/api/ventas', {
+        method: 'POST',
+        body: JSON.stringify({
+          action: 'saveAliasNote',
+          aliasId: editingNoteAlias.id,
+          date,
+          note: targetNote
+        })
+      });
+      setEditingNoteAlias(null);
+      setNoteText('');
+      await loadData(true);
+    } catch (err) {
+      window.alert(err.message || 'No se pudo guardar la anotación.');
+    } finally {
+      setSavingNote(false);
+    }
+  };
+
+  // Abrir o configurar carpeta de Google Drive
+  const handleOpenDriveFolder = () => {
+    if (data?.driveFolderUrl) {
+      window.open(data.driveFolderUrl, '_blank', 'noopener');
+    } else {
+      setDriveFolderInput('');
+      setDriveFolderModal(true);
+    }
+  };
+
+  // Guardar enlace de carpeta de Google Drive
+  const handleSaveDriveFolder = async (e) => {
+    e?.preventDefault();
+    if (!driveFolderInput.trim()) return;
+    setSavingDriveFolder(true);
+    try {
+      await api('/api/ventas', {
+        method: 'POST',
+        body: JSON.stringify({
+          action: 'setDriveFolderUrl',
+          url: driveFolderInput.trim()
+        })
+      });
+      setDriveFolderModal(false);
+      await loadData(true);
+    } catch (err) {
+      window.alert(err.message || 'No se pudo guardar la carpeta de Google Drive.');
+    } finally {
+      setSavingDriveFolder(false);
+    }
+  };
+
+  // Subir archivo de comprobante a Supabase Storage y registrarlo
+  const handleFileUpload = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file || !attachmentTransfer) return;
+    setUploadingAttachment(true);
+    try {
+      const isPdf = file.type === 'application/pdf';
+      const ext = file.name.split('.').pop() || (isPdf ? 'pdf' : 'jpg');
+      const filePath = `transferencias/${date}/${attachmentTransfer.id}_${Date.now()}.${ext}`;
+
+      const { error: uploadErr } = await supabase.storage
+        .from('comprobantes')
+        .upload(filePath, file, { upsert: true, contentType: file.type || 'application/octet-stream' });
+      if (uploadErr) throw uploadErr;
+
+      const { data: urlData } = supabase.storage.from('comprobantes').getPublicUrl(filePath);
+
+      await api('/api/ventas', {
+        method: 'POST',
+        body: JSON.stringify({
+          action: 'saveTransferAttachment',
+          saleId: attachmentTransfer.id,
+          clientRef: attachmentTransfer.clientRef,
+          fileUrl: urlData.publicUrl,
+          fileName: file.name,
+          fileType: file.type
+        })
+      });
+
+      await loadData(true);
+      setAttachmentTransfer(null);
+    } catch (err) {
+      console.warn('Error subiendo comprobante:', err);
+      window.alert('No se pudo subir el comprobante. Verificá tu conexión o intentá nuevamente.');
+    } finally {
+      setUploadingAttachment(false);
+    }
+  };
+
+  // Guardar URL directa de Google Drive
+  const handleSaveDriveUrl = async () => {
+    if (!attachmentTransfer || !attachmentDriveUrl.trim()) return;
+    setUploadingAttachment(true);
+    try {
+      await api('/api/ventas', {
+        method: 'POST',
+        body: JSON.stringify({
+          action: 'saveTransferAttachment',
+          saleId: attachmentTransfer.id,
+          clientRef: attachmentTransfer.clientRef,
+          fileUrl: attachmentDriveUrl.trim(),
+          fileName: 'Enlace Google Drive',
+          fileType: 'link',
+          driveUrl: attachmentDriveUrl.trim()
+        })
+      });
+      setAttachmentDriveUrl('');
+      await loadData(true);
+      setAttachmentTransfer(null);
+    } catch (err) {
+      window.alert(err.message || 'No se pudo guardar el enlace.');
+    } finally {
+      setUploadingAttachment(false);
+    }
+  };
+
+  // Eliminar comprobante
+  const handleDeleteAttachment = async () => {
+    if (!attachmentTransfer) return;
+    if (!window.confirm('¿Seguro que deseás eliminar este comprobante adjunto?')) return;
+    setUploadingAttachment(true);
+    try {
+      await api('/api/ventas', {
+        method: 'POST',
+        body: JSON.stringify({
+          action: 'deleteTransferAttachment',
+          saleId: attachmentTransfer.id,
+          clientRef: attachmentTransfer.clientRef
+        })
+      });
+      await loadData(true);
+      setAttachmentTransfer(null);
+    } catch (err) {
+      window.alert(err.message || 'No se pudo eliminar el comprobante.');
+    } finally {
+      setUploadingAttachment(false);
+    }
+  };
 
   // Exportar Excel Gerencial
   const handleExportExcel = async () => {
@@ -579,13 +747,13 @@ export default function SupervisorPage() {
         {aliases.map((a, idx) => {
           const rem = aliasLeft(a);
           const pct = a.dailyLimit ? Math.round(((a.receivedToday || 0) / a.dailyLimit) * 100) : null;
-          const full = rem === 0;
+          const full = a.dailyLimit ? (a.receivedToday || 0) >= a.dailyLimit : false;
           const near = !full && pct !== null && pct >= 80;
           const tone = !a.active ? 'off' : full ? 'bad' : near ? 'warn' : 'ok';
           return (
             <div key={a.id} className={`sv-alias sv-alias--${tone}`}>
               <div className="sv-alias-top">
-                <span className="sv-label">{idx + 1} · {!a.active ? 'Pausado' : full ? 'Tope lleno' : near ? 'Casi lleno' : 'Activo'}</span>
+                <span className="sv-label">{idx + 1} · {!a.active ? 'Pausado' : full ? '🚨 Tope superado (habilitado)' : near ? 'Casi lleno' : 'Activo'}</span>
                 <button type="button" className="sv-ghost" onClick={() => copyAliasToClipboard(a.alias)} title="Copiar alias">
                   {copiedAlias === a.alias ? <Check size={15} /> : <Copy size={15} />}
                 </button>
@@ -594,12 +762,55 @@ export default function SupervisorPage() {
               <div className="sv-alias-sub">{[a.holder, a.bank].filter(Boolean).join(' · ') || 'Sin titular'}</div>
               <div className="sv-alias-rules">{aliasRules(a)}</div>
               {a.description && <div className="sv-alias-desc">“{a.description}”</div>}
+
+              {/* Anotación del día */}
+              <div style={{ marginTop: '10px', padding: '8px 10px', borderRadius: '10px', backgroundColor: a.note ? '#FEF3C7' : 'var(--sv-soft)', border: a.note ? '1px solid #FCD34D' : '1px dashed var(--sv-line)' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '6px' }}>
+                  <span style={{ fontSize: '0.68rem', fontWeight: 800, textTransform: 'uppercase', color: a.note ? '#92400E' : 'var(--sv-mute)' }}>
+                    📝 Anotación del {fmtDate(date)}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => { setEditingNoteAlias(a); setNoteText(a.note || ''); }}
+                    className="sv-ghost"
+                    style={{ padding: '2px', color: a.note ? '#92400E' : 'var(--sv-mute)' }}
+                    title="Editar anotación del día"
+                  >
+                    <Edit3 size={13} />
+                  </button>
+                </div>
+                {a.note ? (
+                  <div style={{ fontSize: '0.8rem', fontWeight: 700, color: '#92400E', marginTop: '3px' }}>
+                    “{a.note}”
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => { setEditingNoteAlias(a); setNoteText(''); }}
+                    style={{ background: 'none', border: 'none', padding: 0, fontSize: '0.74rem', color: 'var(--sv-mute)', cursor: 'pointer', textAlign: 'left', marginTop: '2px', fontStyle: 'italic' }}
+                  >
+                    + Agregar anotación para hoy
+                  </button>
+                )}
+              </div>
+
               <div className="sv-alias-foot">
                 <span className="sv-num">{money(a.receivedToday)}</span>
-                <span className="sv-alias-left">{rem !== null ? (full ? 'Lleno' : `quedan ${money(rem)}`) : 'sin tope'}</span>
+                <span className="sv-alias-left">{rem !== null ? (full ? `🚨 Superado (${money(a.receivedToday - a.dailyLimit)})` : `quedan ${money(rem)}`) : 'sin tope'}</span>
               </div>
-              {a.dailyLimit ? <div className="sv-meter"><span style={{ width: `${Math.min(100, pct)}%` }} /></div> : null}
-              <div className="sv-alias-count">{a.countToday} transferencia{a.countToday === 1 ? '' : 's'} el {fmtDate(date)}</div>
+              {a.dailyLimit ? <div className="sv-meter"><span style={{ width: `${Math.min(100, pct)}%` }} className={full ? 'bad' : near ? 'warn' : ''} /></div> : null}
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '10px' }}>
+                <span className="sv-alias-count">{a.countToday} transferencias el {fmtDate(date)}</span>
+                <button
+                  type="button"
+                  onClick={() => { setSelectedAliasFilter(a.id); setActiveTab('transfers'); }}
+                  className="sv-btn"
+                  style={{ height: '26px', padding: '0 9px', fontSize: '0.72rem' }}
+                  title="Ver transferencias de este alias"
+                >
+                  <Landmark size={12} /> Ver historial
+                </button>
+              </div>
             </div>
           );
         })}
@@ -830,28 +1041,183 @@ export default function SupervisorPage() {
                 <p className="sv-muted sv-small">{rangeLabel} · {filteredTransfers.length} de {transfersList.length} · total <b>{money(filteredTransfers.reduce((a, b) => a + (b.amount || 0), 0))}</b></p>
               </div>
               <div className="sv-filter">
-                <div className="sv-search"><Search size={15} /><input type="text" placeholder="Buscar vendedora, monto o nota" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} /></div>
+                <div className="sv-search"><Search size={15} /><input type="text" placeholder="Buscar alias, vendedora o monto" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} /></div>
+                
+                {/* Filtro por vendedora */}
                 <select className="sv-input" value={selectedSellerFilter} onChange={(e) => setSelectedSellerFilter(e.target.value)}>
                   <option value="ALL">Todas las vendedoras</option>
                   {(data?.sellers || []).map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
                 </select>
+
+                {/* Filtro por alias */}
+                <select className="sv-input" value={selectedAliasFilter} onChange={(e) => setSelectedAliasFilter(e.target.value)}>
+                  <option value="ALL">Todos los alias ({transfersList.length})</option>
+                  {aliases.map((a) => {
+                    const count = transfersList.filter((t) => t.aliasId === a.id).length;
+                    const isOver = a.dailyLimit && (a.receivedToday || 0) >= a.dailyLimit;
+                    return (
+                      <option key={a.id} value={a.id}>
+                        {a.alias} ({count} ops · {money(a.receivedToday)}){isOver ? ' 🚨' : ''}
+                      </option>
+                    );
+                  })}
+                  <option value="__NO_ALIAS__">Sin alias asignado</option>
+                </select>
+
+                {/* Botón Google Drive */}
+                <button
+                  type="button"
+                  onClick={handleOpenDriveFolder}
+                  className="sv-btn"
+                  title={data?.driveFolderUrl ? 'Abrir carpeta de Google Drive de comprobantes' : 'Configurar enlace de carpeta de Google Drive'}
+                >
+                  <FolderSymlink size={15} style={{ color: '#2563EB' }} />
+                  <span>Google Drive</span>
+                </button>
               </div>
             </div>
+
+            {/* Barra interactiva de Alias del Día */}
+            {aliases.length > 0 && (
+              <div className="sv-alias-bar">
+                <div className="sv-alias-bar-header">
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <Wallet size={15} style={{ color: 'var(--sv-magt)' }} />
+                    <span style={{ fontSize: '0.78rem', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                      Alias del día {fmtDate(date)}
+                    </span>
+                    <span className="sv-count">{aliases.length}</span>
+                  </div>
+                  {selectedAliasFilter !== 'ALL' && (
+                    <button
+                      type="button"
+                      onClick={() => setSelectedAliasFilter('ALL')}
+                      className="sv-btn"
+                      style={{ height: '26px', padding: '0 9px', fontSize: '0.72rem' }}
+                    >
+                      <X size={12} /> Ver todos ({transfersList.length})
+                    </button>
+                  )}
+                </div>
+                <div className="sv-alias-pills">
+                  <button
+                    type="button"
+                    className={`sv-alias-pill ${selectedAliasFilter === 'ALL' ? 'on' : ''}`}
+                    onClick={() => setSelectedAliasFilter('ALL')}
+                  >
+                    <div className="sv-alias-pill-top">
+                      <span className="sv-alias-pill-title">Todos</span>
+                      <span className="sv-alias-pill-count">{transfersList.length} ops</span>
+                    </div>
+                    <div className="sv-alias-pill-amt">{money(transfersList.reduce((acc, t) => acc + (t.amount || 0), 0))}</div>
+                    <div className="sv-alias-pill-foot">
+                      <span>Total transferencias</span>
+                    </div>
+                  </button>
+
+                  {aliases.map((a) => {
+                    const ops = transfersList.filter((t) => t.aliasId === a.id);
+                    const totalOps = ops.reduce((acc, t) => acc + (t.amount || 0), 0);
+                    const isOver = a.dailyLimit && (a.receivedToday || 0) >= a.dailyLimit;
+                    const isSelected = selectedAliasFilter === a.id;
+                    return (
+                      <div
+                        key={a.id}
+                        className={`sv-alias-pill ${isSelected ? 'on' : ''} ${isOver ? 'sv-alias-pill--bad' : ''} ${!a.active ? 'sv-alias-pill--off' : ''}`}
+                        onClick={() => setSelectedAliasFilter(isSelected ? 'ALL' : a.id)}
+                      >
+                        <div className="sv-alias-pill-top">
+                          <span className="sv-alias-pill-title">
+                            {a.alias}
+                            {isOver && <span className="sv-pill-tag">🚨 Tope</span>}
+                            {!a.active && <span className="sv-pill-tag-gray">Pausa</span>}
+                          </span>
+                          <span className="sv-alias-pill-count">{ops.length} ops</span>
+                        </div>
+                        <div className="sv-alias-pill-amt">{money(totalOps)}</div>
+                        <div className="sv-alias-pill-foot">
+                          <span>{a.dailyLimit ? `tope ${money(a.dailyLimit)}` : 'sin tope'}</span>
+                          <button
+                            type="button"
+                            className="sv-pill-note-btn"
+                            title={a.note ? `Nota: “${a.note}”` : 'Agregar anotación'}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setEditingNoteAlias(a);
+                              setNoteText(a.note || '');
+                            }}
+                          >
+                            <Edit3 size={11} /> {a.note ? 'Nota ✓' : '+ Nota'}
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
             <div className="sv-tablewrap">
               <table className="sv-table">
-                <thead><tr><th>Hora</th><th>Monto</th><th>Vendedora</th><th>Alias</th><th>Nota</th><th className="r" /></tr></thead>
+                <thead>
+                  <tr>
+                    <th>Hora</th>
+                    <th>Monto</th>
+                    <th>Vendedora</th>
+                    <th>Alias</th>
+                    <th>Nota</th>
+                    <th>Comprobante</th>
+                    <th className="r" />
+                  </tr>
+                </thead>
                 <tbody>
                   {filteredTransfers.length === 0 ? (
-                    <tr><td colSpan={6} className="sv-empty-cell">No hay transferencias para mostrar.</td></tr>
+                    <tr><td colSpan={7} className="sv-empty-cell">No hay transferencias para mostrar.</td></tr>
                   ) : filteredTransfers.map((t) => {
                     const aliasInfo = (data.supervisorData?.aliasByDate && data.supervisorData.aliasByDate[t.date]) || data.dailyAlias || {};
+                    const hasAtt = Boolean(t.attachment);
                     return (
                       <tr key={t.id}>
                         <td><b>{t.createdAt ? hour(t.createdAt) : '--:--'}</b><small className="sv-block sv-muted">{fmtDate(t.date)}</small></td>
                         <td><span className="sv-num sv-amt">{money(t.amount)}</span></td>
                         <td>{t.sellerName}</td>
-                        <td><span className="sv-chip">{t.aliasName || (t.aliasId ? 'Alias archivado' : aliasInfo.alias || 'Sin alias')}</span></td>
+                        <td>
+                          <span
+                            className="sv-chip"
+                            style={{ cursor: t.aliasId ? 'pointer' : 'default' }}
+                            onClick={() => { if (t.aliasId) setSelectedAliasFilter(t.aliasId); }}
+                            title={t.aliasId ? 'Filtrar por este alias' : ''}
+                          >
+                            {t.aliasName || (t.aliasId ? 'Alias archivado' : aliasInfo.alias || 'Sin alias')}
+                          </span>
+                        </td>
                         <td className="sv-muted">{t.note || '—'}</td>
+                        <td>
+                          {hasAtt ? (
+                            <button
+                              type="button"
+                              onClick={() => setAttachmentTransfer(t)}
+                              className="sv-attach-badge"
+                              title="Ver / gestionar comprobante"
+                            >
+                              <Paperclip size={13} />
+                              <span>{t.attachment.fileName || (t.attachment.driveUrl ? 'Google Drive' : 'Comprobante')}</span>
+                            </button>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setAttachmentTransfer(t);
+                                setAttachmentDriveUrl('');
+                              }}
+                              className="sv-btn-attach"
+                              title="Adjuntar archivo o link de Google Drive"
+                            >
+                              <Paperclip size={12} />
+                              <span>Adjuntar</span>
+                            </button>
+                          )}
+                        </td>
                         <td className="r"><button type="button" className="sv-void" onClick={() => handleVoidItem('sale', t.id, t.amount, `Transferencia de ${t.sellerName}`)}>Anular</button></td>
                       </tr>
                     );
@@ -953,6 +1319,226 @@ export default function SupervisorPage() {
         )}
 
         {aliasModal}
+
+        {/* Modal de Anotación del Día */}
+        {editingNoteAlias && (
+          <div className="sv-modal-overlay" onClick={() => setEditingNoteAlias(null)}>
+            <div className="sv-modal" onClick={(e) => e.stopPropagation()}>
+              <div className="sv-modal-head">
+                <div>
+                  <h4>Anotación del día</h4>
+                  <small className="sv-muted">Alias: <b>{editingNoteAlias.alias}</b> · {fmtDate(date)}</small>
+                </div>
+                <button type="button" className="sv-ghost" onClick={() => setEditingNoteAlias(null)}><X size={18} /></button>
+              </div>
+              <form onSubmit={handleSaveAliasNote}>
+                <p className="sv-small sv-muted" style={{ marginBottom: '10px' }}>
+                  Esta nota se muestra al mostrador al cobrar, en los informes diarios de Mica y en el Excel.
+                </p>
+                <textarea
+                  rows={3}
+                  value={noteText}
+                  onChange={(e) => setNoteText(e.target.value)}
+                  placeholder="ej: Tope alcanzado a las 14hs / Solo transferencias grandes / En revisión"
+                  className="form-input"
+                  style={{ width: '100%', borderRadius: '12px', padding: '10px 12px', fontSize: '0.88rem', boxSizing: 'border-box' }}
+                  autoFocus
+                />
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '14px', flexWrap: 'wrap', gap: '8px' }}>
+                  {editingNoteAlias.note ? (
+                    <button
+                      type="button"
+                      onClick={() => handleSaveAliasNote(null, '')}
+                      disabled={savingNote}
+                      className="sv-void"
+                    >
+                      Borrar nota
+                    </button>
+                  ) : <div />}
+                  <div style={{ display: 'flex', gap: '8px' }}>
+                    <button type="button" onClick={() => setEditingNoteAlias(null)} className="sv-btn">Cancelar</button>
+                    <button type="submit" disabled={savingNote} className="sv-btn sv-btn--mag">
+                      {savingNote ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />} Guardar nota
+                    </button>
+                  </div>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
+
+        {/* Modal de Comprobante / Google Drive */}
+        {attachmentTransfer && (
+          <div className="sv-modal-overlay" onClick={() => setAttachmentTransfer(null)}>
+            <div className="sv-modal" style={{ maxWidth: '520px' }} onClick={(e) => e.stopPropagation()}>
+              <div className="sv-modal-head">
+                <div>
+                  <h4>Comprobante de Transferencia</h4>
+                  <small className="sv-muted">{money(attachmentTransfer.amount)} · {attachmentTransfer.sellerName} · {fmtDate(attachmentTransfer.date)}</small>
+                </div>
+                <button type="button" className="sv-ghost" onClick={() => setAttachmentTransfer(null)}><X size={18} /></button>
+              </div>
+
+              {attachmentTransfer.attachment ? (
+                <div style={{ marginTop: '12px' }}>
+                  <div style={{ padding: '14px', backgroundColor: 'var(--sv-soft)', borderRadius: '14px', marginBottom: '14px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px', flexWrap: 'wrap', gap: '6px' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', overflow: 'hidden' }}>
+                        <Paperclip size={16} className="sv-c-sky" />
+                        <b style={{ fontSize: '0.88rem', wordBreak: 'break-all' }}>{attachmentTransfer.attachment.fileName || 'Comprobante adjunto'}</b>
+                      </div>
+                      {attachmentTransfer.attachment.uploadedAt && (
+                        <span style={{ fontSize: '0.72rem', color: 'var(--sv-mute)' }}>
+                          {new Date(attachmentTransfer.attachment.uploadedAt).toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })}
+                        </span>
+                      )}
+                    </div>
+
+                    {/* Previsualización si es imagen */}
+                    {attachmentTransfer.attachment.url && (attachmentTransfer.attachment.url.match(/\.(jpeg|jpg|gif|png|webp)($|\?)/i) || (attachmentTransfer.attachment.fileType && attachmentTransfer.attachment.fileType.startsWith('image/'))) && (
+                      <div style={{ textAlign: 'center', maxHeight: '280px', overflow: 'hidden', borderRadius: '10px', marginTop: '8px', backgroundColor: '#000' }}>
+                        <img src={attachmentTransfer.attachment.url} alt="Comprobante" style={{ maxHeight: '280px', maxWidth: '100%', objectFit: 'contain' }} />
+                      </div>
+                    )}
+
+                    <div style={{ display: 'flex', gap: '8px', marginTop: '12px', flexWrap: 'wrap' }}>
+                      {attachmentTransfer.attachment.url && (
+                        <a
+                          href={attachmentTransfer.attachment.url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="sv-btn sv-btn--mag"
+                          style={{ fontSize: '0.8rem', height: '32px' }}
+                        >
+                          <ExternalLink size={13} /> Abrir comprobante
+                        </a>
+                      )}
+                      {attachmentTransfer.attachment.driveUrl && (
+                        <a
+                          href={attachmentTransfer.attachment.driveUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="sv-btn"
+                          style={{ fontSize: '0.8rem', height: '32px' }}
+                        >
+                          <FolderSymlink size={13} style={{ color: '#2563EB' }} /> Abrir en Google Drive
+                        </a>
+                      )}
+                      <button
+                        type="button"
+                        onClick={handleDeleteAttachment}
+                        disabled={uploadingAttachment}
+                        className="sv-void"
+                        style={{ fontSize: '0.8rem', height: '32px' }}
+                      >
+                        <Trash2 size={13} /> Eliminar
+                      </button>
+                    </div>
+                  </div>
+
+                  <div style={{ borderTop: '1px solid var(--sv-line)', paddingTop: '12px' }}>
+                    <span style={{ fontSize: '0.74rem', fontWeight: 800, textTransform: 'uppercase', color: 'var(--sv-mute)', display: 'block', marginBottom: '8px' }}>
+                      Reemplazar o cambiar comprobante
+                    </span>
+                    <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                      <label className="sv-btn" style={{ cursor: 'pointer', fontSize: '0.8rem', height: '34px' }}>
+                        <UploadCloud size={14} /> <span>Subir otro archivo</span>
+                        <input type="file" onChange={handleFileUpload} disabled={uploadingAttachment} style={{ display: 'none' }} />
+                      </label>
+                      {data?.driveFolderUrl && (
+                        <a href={data.driveFolderUrl} target="_blank" rel="noopener noreferrer" className="sv-btn" style={{ fontSize: '0.8rem', height: '34px' }}>
+                          <FolderSymlink size={14} style={{ color: '#2563EB' }} /> Abrir carpeta Drive
+                        </a>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div style={{ marginTop: '12px' }}>
+                  <p className="sv-small sv-muted" style={{ marginBottom: '14px' }}>
+                    Adjuntá el comprobante de transferencia en cualquier formato (foto, imagen, PDF) o vinculá el link de Google Drive.
+                  </p>
+
+                  <div style={{ border: '2px dashed var(--sv-line)', borderRadius: '16px', padding: '24px 16px', textAlign: 'center', backgroundColor: 'var(--sv-soft)' }}>
+                    <UploadCloud size={32} style={{ color: 'var(--sv-magt)', margin: '0 auto 8px' }} />
+                    <div style={{ fontWeight: 800, fontSize: '0.92rem', marginBottom: '4px' }}>Subir archivo del comprobante</div>
+                    <div style={{ fontSize: '0.76rem', color: 'var(--sv-mute)', marginBottom: '14px' }}>Fotos, capturas, PDFs o documentos (cualquier formato)</div>
+                    <label className="sv-btn sv-btn--mag" style={{ cursor: 'pointer', display: 'inline-flex' }}>
+                      {uploadingAttachment ? <Loader2 size={15} className="animate-spin" /> : <Paperclip size={15} />}
+                      <span>{uploadingAttachment ? 'Subiendo archivo...' : 'Seleccionar archivo'}</span>
+                      <input type="file" onChange={handleFileUpload} disabled={uploadingAttachment} style={{ display: 'none' }} />
+                    </label>
+                  </div>
+
+                  <div style={{ marginTop: '18px', borderTop: '1px solid var(--sv-line)', paddingTop: '14px' }}>
+                    <label style={{ display: 'block', fontSize: '0.74rem', fontWeight: 800, textTransform: 'uppercase', color: 'var(--sv-mute)', marginBottom: '6px' }}>
+                      O vincular link de Google Drive
+                    </label>
+                    <div style={{ display: 'flex', gap: '8px' }}>
+                      <input
+                        type="url"
+                        placeholder="https://drive.google.com/file/d/..."
+                        value={attachmentDriveUrl}
+                        onChange={(e) => setAttachmentDriveUrl(e.target.value)}
+                        className="form-input"
+                        style={{ flex: 1, padding: '7px 12px', fontSize: '0.84rem' }}
+                      />
+                      <button
+                        type="button"
+                        onClick={handleSaveDriveUrl}
+                        disabled={uploadingAttachment || !attachmentDriveUrl.trim()}
+                        className="sv-btn sv-btn--mag"
+                      >
+                        Vincular
+                      </button>
+                    </div>
+                    {data?.driveFolderUrl && (
+                      <div style={{ marginTop: '8px', fontSize: '0.76rem', color: 'var(--sv-mute)' }}>
+                        📁 Carpeta oficial: <a href={data.driveFolderUrl} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--sv-magt)', fontWeight: 700 }}>Abrir Google Drive</a>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Modal de Configuración de Carpeta Google Drive */}
+        {driveFolderModal && (
+          <div className="sv-modal-overlay" onClick={() => setDriveFolderModal(false)}>
+            <div className="sv-modal" onClick={(e) => e.stopPropagation()}>
+              <div className="sv-modal-head">
+                <div>
+                  <h4>Carpeta de Google Drive</h4>
+                  <small className="sv-muted">Carpeta donde se guardan o respaldan comprobantes</small>
+                </div>
+                <button type="button" className="sv-ghost" onClick={() => setDriveFolderModal(false)}><X size={18} /></button>
+              </div>
+              <form onSubmit={handleSaveDriveFolder}>
+                <p className="sv-small sv-muted" style={{ marginBottom: '10px' }}>
+                  Pegá el link a la carpeta de Google Drive. Con este enlace configurado, podés abrirla directamente con un clic desde el botón de Google Drive en el panel.
+                </p>
+                <input
+                  type="url"
+                  required
+                  placeholder="https://drive.google.com/drive/folders/..."
+                  value={driveFolderInput}
+                  onChange={(e) => setDriveFolderInput(e.target.value)}
+                  className="form-input"
+                  style={{ width: '100%', padding: '10px 12px', fontSize: '0.88rem', marginBottom: '14px', boxSizing: 'border-box' }}
+                  autoFocus
+                />
+                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
+                  <button type="button" onClick={() => setDriveFolderModal(false)} className="sv-btn">Cancelar</button>
+                  <button type="submit" disabled={savingDriveFolder} className="sv-btn sv-btn--mag">
+                    {savingDriveFolder ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />} Guardar carpeta
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
       </main>
     </div>
   );
@@ -1158,4 +1744,36 @@ const SV_CSS = `
   .sv-ledger>div{padding:14px 16px}
   .sv-ledger .sv-num{font-size:1.4rem}
 }
+
+/* Quick-bar de alias del día */
+.sv-alias-bar{padding:14px 18px;border-bottom:1px solid var(--sv-line);background:color-mix(in srgb,var(--sv-soft) 40%,transparent)}
+.sv-alias-bar-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px}
+.sv-alias-pills{display:flex;gap:10px;overflow-x:auto;padding-bottom:4px;scrollbar-width:thin}
+.sv-alias-pill{background:var(--sv-card);border:1.5px solid var(--sv-line);border-radius:14px;padding:9px 13px;min-width:165px;cursor:pointer;text-align:left;transition:all .15s}
+.sv-alias-pill:hover{border-color:var(--sv-pink)}
+.sv-alias-pill.on{border-color:var(--sv-mag);background:color-mix(in srgb,var(--sv-mag) 8%,var(--sv-card));box-shadow:0 0 0 1px var(--sv-mag)}
+.sv-alias-pill--bad{border-color:#EF4444!important}
+.sv-alias-pill--bad.on{background:color-mix(in srgb,#EF4444 12%,var(--sv-card))}
+.sv-alias-pill--off{opacity:.6}
+.sv-alias-pill-top{display:flex;justify-content:space-between;align-items:baseline;gap:6px;margin-bottom:3px}
+.sv-alias-pill-title{font-size:.76rem;font-weight:800;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;display:flex;align-items:center;gap:4px}
+.sv-alias-pill-count{font-size:.68rem;color:var(--sv-mute);font-weight:700}
+.sv-alias-pill-amt{font-family:var(--font-display);font-size:1.15rem;font-weight:400;margin:2px 0}
+.sv-alias-pill-foot{display:flex;justify-content:space-between;align-items:center;font-size:.68rem;color:var(--sv-mute);font-weight:700;margin-top:4px}
+.sv-pill-tag{font-size:.6rem;background:#EF4444;color:#fff;padding:1px 5px;border-radius:4px;font-weight:900}
+.sv-pill-tag-gray{font-size:.6rem;background:var(--sv-soft);color:var(--sv-mute);padding:1px 5px;border-radius:4px}
+.sv-pill-note-btn{background:none;border:none;padding:0;font-size:.68rem;color:var(--sv-magt);font-weight:800;cursor:pointer;display:inline-flex;align-items:center;gap:3px}
+.sv-pill-note-btn:hover{text-decoration:underline}
+
+/* Modals */
+.sv-modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.65);backdrop-filter:blur(4px);-webkit-backdrop-filter:blur(4px);z-index:9999;display:grid;place-items:center;padding:16px}
+.sv-modal{background:var(--sv-card);border:1px solid var(--sv-line);border-radius:20px;padding:22px;width:100%;max-width:480px;box-shadow:var(--shadow-lg);position:relative}
+.sv-modal-head{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:14px}
+.sv-modal-head h4{margin:0;font-family:var(--font-display);font-size:1.25rem}
+
+/* Botones de Comprobante en la tabla */
+.sv-attach-badge{display:inline-flex;align-items:center;gap:5px;padding:4px 9px;border-radius:8px;background:color-mix(in srgb,var(--accent-emerald) 15%,transparent);color:var(--accent-emerald);font-size:.74rem;font-weight:800;border:1px solid color-mix(in srgb,var(--accent-emerald) 30%,transparent);cursor:pointer;max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.sv-attach-badge:hover{background:color-mix(in srgb,var(--accent-emerald) 25%,transparent)}
+.sv-btn-attach{display:inline-flex;align-items:center;gap:4px;padding:3px 8px;border-radius:8px;background:none;border:1px dashed var(--sv-line);color:var(--sv-mute);font-size:.72rem;font-weight:700;cursor:pointer}
+.sv-btn-attach:hover{border-color:var(--sv-mag);color:var(--sv-magt)}
 `;
