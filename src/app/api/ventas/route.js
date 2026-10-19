@@ -685,6 +685,11 @@ export async function POST(req) {
 
     case 'setDriveFolderUrl': {
       const url = String(body.url || '').trim();
+      if (!url) {
+        const { error } = await db.from('categories').delete().eq('id', '_config_transfers_gdrive_url');
+        if (error) return fail(500, 'No se pudo desvincular la carpeta de Google Drive.');
+        return NextResponse.json({ success: true, url: '' });
+      }
       const { error } = await db.from('categories').upsert({
         id: '_config_transfers_gdrive_url',
         name: url,

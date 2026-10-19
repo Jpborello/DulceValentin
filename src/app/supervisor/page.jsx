@@ -45,6 +45,7 @@ import {
   UploadCloud,
   Trash2,
   Edit3,
+  Settings,
   X
 } from 'lucide-react';
 import { supabase } from '@/lib/supabaseClient';
@@ -336,6 +337,7 @@ export default function SupervisorPage() {
   const [attachmentTransfer, setAttachmentTransfer] = useState(null);
   const [attachmentDriveUrl, setAttachmentDriveUrl] = useState('');
   const [uploadingAttachment, setUploadingAttachment] = useState(false);
+  const [copiedSuggestedName, setCopiedSuggestedName] = useState(false);
   const [driveFolderModal, setDriveFolderModal] = useState(false);
   const [driveFolderInput, setDriveFolderInput] = useState('');
   const [savingDriveFolder, setSavingDriveFolder] = useState(false);
@@ -373,6 +375,13 @@ export default function SupervisorPage() {
       setChecking(false);
     }
   }, [period, date]);
+
+  // Al cambiar la fecha o el período histórico, resetear filtros para ver todas las operaciones de la fecha
+  useEffect(() => {
+    setSelectedAliasFilter('ALL');
+    setSelectedSellerFilter('ALL');
+    setSearchQuery('');
+  }, [date, period]);
 
   // Verificar sesión activa
   useEffect(() => {
@@ -487,6 +496,66 @@ export default function SupervisorPage() {
     });
   }, [transfersList, selectedSellerFilter, selectedAliasFilter, searchQuery]);
 
+  const isToday = date === todayAR();
+
+  // Alias relevantes para la pestaña Transferencias en el período/día seleccionado:
+  // - Si es HOY (periodo día y es la fecha de hoy): mostramos los alias activos configurados (para monitorear cupos)
+  //   más cualquier alias que haya recibido transferencias hoy (aunque luego se haya archivado).
+  // - Si es una FECHA HISTÓRICA o período (ayer, días pasados, etc.):
+  //   SOLO mostramos los alias que REALMENTE tuvieron transferencias en ese día/período.
+  //   No arrastramos alias con 0 operaciones del día actual ni de otros días.
+  const transferAliases = useMemo(() => {
+    const aliases = data?.aliases || [];
+    const archivedAliases = data?.archivedAliases || [];
+    const all = [...aliases, ...archivedAliases];
+
+    if (period === 'day' && isToday) {
+      const list = [...aliases];
+      archivedAliases.forEach((a) => {
+        const hasOps = transfersList.some((t) => t.aliasId === a.id);
+        if (hasOps && !list.some((x) => x.id === a.id)) {
+          list.push(a);
+        }
+      });
+      return list;
+    }
+
+    const map = new Map();
+    all.forEach((a) => {
+      if (transfersList.some((t) => t.aliasId === a.id)) {
+        map.set(a.id, a);
+      }
+    });
+
+    // Por si hubiera transferencias con aliasId no presente en all
+    transfersList.forEach((t) => {
+      if (t.aliasId && !map.has(t.aliasId)) {
+        map.set(t.aliasId, {
+          id: t.aliasId,
+          alias: t.aliasName || 'Alias desconocido',
+          dailyLimit: null,
+          note: '',
+          active: true,
+          archived: false
+        });
+      }
+    });
+
+    return Array.from(map.values());
+  }, [data?.aliases, data?.archivedAliases, period, isToday, transfersList]);
+
+  const hasNoAliasTransfers = useMemo(() => {
+    return transfersList.some((t) => !t.aliasId);
+  }, [transfersList]);
+
+  const noAliasCount = useMemo(() => {
+    return transfersList.filter((t) => !t.aliasId).length;
+  }, [transfersList]);
+
+  const noAliasTotal = useMemo(() => {
+    return transfersList.filter((t) => !t.aliasId).reduce((acc, t) => acc + (t.amount || 0), 0);
+  }, [transfersList]);
+
   // Guardar anotación del día de un alias
   const handleSaveAliasNote = async (e, directText = null) => {
     if (e) e.preventDefault();
@@ -513,6 +582,39 @@ export default function SupervisorPage() {
     }
   };
 
+  // Helpers para Google Drive
+  const getGoogleDriveFileId = (url) => {
+    if (!url || typeof url !== 'string') return null;
+    const m1 = url.match(/\/file\/d\/([a-zA-Z0-9_-]+)/);
+    if (m1) return m1[1];
+    const m2 = url.match(/[?&]id=([a-zA-Z0-9_-]+)/);
+    if (m2) return m2[1];
+    return null;
+  };
+
+  const isGoogleDriveFolder = (url) => {
+    if (!url || typeof url !== 'string') return false;
+    return url.includes('/drive/folders/') || url.includes('/folders/');
+  };
+
+  // Nombre sugerido para normalizar comprobantes en Drive
+  const suggestedFileName = useMemo(() => {
+    if (!attachmentTransfer) return '';
+    const cleanSeller = (attachmentTransfer.sellerName || 'Vendedora').trim().replace(/[^a-zA-Z0-9áéíóúÁÉÍÓÚñÑ]/g, '');
+    const cleanAlias = (attachmentTransfer.aliasName || 'SinAlias').trim().replace(/[^a-zA-Z0-9]/g, '');
+    const amt = Math.round(Number(attachmentTransfer.amount || 0));
+    return `Comp_${attachmentTransfer.date}_${cleanAlias}_$${amt}_${cleanSeller}.jpg`;
+  }, [attachmentTransfer]);
+
+  const handleCopySuggestedName = (name) => {
+    if (!name) return;
+    try {
+      navigator.clipboard?.writeText(name);
+    } catch {}
+    setCopiedSuggestedName(true);
+    setTimeout(() => setCopiedSuggestedName(false), 2000);
+  };
+
   // Abrir o configurar carpeta de Google Drive
   const handleOpenDriveFolder = () => {
     if (data?.driveFolderUrl) {
@@ -523,23 +625,52 @@ export default function SupervisorPage() {
     }
   };
 
+  // Abrir modal de configuración de Google Drive
+  const handleConfigureDriveFolder = () => {
+    setDriveFolderInput(data?.driveFolderUrl || '');
+    setDriveFolderModal(true);
+  };
+
   // Guardar enlace de carpeta de Google Drive
   const handleSaveDriveFolder = async (e) => {
     e?.preventDefault();
-    if (!driveFolderInput.trim()) return;
+    const cleanUrl = driveFolderInput.trim();
+    if (!cleanUrl) return;
     setSavingDriveFolder(true);
     try {
       await api('/api/ventas', {
         method: 'POST',
         body: JSON.stringify({
           action: 'setDriveFolderUrl',
-          url: driveFolderInput.trim()
+          url: cleanUrl
         })
       });
       setDriveFolderModal(false);
       await loadData(true);
     } catch (err) {
       window.alert(err.message || 'No se pudo guardar la carpeta de Google Drive.');
+    } finally {
+      setSavingDriveFolder(false);
+    }
+  };
+
+  // Desvincular carpeta de Google Drive
+  const handleUnlinkDriveFolder = async () => {
+    if (!window.confirm('¿Seguro que deseás desvincular la carpeta de Google Drive? El acceso directo se quitará del panel (no se borrará ningún archivo de tu cuenta de Google Drive).')) return;
+    setSavingDriveFolder(true);
+    try {
+      await api('/api/ventas', {
+        method: 'POST',
+        body: JSON.stringify({
+          action: 'setDriveFolderUrl',
+          url: ''
+        })
+      });
+      setDriveFolderModal(false);
+      setDriveFolderInput('');
+      await loadData(true);
+    } catch (err) {
+      window.alert(err.message || 'No se pudo desvincular la carpeta de Google Drive.');
     } finally {
       setSavingDriveFolder(false);
     }
@@ -713,7 +844,6 @@ export default function SupervisorPage() {
   ) : null;
 
   const rangeLabel = !data ? '' : period === 'day' ? fmtDate(data.from) : `${fmtDate(data.from)} al ${fmtDate(data.to)}`;
-  const isToday = date === todayAR();
 
   // ---- Datos derivados para el diseño
   const prevTotal = (data?.sellers || []).reduce((acc, s) => acc + (Number(s.prevTotal) || 0), 0);
@@ -1085,48 +1215,64 @@ export default function SupervisorPage() {
                 {/* Filtro por alias */}
                 <select className="sv-input" value={selectedAliasFilter} onChange={(e) => setSelectedAliasFilter(e.target.value)}>
                   <option value="ALL">Todos los alias ({transfersList.length})</option>
-                  {aliases.map((a) => {
-                    const count = transfersList.filter((t) => t.aliasId === a.id).length;
-                    const isOver = a.dailyLimit && (a.receivedToday || 0) >= a.dailyLimit;
+                  {transferAliases.map((a) => {
+                    const ops = transfersList.filter((t) => t.aliasId === a.id);
+                    const totalOps = ops.reduce((acc, t) => acc + (t.amount || 0), 0);
+                    const isOver = a.dailyLimit && totalOps >= a.dailyLimit;
                     return (
                       <option key={a.id} value={a.id}>
-                        {a.alias} ({count} ops · {money(a.receivedToday)}){isOver ? ' 🚨' : ''}
+                        {a.alias} ({ops.length} ops · {money(totalOps)}){isOver ? ' 🚨' : ''}
                       </option>
                     );
                   })}
-                  {archivedWithOps.length > 0 && (
-                    <optgroup label="Archivados">
-                      {archivedWithOps.map((a) => (
-                        <option key={a.id} value={a.id}>{a.alias} · archivado ({a.countPeriod} ops · {money(a.receivedPeriod)})</option>
-                      ))}
-                    </optgroup>
+                  {hasNoAliasTransfers && (
+                    <option value="__NO_ALIAS__">Sin alias asignado ({noAliasCount} ops · {money(noAliasTotal)})</option>
                   )}
-                  <option value="__NO_ALIAS__">Sin alias asignado</option>
                 </select>
 
-                {/* Botón Google Drive */}
-                <button
-                  type="button"
-                  onClick={handleOpenDriveFolder}
-                  className="sv-btn"
-                  title={data?.driveFolderUrl ? 'Abrir carpeta de Google Drive de comprobantes' : 'Configurar enlace de carpeta de Google Drive'}
-                >
-                  <FolderSymlink size={15} style={{ color: '#2563EB' }} />
-                  <span>Google Drive</span>
-                </button>
+                {/* Botón y Configuración de Google Drive */}
+                <div style={{ display: 'inline-flex', alignItems: 'center', borderRadius: '12px', border: '1px solid var(--sv-line)', background: 'var(--sv-card)', overflow: 'hidden' }}>
+                  <button
+                    type="button"
+                    onClick={handleOpenDriveFolder}
+                    className="sv-btn"
+                    style={{ border: 'none', borderRadius: 0, height: '34px', padding: '0 11px', gap: '7px' }}
+                    title={data?.driveFolderUrl ? `Abrir carpeta oficial de comprobantes en Google Drive (${data.driveFolderUrl})` : 'Vincular carpeta oficial de Google Drive'}
+                  >
+                    <FolderSymlink size={15} style={{ color: data?.driveFolderUrl ? '#2563EB' : 'var(--sv-mute)' }} />
+                    <span style={{ fontSize: '0.8rem', fontWeight: 700 }}>Google Drive</span>
+                    {data?.driveFolderUrl ? (
+                      <span
+                        style={{ width: '7px', height: '7px', borderRadius: '50%', backgroundColor: '#10B981', display: 'inline-block', boxShadow: '0 0 6px rgba(16,185,129,0.7)' }}
+                        title="Carpeta de Google Drive vinculada"
+                      />
+                    ) : (
+                      <span style={{ fontSize: '0.68rem', color: 'var(--sv-mute)', fontWeight: 600 }}>(Sin vincular)</span>
+                    )}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleConfigureDriveFolder}
+                    className="sv-btn"
+                    style={{ border: 'none', borderLeft: '1px solid var(--sv-line)', borderRadius: 0, height: '34px', padding: '0 9px', color: 'var(--sv-mute)' }}
+                    title="Configurar / Cambiar carpeta de Google Drive"
+                  >
+                    <Settings size={14} />
+                  </button>
+                </div>
               </div>
             </div>
 
-            {/* Barra interactiva de Alias del Día */}
-            {aliases.length > 0 && (
+            {/* Barra interactiva de Alias del Día / Período */}
+            {(transferAliases.length > 0 || hasNoAliasTransfers) && (
               <div className="sv-alias-bar">
                 <div className="sv-alias-bar-header">
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                     <Wallet size={15} style={{ color: 'var(--sv-magt)' }} />
                     <span style={{ fontSize: '0.78rem', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-                      Alias del día {fmtDate(date)}
+                      {period === 'day' ? `Alias del día ${fmtDate(date)}` : period === 'week' ? 'Alias de la semana' : 'Alias del mes'}
                     </span>
-                    <span className="sv-count">{aliases.length}</span>
+                    <span className="sv-count">{transferAliases.length + (hasNoAliasTransfers ? 1 : 0)}</span>
                   </div>
                   {selectedAliasFilter !== 'ALL' && (
                     <button
@@ -1155,22 +1301,27 @@ export default function SupervisorPage() {
                     </div>
                   </button>
 
-                  {[...aliases, ...archivedWithOps].map((a) => {
+                  {transferAliases.map((a) => {
                     const ops = transfersList.filter((t) => t.aliasId === a.id);
                     const totalOps = ops.reduce((acc, t) => acc + (t.amount || 0), 0);
-                    const isOver = a.dailyLimit && (a.receivedToday || 0) >= a.dailyLimit;
+                    const isOver = a.dailyLimit && totalOps >= a.dailyLimit;
                     const isSelected = selectedAliasFilter === a.id;
+                    const showArchivedBadge = isToday && a.archived;
+                    const showPauseBadge = isToday && !a.active && !a.archived;
+                    const isOff = isToday && !a.active;
+
                     return (
                       <div
                         key={a.id}
-                        className={`sv-alias-pill ${isSelected ? 'on' : ''} ${isOver ? 'sv-alias-pill--bad' : ''} ${!a.active ? 'sv-alias-pill--off' : ''}`}
+                        className={`sv-alias-pill ${isSelected ? 'on' : ''} ${isOver ? 'sv-alias-pill--bad' : ''} ${isOff ? 'sv-alias-pill--off' : ''}`}
                         onClick={() => setSelectedAliasFilter(isSelected ? 'ALL' : a.id)}
                       >
                         <div className="sv-alias-pill-top">
                           <span className="sv-alias-pill-title">
                             {a.alias}
                             {isOver && <span className="sv-pill-tag">🚨 Tope</span>}
-                            {a.archived ? <span className="sv-pill-tag-gray">Archivado</span> : !a.active && <span className="sv-pill-tag-gray">Pausa</span>}
+                            {showArchivedBadge && <span className="sv-pill-tag-gray">Archivado</span>}
+                            {showPauseBadge && <span className="sv-pill-tag-gray">Pausa</span>}
                           </span>
                           <span className="sv-alias-pill-count">{ops.length} ops</span>
                         </div>
@@ -1193,6 +1344,22 @@ export default function SupervisorPage() {
                       </div>
                     );
                   })}
+
+                  {hasNoAliasTransfers && (
+                    <div
+                      className={`sv-alias-pill ${selectedAliasFilter === '__NO_ALIAS__' ? 'on' : ''}`}
+                      onClick={() => setSelectedAliasFilter(selectedAliasFilter === '__NO_ALIAS__' ? 'ALL' : '__NO_ALIAS__')}
+                    >
+                      <div className="sv-alias-pill-top">
+                        <span className="sv-alias-pill-title">Sin alias</span>
+                        <span className="sv-alias-pill-count">{noAliasCount} ops</span>
+                      </div>
+                      <div className="sv-alias-pill-amt">{money(noAliasTotal)}</div>
+                      <div className="sv-alias-pill-foot">
+                        <span>Sin alias asignado</span>
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
             )}
@@ -1434,15 +1601,49 @@ export default function SupervisorPage() {
                       )}
                     </div>
 
-                    {/* Previsualización si es imagen */}
-                    {attachmentTransfer.attachment.url && (attachmentTransfer.attachment.url.match(/\.(jpeg|jpg|gif|png|webp)($|\?)/i) || (attachmentTransfer.attachment.fileType && attachmentTransfer.attachment.fileType.startsWith('image/'))) && (
+                    {/* Previsualización si es imagen subida a Supabase */}
+                    {attachmentTransfer.attachment.url && !attachmentTransfer.attachment.driveUrl && (attachmentTransfer.attachment.url.match(/\.(jpeg|jpg|gif|png|webp)($|\?)/i) || (attachmentTransfer.attachment.fileType && attachmentTransfer.attachment.fileType.startsWith('image/'))) && (
                       <div style={{ textAlign: 'center', maxHeight: '280px', overflow: 'hidden', borderRadius: '10px', marginTop: '8px', backgroundColor: '#000' }}>
                         <img src={attachmentTransfer.attachment.url} alt="Comprobante" style={{ maxHeight: '280px', maxWidth: '100%', objectFit: 'contain' }} />
                       </div>
                     )}
 
+                    {/* Previsualización si es enlace de Google Drive */}
+                    {attachmentTransfer.attachment.driveUrl && (() => {
+                      const fileId = getGoogleDriveFileId(attachmentTransfer.attachment.driveUrl);
+                      return (
+                        <div style={{ borderRadius: '12px', overflow: 'hidden', marginTop: '10px', border: '1px solid var(--sv-line)', backgroundColor: '#0f172a' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '6px 12px', backgroundColor: 'rgba(255,255,255,0.06)', fontSize: '0.74rem' }}>
+                            <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', color: '#93c5fd', fontWeight: 700 }}>
+                              <FolderSymlink size={13} /> Vista previa de Google Drive
+                            </span>
+                            <a
+                              href={attachmentTransfer.attachment.driveUrl}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              style={{ color: '#fff', fontWeight: 700, fontSize: '0.72rem', textDecoration: 'underline' }}
+                            >
+                              Pantalla completa ↗
+                            </a>
+                          </div>
+                          {fileId ? (
+                            <iframe
+                              src={`https://drive.google.com/file/d/${fileId}/preview`}
+                              style={{ width: '100%', height: '280px', border: 'none', display: 'block', backgroundColor: '#1e293b' }}
+                              allow="autoplay"
+                              title="Vista previa del comprobante"
+                            />
+                          ) : (
+                            <div style={{ padding: '20px 16px', textAlign: 'center', color: '#94a3b8', fontSize: '0.8rem' }}>
+                              Este enlace abre una carpeta o recurso externo en Google Drive.
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })()}
+
                     <div style={{ display: 'flex', gap: '8px', marginTop: '12px', flexWrap: 'wrap' }}>
-                      {attachmentTransfer.attachment.url && (
+                      {attachmentTransfer.attachment.url && !attachmentTransfer.attachment.driveUrl && (
                         <a
                           href={attachmentTransfer.attachment.url}
                           target="_blank"
@@ -1495,6 +1696,24 @@ export default function SupervisorPage() {
                 </div>
               ) : (
                 <div style={{ marginTop: '12px' }}>
+                  {/* Sugerencia de nombre para guardar y organizar en Drive */}
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', backgroundColor: 'var(--sv-soft)', border: '1px dashed var(--sv-line)', borderRadius: '12px', padding: '9px 12px', marginBottom: '14px', gap: '8px' }}>
+                    <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: '0.76rem' }}>
+                      <span style={{ color: 'var(--sv-mute)', fontWeight: 600 }}>Nombre sugerido: </span>
+                      <code style={{ fontWeight: 800, color: 'var(--sv-magt)' }}>{suggestedFileName}</code>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => handleCopySuggestedName(suggestedFileName)}
+                      className="sv-btn"
+                      style={{ height: '26px', padding: '0 8px', fontSize: '0.72rem', flexShrink: 0 }}
+                      title="Copiar nombre sugerido para guardar el archivo"
+                    >
+                      {copiedSuggestedName ? <Check size={12} style={{ color: '#10B981' }} /> : <Copy size={12} />}
+                      <span>{copiedSuggestedName ? '¡Copiado!' : 'Copiar'}</span>
+                    </button>
+                  </div>
+
                   <p className="sv-small sv-muted" style={{ marginBottom: '14px' }}>
                     Adjuntá el comprobante de transferencia en cualquier formato (foto, imagen, PDF) o vinculá el link de Google Drive.
                   </p>
@@ -1532,9 +1751,20 @@ export default function SupervisorPage() {
                         Vincular
                       </button>
                     </div>
+
+                    {isGoogleDriveFolder(attachmentDriveUrl) && (
+                      <div style={{ marginTop: '6px', fontSize: '0.74rem', color: '#F59E0B', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                        <AlertTriangle size={13} />
+                        <span>Atención: parece un enlace de carpeta. Para el comprobante debés copiar el link del archivo.</span>
+                      </div>
+                    )}
+
                     {data?.driveFolderUrl && (
-                      <div style={{ marginTop: '8px', fontSize: '0.76rem', color: 'var(--sv-mute)' }}>
-                        📁 Carpeta oficial: <a href={data.driveFolderUrl} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--sv-magt)', fontWeight: 700 }}>Abrir Google Drive</a>
+                      <div style={{ marginTop: '10px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '0.76rem', color: 'var(--sv-mute)', backgroundColor: 'var(--sv-soft)', padding: '6px 10px', borderRadius: '8px' }}>
+                        <span>📁 Carpeta oficial de Drive del local</span>
+                        <a href={data.driveFolderUrl} target="_blank" rel="noopener noreferrer" style={{ color: '#2563EB', fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                          <FolderSymlink size={13} /> Abrir para subir
+                        </a>
                       </div>
                     )}
                   </div>
@@ -1547,18 +1777,57 @@ export default function SupervisorPage() {
         {/* Modal de Configuración de Carpeta Google Drive */}
         {driveFolderModal && (
           <div className="sv-modal-overlay" onClick={() => setDriveFolderModal(false)}>
-            <div className="sv-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="sv-modal" style={{ maxWidth: '500px' }} onClick={(e) => e.stopPropagation()}>
               <div className="sv-modal-head">
-                <div>
-                  <h4>Carpeta de Google Drive</h4>
-                  <small className="sv-muted">Carpeta donde se guardan o respaldan comprobantes</small>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                  <div style={{ width: '36px', height: '36px', borderRadius: '10px', backgroundColor: 'rgba(37,99,235,0.12)', display: 'grid', placeItems: 'center', color: '#2563EB', flexShrink: 0 }}>
+                    <FolderSymlink size={20} />
+                  </div>
+                  <div>
+                    <h4 style={{ margin: 0 }}>Carpeta de Google Drive</h4>
+                    <small className="sv-muted">Carpeta oficial donde se respaldan los comprobantes</small>
+                  </div>
                 </div>
                 <button type="button" className="sv-ghost" onClick={() => setDriveFolderModal(false)}><X size={18} /></button>
               </div>
+
+              {/* Si ya hay una carpeta configurada, mostrar estado actual */}
+              {data?.driveFolderUrl && (
+                <div style={{ backgroundColor: 'var(--sv-soft)', border: '1px solid var(--sv-line)', borderRadius: '12px', padding: '12px 14px', marginBottom: '16px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px' }}>
+                    <span style={{ fontSize: '0.74rem', fontWeight: 800, textTransform: 'uppercase', color: '#10B981', display: 'inline-flex', alignItems: 'center', gap: '5px' }}>
+                      <CheckCircle2 size={13} /> Carpeta actualmente vinculada
+                    </span>
+                    <button
+                      type="button"
+                      onClick={handleUnlinkDriveFolder}
+                      disabled={savingDriveFolder}
+                      className="sv-void"
+                      style={{ fontSize: '0.72rem', height: '26px', padding: '0 8px', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
+                      title="Quitar vinculación de esta carpeta"
+                    >
+                      <Trash2 size={12} /> Desvincular
+                    </button>
+                  </div>
+                  <div style={{ fontSize: '0.78rem', color: 'var(--sv-mute)', wordBreak: 'break-all', marginBottom: '8px' }}>
+                    {data.driveFolderUrl}
+                  </div>
+                  <a
+                    href={data.driveFolderUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="sv-btn"
+                    style={{ fontSize: '0.76rem', height: '28px', display: 'inline-flex', alignItems: 'center', gap: '5px' }}
+                  >
+                    <ExternalLink size={12} /> Abrir carpeta actual en Drive
+                  </a>
+                </div>
+              )}
+
               <form onSubmit={handleSaveDriveFolder}>
-                <p className="sv-small sv-muted" style={{ marginBottom: '10px' }}>
-                  Pegá el link a la carpeta de Google Drive. Con este enlace configurado, podés abrirla directamente con un clic desde el botón de Google Drive en el panel.
-                </p>
+                <label style={{ display: 'block', fontSize: '0.76rem', fontWeight: 800, textTransform: 'uppercase', color: 'var(--sv-mute)', marginBottom: '6px' }}>
+                  {data?.driveFolderUrl ? 'Cambiar por otro enlace de carpeta:' : 'Pegá el enlace de la carpeta de Drive:'}
+                </label>
                 <input
                   type="url"
                   required
@@ -1566,13 +1835,24 @@ export default function SupervisorPage() {
                   value={driveFolderInput}
                   onChange={(e) => setDriveFolderInput(e.target.value)}
                   className="form-input"
-                  style={{ width: '100%', padding: '10px 12px', fontSize: '0.88rem', marginBottom: '14px', boxSizing: 'border-box' }}
+                  style={{ width: '100%', padding: '10px 12px', fontSize: '0.88rem', marginBottom: '12px', boxSizing: 'border-box' }}
                   autoFocus
                 />
+
+                {/* Guía rápida para copiar el link correcto */}
+                <div style={{ backgroundColor: 'color-mix(in srgb, var(--sv-soft) 60%, transparent)', border: '1px dashed var(--sv-line)', borderRadius: '10px', padding: '10px 12px', marginBottom: '16px', fontSize: '0.75rem', color: 'var(--sv-mute)', lineHeight: '1.4' }}>
+                  <b style={{ color: 'var(--sv-text)', display: 'block', marginBottom: '4px' }}>¿Cómo obtener el enlace de tu cuenta?</b>
+                  1. Entrá a Google Drive con la cuenta del negocio.<br />
+                  2. Clic derecho en la carpeta ➔ <b>Compartir</b> ➔ <b>Compartir</b>.<br />
+                  3. En &quot;Acceso general&quot;, seleccioná <b>&quot;Cualquier persona con el enlace&quot;</b>.<br />
+                  4. Hacé clic en <b>&quot;Copiar enlace&quot;</b> y pegalo acá arriba.
+                </div>
+
                 <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
                   <button type="button" onClick={() => setDriveFolderModal(false)} className="sv-btn">Cancelar</button>
-                  <button type="submit" disabled={savingDriveFolder} className="sv-btn sv-btn--mag">
-                    {savingDriveFolder ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />} Guardar carpeta
+                  <button type="submit" disabled={savingDriveFolder || !driveFolderInput.trim()} className="sv-btn sv-btn--mag">
+                    {savingDriveFolder ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />}
+                    <span>{data?.driveFolderUrl ? 'Actualizar carpeta' : 'Vincular carpeta'}</span>
                   </button>
                 </div>
               </form>
