@@ -318,13 +318,26 @@ function Login({ onLogged }) {
 }
 
 // ---------------------------------------------------------------- Venta / vale
-function EntryModal({ kind, seller, date, onClose, onSaved }) {
+function EntryModal({ kind, seller, date, aliases = [], onClose, onSaved }) {
   const [amount, setAmount] = useState('');
   const [method, setMethod] = useState('efectivo');
   const [note, setNote] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const [aliasChoice, setAliasChoice] = useState(null);
+  const [copied, setCopied] = useState('');
   const isSale = kind === 'sale';
+  // Venta por transferencia: se elige a qué alias del día entró (se sugiere
+  // el primero que acepta el monto, igual que en la carga rápida).
+  const activeAliases = aliases.filter((a) => a.active);
+  const showAliases = isSale && method === 'transferencia' && activeAliases.length > 0;
+  const amountNum = Number(amount) || 0;
+  const chosenAlias = showAliases ? pickAlias(activeAliases, amountNum, aliasChoice) : null;
+  const copyAlias = (alias) => {
+    navigator.clipboard?.writeText(alias);
+    setCopied(alias);
+    setTimeout(() => setCopied(''), 1500);
+  };
 
   const save = async () => {
     if (!amountOk(amount)) {
@@ -341,6 +354,7 @@ function EntryModal({ kind, seller, date, onClose, onSaved }) {
         date,
         amount: Number(amount),
         method,
+        aliasId: chosenAlias?.id || null,
         note
       });
       onSaved(queued);
@@ -357,6 +371,55 @@ function EntryModal({ kind, seller, date, onClose, onSaved }) {
       <AmountInput value={amount} onChange={setAmount} placeholder="Monto $" autoFocus />
       {!isSale && <div style={{ fontSize: '0.78rem', fontWeight: 700, color: 'var(--text-muted)', marginBottom: '4px' }}>¿Cómo se le dio?</div>}
       <MethodToggle value={method} onChange={setMethod} />
+      {showAliases && (
+        <div style={{ marginBottom: '12px' }}>
+          <div style={{ fontSize: '0.78rem', fontWeight: 800, color: 'var(--text-muted)', marginBottom: '6px' }}>¿A qué alias transfirió?</div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+            {activeAliases.map((a) => {
+              const st = aliasStatus(a, amountNum);
+              const sel = chosenAlias?.id === a.id;
+              const rem = aliasRemaining(a);
+              return (
+                <div
+                  key={a.id}
+                  role="button"
+                  tabIndex={st.ok ? 0 : -1}
+                  onClick={() => st.ok && setAliasChoice(a.id)}
+                  onKeyDown={(e) => { if ((e.key === 'Enter' || e.key === ' ') && st.ok) { e.preventDefault(); setAliasChoice(a.id); } }}
+                  style={{
+                    display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px',
+                    padding: '8px 10px', borderRadius: '10px', cursor: st.ok ? 'pointer' : 'not-allowed',
+                    border: sel ? '2px solid #10B981' : '1px solid var(--border-color)',
+                    backgroundColor: sel ? 'rgba(16, 185, 129, 0.12)' : 'var(--bg-card)',
+                    opacity: st.ok ? 1 : 0.5
+                  }}
+                >
+                  <div style={{ minWidth: 0 }}>
+                    <div style={{ fontFamily: 'monospace', fontWeight: 900, fontSize: '0.92rem', wordBreak: 'break-all', color: 'var(--text-main)' }}>
+                      {sel ? '✓ ' : ''}{a.alias}
+                    </div>
+                    <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>
+                      {[a.holder, a.bank].filter(Boolean).join(' · ')}
+                      {rem !== null ? ` · quedan ${money(rem)}` : ''}
+                    </div>
+                    {a.description && <div style={{ fontSize: '0.74rem', fontWeight: 700, color: '#D97706' }}>“{a.description}”</div>}
+                    {st.reason && <div style={{ fontSize: '0.72rem', fontWeight: 800, color: st.ok ? '#D97706' : '#DC2626' }}>{st.reason}</div>}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={(e) => { e.stopPropagation(); copyAlias(a.alias); }}
+                    className="btn-secondary"
+                    style={{ padding: '4px 8px', fontSize: '0.72rem', flexShrink: 0, display: 'inline-flex', alignItems: 'center', gap: '4px' }}
+                    title="Copiar alias"
+                  >
+                    {copied === a.alias ? <CheckCheck size={13} /> : <Copy size={13} />}
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
       <input value={note} onChange={(e) => setNote(e.target.value)} placeholder={isSale ? 'Nota (opcional)' : 'Motivo (opcional)'} className="form-input" style={{ width: '100%', marginBottom: '12px' }} />
       {error && <div role="alert" style={{ color: '#B91C1C', fontSize: '0.84rem', fontWeight: 600, marginBottom: '10px' }}>{error}</div>}
       <SaveButton busy={busy} amount={amount} onSave={save} />
@@ -2538,7 +2601,7 @@ export default function VentasPage() {
           </>
         )}
 
-        {entry && <EntryModal kind={entry.kind} seller={entry.seller} date={date} onClose={() => setEntry(null)} onSaved={afterSave} />}
+        {entry && <EntryModal kind={entry.kind} seller={entry.seller} date={date} aliases={data?.aliases || []} onClose={() => setEntry(null)} onSaved={afterSave} />}
         {payoutSeller && data && <PayoutModal seller={payoutSeller} data={data} onClose={() => setPayoutSeller(null)} onSaved={afterSave} />}
         {showCash && data?.cash && <CashCountModal date={date} cash={data.cash} onClose={() => { setShowCash(false); load(); }} onSaved={(queued) => { if (queued) afterSave(true); }} />}
         {detailSeller && data && <DetailModal seller={detailSeller} periodFrom={data.from} periodTo={data.to} onClose={() => setDetailSeller(null)} onChanged={load} />}
