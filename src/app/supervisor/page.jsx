@@ -728,6 +728,18 @@ export default function SupervisorPage() {
   const ranking = [...(data?.sellers || [])].sort((a, b) => b.total - a.total);
   const topTotal = ranking[0]?.total || 0;
   const aliases = data?.aliases || [];
+  // Alias "sacados": no se usan para cobrar, pero su historial se sigue viendo
+  const archivedAliases = data?.archivedAliases || [];
+  const archivedWithOps = archivedAliases.filter((a) => a.countPeriod > 0);
+  const restoreAlias = async (a) => {
+    if (!window.confirm(`¿Volver a activar el alias ${a.alias}?`)) return;
+    try {
+      await api('/api/ventas', { method: 'POST', body: JSON.stringify({ action: 'restoreAlias', id: a.id }) });
+      loadData(true);
+    } catch (err) {
+      window.alert(err.message || 'No se pudo restaurar.');
+    }
+  };
   const ringR = 46;
   const ringC = 2 * Math.PI * ringR;
 
@@ -1029,6 +1041,27 @@ export default function SupervisorPage() {
               </div>
             </div>
             <AliasCards />
+
+            {archivedAliases.length > 0 && (
+              <div className="sv-archived">
+                <div className="sv-mov-h"><span className="sv-label">Alias archivados</span><span className="sv-count">{archivedAliases.length}</span></div>
+                <p className="sv-muted sv-small">No aparecen en el mostrador, pero sus transferencias quedan guardadas para siempre y se ven en Transferencias.</p>
+                <div className="sv-archived-list">
+                  {archivedAliases.map((a) => (
+                    <div key={a.id} className="sv-archived-row">
+                      <div>
+                        <code>{a.alias}</code> <span className="sv-muted">· {[a.holder, a.bank].filter(Boolean).join(' · ') || 'Sin titular'}</span>
+                        <small className="sv-block sv-muted">{a.countPeriod} transferencia{a.countPeriod === 1 ? '' : 's'} en el período · {money(a.receivedPeriod)}</small>
+                      </div>
+                      <div className="sv-tools">
+                        {a.countPeriod > 0 && <button type="button" className="sv-btn" onClick={() => { setSelectedAliasFilter(a.id); setActiveTab('transfers'); }}>Ver transferencias</button>}
+                        <button type="button" className="sv-btn" onClick={() => restoreAlias(a)}>Restaurar</button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </section>
         )}
 
@@ -1061,6 +1094,13 @@ export default function SupervisorPage() {
                       </option>
                     );
                   })}
+                  {archivedWithOps.length > 0 && (
+                    <optgroup label="Archivados">
+                      {archivedWithOps.map((a) => (
+                        <option key={a.id} value={a.id}>{a.alias} · archivado ({a.countPeriod} ops · {money(a.receivedPeriod)})</option>
+                      ))}
+                    </optgroup>
+                  )}
                   <option value="__NO_ALIAS__">Sin alias asignado</option>
                 </select>
 
@@ -1115,7 +1155,7 @@ export default function SupervisorPage() {
                     </div>
                   </button>
 
-                  {aliases.map((a) => {
+                  {[...aliases, ...archivedWithOps].map((a) => {
                     const ops = transfersList.filter((t) => t.aliasId === a.id);
                     const totalOps = ops.reduce((acc, t) => acc + (t.amount || 0), 0);
                     const isOver = a.dailyLimit && (a.receivedToday || 0) >= a.dailyLimit;
@@ -1130,7 +1170,7 @@ export default function SupervisorPage() {
                           <span className="sv-alias-pill-title">
                             {a.alias}
                             {isOver && <span className="sv-pill-tag">🚨 Tope</span>}
-                            {!a.active && <span className="sv-pill-tag-gray">Pausa</span>}
+                            {a.archived ? <span className="sv-pill-tag-gray">Archivado</span> : !a.active && <span className="sv-pill-tag-gray">Pausa</span>}
                           </span>
                           <span className="sv-alias-pill-count">{ops.length} ops</span>
                         </div>
@@ -1714,6 +1754,10 @@ const SV_CSS = `
 .sv-mov{margin-top:20px}
 .sv-mov:first-of-type{margin-top:6px}
 .sv-mov-h{display:flex;align-items:center;gap:8px;margin-bottom:8px}
+.sv-archived{margin-top:24px;padding-top:18px;border-top:1px dashed var(--sv-line)}
+.sv-archived-list{display:flex;flex-direction:column;gap:8px;margin-top:10px}
+.sv-archived-row{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;padding:10px 14px;border:1px solid var(--sv-line);border-radius:14px;background:var(--sv-soft)}
+.sv-archived-row code{font-weight:800}
 
 .sv-podium{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-bottom:18px;align-items:end}
 .sv-pod{text-align:center;padding:22px 18px}

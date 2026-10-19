@@ -85,7 +85,6 @@ async function loadAliases(date, sales) {
     db
       .from('payment_aliases')
       .select('*')
-      .eq('archived', false)
       .order('sort', { ascending: true })
       .order('created_at', { ascending: true }),
     db
@@ -123,6 +122,7 @@ async function loadAliases(date, sales) {
     active: a.active,
     receivedToday: round2(received[a.id] || 0),
     countToday: counts[a.id] || 0,
+    archived: Boolean(a.archived),
     note: notesByAliasId[a.id] || ''
   }));
 }
@@ -323,13 +323,16 @@ export async function GET(req) {
     }))
     .sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
 
-  const [aliases, attRes, gdriveRes] = await Promise.all([
+  const [allAliases, attRes, gdriveRes] = await Promise.all([
     loadAliases(date, ledger.sales),
     db.from('categories').select('id, name, subcategories').like('id', '_config_transfer_att_%'),
     db.from('categories').select('name').eq('id', '_config_transfers_gdrive_url').maybeSingle()
   ]);
 
-  const aliasNameById = Object.fromEntries(aliases.map((a) => [a.id, a.alias]));
+  // Los alias archivados ("sacados") no se ofrecen para cobrar, pero sus
+  // transferencias siguen en el historial con su nombre: nunca se pierden.
+  const aliases = allAliases.filter((a) => !a.archived);
+  const aliasNameById = Object.fromEntries(allAliases.map((a) => [a.id, a.alias]));
   const attMap = {};
   (attRes?.data || []).forEach((r) => {
     const key = r.id.replace('_config_transfer_att_', '');
@@ -347,7 +350,8 @@ export async function GET(req) {
   });
 
   periodTransfers.forEach((t) => {
-    t.aliasName = t.aliasId ? (aliasNameById[t.aliasId] || 'Alias archivado') : '';
+    t.aliasName = t.aliasId ? (aliasNameById[t.aliasId] || 'Alias desconocido') : '';
+    t.aliasArchived = Boolean(t.aliasId && allAliases.find((a) => a.id === t.aliasId)?.archived);
     t.attachment = attMap[String(t.id)] || attMap[t.clientRef] || null;
   });
 
@@ -446,7 +450,20 @@ export async function GET(req) {
     };
   }
 
-  const body = { period, date, from, to, prev, sellers: summary, cash, dailyAlias, aliases, dayTransfers, periodTransfers, supervisorData, driveFolderUrl };
+  // Archivados con lo que recibieron en el periodo (para mostrarlos en el historial)
+  const periodByAlias = {};
+  periodTransfers.forEach((t) => {
+    if (!t.aliasId) return;
+    const cur = periodByAlias[t.aliasId] || { received: 0, count: 0 };
+    cur.received += t.amount;
+    cur.count += 1;
+    periodByAlias[t.aliasId] = cur;
+  });
+  const archivedAliases = allAliases
+    .filter((a) => a.archived)
+    .map((a) => ({ ...a, active: false, receivedPeriod: round2(periodByAlias[a.id]?.received || 0), countPeriod: periodByAlias[a.id]?.count || 0 }));
+
+  const body = { period, date, from, to, prev, sellers: summary, cash, dailyAlias, aliases, archivedAliases, dayTransfers, periodTransfers, supervisorData, driveFolderUrl };
   if (sellerId) {
     const mine = (rows, key) => rows.filter((x) => x.seller_id === sellerId && inRange(x[key], from, to));
     body.detail = {
@@ -487,7 +504,7 @@ function parseAmount(v, { allowZero = false } = {}) {
 //   setActive    { sellerId, active }
 //   addSale      { clientRef, sellerId, date, amount, method, note, aliasId? }
 //   saveAlias    { id?, alias, holder, bank, description, minAmount, maxAmount, dailyLimit, active }
-//   setAliasActive { id, active } · archiveAlias { id } · reorderAliases { ids }
+//   setAliasActive { id, active } · archiveAlias { id } · restoreAlias { id } · reorderAliases { ids }
 //   addAdvance   { clientRef, sellerId, date, amount, method, note }
 //   addPayout    { clientRef, sellerId, date, amount, method, periodFrom, periodTo, note }
 //   addCashCount { clientRef, date, openingFloat, counted, note }
@@ -574,11 +591,14 @@ export async function POST(req) {
     }
 
     case 'setAliasActive':
-    case 'archiveAlias': {
+    case 'archiveAlias':
+    case 'restoreAlias': {
       if (!uuidRe.test(String(body.id || ''))) return fail(400, 'Alias inválido.');
       const patch = body.action === 'archiveAlias'
         ? { archived: true, active: false }
-        : { active: Boolean(body.active) };
+        : body.action === 'restoreAlias'
+          ? { archived: false, active: true }
+          : { active: Boolean(body.active) };
       const { error } = await db.from('payment_aliases').update({ ...patch, updated_at: new Date().toISOString() }).eq('id', body.id);
       if (error) return fail(500, 'No se pudo guardar.');
       return NextResponse.json({ success: true });

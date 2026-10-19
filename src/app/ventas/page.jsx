@@ -1868,7 +1868,7 @@ function DailyAliasSection({
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '6px' }}>
                   <div style={{ minWidth: 0 }}>
                     <div style={{ fontSize: '0.68rem', fontWeight: 800, color: 'var(--text-muted)' }}>
-                      {idx + 1}. {!a.active ? 'PAUSADO' : full ? 'TOPE LLENO' : near ? 'CASI LLENO' : 'ACTIVO'}
+                      {idx + 1}. {a.archived ? 'ARCHIVADO' : !a.active ? 'PAUSADO' : full ? 'TOPE LLENO' : near ? 'CASI LLENO' : 'ACTIVO'}
                     </div>
                     <div style={{ fontFamily: 'monospace', fontWeight: 900, fontSize: '0.98rem', wordBreak: 'break-all' }}>{a.alias}</div>
                   </div>
@@ -2404,7 +2404,7 @@ export default function VentasPage() {
               <DailyAliasSection
                 date={date}
                 aliasConfig={data.dailyAlias}
-                aliases={data.aliases || []}
+                aliases={[...(data.aliases || []), ...(data.archivedAliases || []).filter((a) => a.countToday > 0)]}
                 transfers={data.dayTransfers || []}
                 sellers={data.sellers}
                 numberMap={assignedNumbers}
