@@ -6,7 +6,7 @@
 // "Sacar" archiva el alias (las ventas viejas siguen mostrando a dónde entraron).
 
 import { useEffect, useState } from 'react';
-import { X, Plus, Save, Loader2, ArrowUp, ArrowDown, Archive, Pause, Play, Pencil } from 'lucide-react';
+import { X, Plus, Save, Loader2, ArrowUp, ArrowDown, Archive, Pause, Play, Pencil, History } from 'lucide-react';
 import { aliasRules } from '@/lib/aliasPick';
 
 const money = (n) => `$${Number(n || 0).toLocaleString('es-AR', { maximumFractionDigits: 0 })}`;
@@ -28,7 +28,7 @@ function emptyForm(a) {
   };
 }
 
-function AliasForm({ initial, onCancel, onSave }) {
+function AliasForm({ initial, archivedAliases = [], onCancel, onSave }) {
   const [f, setF] = useState(() => emptyForm(initial));
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
@@ -66,6 +66,34 @@ function AliasForm({ initial, onCancel, onSave }) {
   return (
     <form onSubmit={submit} style={{ border: '2px solid var(--dv-accent-fill, #A8175A)', borderRadius: '12px', padding: '12px', backgroundColor: 'var(--bg-surface-elevated, var(--bg-card))' }}>
       {error && <div role="alert" style={{ fontSize: '0.8rem', fontWeight: 700, color: '#B91C1C', backgroundColor: '#FEF2F2', padding: '6px 9px', borderRadius: '8px', marginBottom: '8px' }}>{error}</div>}
+
+      {/* Selector rápido para reactivar un alias existente del historial */}
+      {archivedAliases.length > 0 && !initial?.id && (
+        <div style={{ marginBottom: '12px', padding: '10px 12px', borderRadius: '10px', backgroundColor: 'var(--sv-soft, rgba(168,23,90,0.06))', border: '1px dashed var(--border-color)' }}>
+          <label style={{ ...label, color: 'var(--dv-accent-text, #A8175A)', display: 'flex', alignItems: 'center', gap: '5px' }}>
+            <History size={13} /> O reactivar un alias ya usado del historial:
+          </label>
+          <select
+            className="form-input"
+            style={{ width: '100%', fontSize: '0.85rem', padding: '6px 9px', marginTop: '4px' }}
+            defaultValue=""
+            onChange={(e) => {
+              const found = archivedAliases.find((x) => x.id === e.target.value);
+              if (found) {
+                setF(emptyForm(found));
+              }
+            }}
+          >
+            <option value="">-- Seleccionar un alias anterior para autocompletar... --</option>
+            {archivedAliases.map((a) => (
+              <option key={a.id} value={a.id}>
+                {a.alias} — {a.holder || 'Sin titular'} {a.bank ? `(${a.bank})` : ''} {a.dailyLimit ? `· Tope ${money(a.dailyLimit)}` : ''}
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
+
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: '8px', marginBottom: '8px' }}>
         <div>
           <label style={label}>Alias / CVU *</label>
@@ -100,7 +128,7 @@ function AliasForm({ initial, onCancel, onSave }) {
 }
 
 // post(body) -> promesa con la respuesta del POST /api/ventas
-export default function AliasManager({ aliases = [], post, onChanged, onClose, startAdding = false }) {
+export default function AliasManager({ aliases = [], archivedAliases = [], post, onChanged, onClose, startAdding = false }) {
   const [editing, setEditing] = useState(startAdding ? 'new' : null); // id | 'new' | null
   const [busyId, setBusyId] = useState(null);
   const [error, setError] = useState('');
@@ -168,11 +196,11 @@ export default function AliasManager({ aliases = [], post, onChanged, onClose, s
         <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
           {aliases.length === 0 && editing !== 'new' && (
             <div style={{ padding: '16px', textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.85rem', border: '1px dashed var(--border-color)', borderRadius: '10px' }}>
-              No hay alias cargados. Agregá el primero.
+              No hay alias cargados para hoy. Podés agregar uno nuevo o reactivar uno del historial.
             </div>
           )}
           {aliases.map((a, idx) => (editing === a.id ? (
-            <AliasForm key={a.id} initial={a} onCancel={() => setEditing(null)} onSave={save} />
+            <AliasForm key={a.id} initial={a} archivedAliases={archivedAliases} onCancel={() => setEditing(null)} onSave={save} />
           ) : (
             <div key={a.id} style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap', border: '1px solid var(--border-color)', borderRadius: '12px', padding: '10px 12px', opacity: busyId === a.id ? 0.5 : a.active ? 1 : 0.6 }}>
               <span style={{ fontWeight: 900, fontSize: '0.8rem', color: 'var(--text-muted)', width: '22px' }}>{idx + 1}.</span>
@@ -197,13 +225,51 @@ export default function AliasManager({ aliases = [], post, onChanged, onClose, s
               </div>
             </div>
           )))}
-          {editing === 'new' && <AliasForm initial={null} onCancel={() => setEditing(null)} onSave={save} />}
+          {editing === 'new' && <AliasForm initial={null} archivedAliases={archivedAliases} onCancel={() => setEditing(null)} onSave={save} />}
         </div>
 
         {editing !== 'new' && (
           <button type="button" onClick={() => setEditing('new')} disabled={!!editing} className="btn-primary" style={{ marginTop: '12px', display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '8px 14px', fontSize: '0.86rem' }}>
             <Plus size={16} /> Agregar alias
           </button>
+        )}
+
+        {/* Sección de alias archivados del historial para reactivar en 1 clic */}
+        {archivedAliases.length > 0 && editing !== 'new' && (
+          <div style={{ marginTop: '16px', borderTop: '1px solid var(--border-color)', paddingTop: '14px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
+              <span style={{ fontSize: '0.78rem', fontWeight: 800, textTransform: 'uppercase', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <History size={14} /> Alias anteriores disponibles ({archivedAliases.length})
+              </span>
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', maxHeight: '180px', overflowY: 'auto' }}>
+              {archivedAliases.map((a) => (
+                <div
+                  key={a.id}
+                  style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px', flexWrap: 'wrap', border: '1px dashed var(--border-color)', borderRadius: '10px', padding: '8px 12px', opacity: busyId === a.id ? 0.5 : 0.9 }}
+                >
+                  <div style={{ flex: '1 1 200px', minWidth: 0 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <strong style={{ fontFamily: 'monospace', fontSize: '0.9rem' }}>{a.alias}</strong>
+                      <span style={{ fontSize: '0.66rem', padding: '1px 5px', borderRadius: '4px', backgroundColor: 'var(--border-color)', color: 'var(--text-muted)' }}>Historial</span>
+                    </div>
+                    <div style={{ fontSize: '0.74rem', color: 'var(--text-muted)' }}>
+                      {[a.holder, a.bank].filter(Boolean).join(' · ') || 'Sin titular'}{a.dailyLimit ? ` · Tope ${money(a.dailyLimit)}` : ''}
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    style={{ ...iconBtn, color: 'var(--dv-accent-fill, #A8175A)', borderColor: 'var(--dv-accent-fill, #A8175A)' }}
+                    onClick={() => run(a.id, { action: 'restoreAlias', id: a.id })}
+                    disabled={!!busyId}
+                    title="Activar este alias para hoy con todo su historial intacto"
+                  >
+                    <Play size={12} /> Activar para hoy
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
         )}
       </div>
     </div>

@@ -2627,6 +2627,7 @@ export default function VentasPage() {
         {showAliasModal && (
           <AliasManager
             aliases={data?.aliases || []}
+            archivedAliases={data?.archivedAliases || []}
             post={(body) => api('POST', { ...body, date })}
             onChanged={load}
             onClose={() => setShowAliasModal(false)}

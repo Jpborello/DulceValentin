@@ -836,6 +836,7 @@ export default function SupervisorPage() {
   const aliasModal = showAliasManager ? (
     <AliasManager
       aliases={data?.aliases || []}
+      archivedAliases={data?.archivedAliases || []}
       post={(body) => api('/api/ventas', { method: 'POST', body: JSON.stringify(body) })}
       onChanged={() => loadData(true)}
       onClose={() => setShowAliasManager(false)}

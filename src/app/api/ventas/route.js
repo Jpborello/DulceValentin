@@ -594,9 +594,16 @@ export async function POST(req) {
       };
       if (body.id) {
         if (!uuidRe.test(String(body.id))) return fail(400, 'Alias inválido.');
-        const { data, error } = await db.from('payment_aliases').update(row).eq('id', body.id).select('id').maybeSingle();
+        const { data, error } = await db.from('payment_aliases').update({ ...row, archived: false }).eq('id', body.id).select('id').maybeSingle();
         if (error || !data) return fail(500, 'No se pudo guardar el alias.');
         return NextResponse.json({ success: true, id: data.id });
+      }
+      // Si no se pasó id, verificar si ya existe un alias con este nombre en la base de datos (para no duplicarlo y mantener su historial)
+      const { data: existing } = await db.from('payment_aliases').select('id').eq('alias', alias).limit(1).maybeSingle();
+      if (existing?.id) {
+        const { data, error } = await db.from('payment_aliases').update({ ...row, archived: false }).eq('id', existing.id).select('id').maybeSingle();
+        if (error || !data) return fail(500, 'No se pudo reactivar el alias.');
+        return NextResponse.json({ success: true, id: data.id, restored: true });
       }
       const { data: last } = await db.from('payment_aliases').select('sort').order('sort', { ascending: false }).limit(1).maybeSingle();
       row.sort = (last?.sort || 0) + 1;
