@@ -1924,14 +1924,17 @@ function DailyAliasSection({
             const rem = aliasRemaining(a);
             const p = a.dailyLimit ? Math.round(((a.receivedToday || 0) / a.dailyLimit) * 100) : null;
             const full = rem === 0;
-            const near = !full && p !== null && p >= 80;
-            const color = !a.active ? 'var(--text-muted)' : full ? '#DC2626' : near ? '#D97706' : '#10B981';
+            const isToday = date === todayAR();
+            const isArchivedNow = isToday && a.archived;
+            const isPausedNow = isToday && !a.active && !a.archived;
+            const isOff = isToday && (!a.active || a.archived);
+            const color = (isArchivedNow || isPausedNow) ? 'var(--text-muted)' : full ? '#DC2626' : near ? '#D97706' : '#10B981';
             return (
-              <div key={a.id} style={{ border: `1.5px solid ${a.active ? color : 'var(--border-color)'}`, borderRadius: '12px', padding: '10px 12px', backgroundColor: 'var(--bg-surface-elevated, var(--bg-card))', opacity: a.active ? 1 : 0.6 }}>
+              <div key={a.id} style={{ border: `1.5px solid ${!isOff ? color : 'var(--border-color)'}`, borderRadius: '12px', padding: '10px 12px', backgroundColor: 'var(--bg-surface-elevated, var(--bg-card))', opacity: isOff ? 0.6 : 1 }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '6px' }}>
                   <div style={{ minWidth: 0 }}>
                     <div style={{ fontSize: '0.68rem', fontWeight: 800, color: 'var(--text-muted)' }}>
-                      {idx + 1}. {a.archived ? 'ARCHIVADO' : !a.active ? 'PAUSADO' : full ? 'TOPE LLENO' : near ? 'CASI LLENO' : 'ACTIVO'}
+                      {idx + 1}. {isArchivedNow ? 'ARCHIVADO' : isPausedNow ? 'PAUSADO' : full ? 'TOPE LLENO' : near ? 'CASI LLENO' : 'ACTIVO'}
                     </div>
                     <div style={{ fontFamily: 'monospace', fontWeight: 900, fontSize: '0.98rem', wordBreak: 'break-all' }}>{a.alias}</div>
                   </div>
@@ -2467,7 +2470,7 @@ export default function VentasPage() {
               <DailyAliasSection
                 date={date}
                 aliasConfig={data.dailyAlias}
-                aliases={[...(data.aliases || []), ...(data.archivedAliases || []).filter((a) => a.countToday > 0)]}
+                aliases={[...(data.aliases || []), ...(data.archivedAliases || []).filter((a) => a.countToday > 0 && !data.aliases?.some((x) => x.id === a.id))]}
                 transfers={data.dayTransfers || []}
                 sellers={data.sellers}
                 numberMap={assignedNumbers}
@@ -2624,7 +2627,7 @@ export default function VentasPage() {
         {showAliasModal && (
           <AliasManager
             aliases={data?.aliases || []}
-            post={(body) => api('POST', body)}
+            post={(body) => api('POST', { ...body, date })}
             onChanged={load}
             onClose={() => setShowAliasModal(false)}
             startAdding={showAliasModal === 'new'}
