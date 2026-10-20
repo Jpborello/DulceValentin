@@ -98,15 +98,31 @@ export function normalizePromoBanners(list) {
   });
 }
 
+export const DEFAULT_CATEGORY_IMAGES = {
+  calzado: '/categorias/calzado.webp',
+  indumentaria: '/categorias/indumentaria.webp',
+  lenceria: '/categorias/lenceria.webp',
+  bebes: '/categorias/bebes.webp',
+  blanqueria: '/categorias/blanqueria.webp'
+};
+
 class DataStore {
   constructor() {
     this.products = [...INITIAL_PRODUCTS].map(p => ({ sales_count: 0, ...p }));
-    this.currentUser = typeof window !== 'undefined' && localStorage.getItem('dulcevalentin_current_user')
-      ? JSON.parse(localStorage.getItem('dulcevalentin_current_user'))
-      : null;
-    this.activeOrder = typeof window !== 'undefined' && localStorage.getItem('dulcevalentin_active_order')
-      ? JSON.parse(localStorage.getItem('dulcevalentin_active_order'))
-      : null;
+    try {
+      this.currentUser = typeof window !== 'undefined' && localStorage.getItem('dulcevalentin_current_user')
+        ? JSON.parse(localStorage.getItem('dulcevalentin_current_user'))
+        : null;
+    } catch {
+      this.currentUser = null;
+    }
+    try {
+      this.activeOrder = typeof window !== 'undefined' && localStorage.getItem('dulcevalentin_active_order')
+        ? JSON.parse(localStorage.getItem('dulcevalentin_active_order'))
+        : null;
+    } catch {
+      this.activeOrder = null;
+    }
     this.clients = [];
     this.orders = [];
     this.raffleTickets = [];
@@ -119,13 +135,7 @@ class DataStore {
     this.transferAlias = 'alias.dulcevalentin.completar';
 
     // Imágenes de las 5 categorías principales del home
-    this.categoryImages = {
-      calzado: '/categorias/calzado.webp',
-      indumentaria: '/categorias/indumentaria.webp',
-      lenceria: '/categorias/lenceria.webp',
-      bebes: '/categorias/bebes.webp',
-      blanqueria: '/categorias/blanqueria.webp'
-    };
+    this.categoryImages = { ...DEFAULT_CATEGORY_IMAGES };
     if (typeof window !== 'undefined') {
       try {
         const cachedCatImgs = JSON.parse(localStorage.getItem('dulcevalentin_category_images') || 'null');

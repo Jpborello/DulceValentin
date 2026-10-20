@@ -239,6 +239,25 @@ export default function RootLayout({ children }) {
       </head>
       <body>
         <script
+          dangerouslySetInnerHTML={{
+            __html: `
+              (function() {
+                function handleChunkError(err) {
+                  var m = err && (err.message || (err.reason && err.reason.message)) || '';
+                  if (/ChunkLoadError|Loading chunk|Failed to fetch dynamically imported module/i.test(m)) {
+                    if (!sessionStorage.getItem('dv_chunk_reloaded')) {
+                      sessionStorage.setItem('dv_chunk_reloaded', '1');
+                      window.location.reload();
+                    }
+                  }
+                }
+                window.addEventListener('error', handleChunkError);
+                window.addEventListener('unhandledrejection', handleChunkError);
+              })();
+            `
+          }}
+        />
+        <script
           type="application/ld+json"
           dangerouslySetInnerHTML={{ __html: JSON.stringify(localBusinessJsonLd) }}
         />

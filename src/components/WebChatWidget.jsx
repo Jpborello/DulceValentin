@@ -18,12 +18,19 @@ const QUICK_PROMPTS = [
 
 function getOrCreateSessionId() {
   if (typeof window === 'undefined') return null;
-  let id = localStorage.getItem(SESSION_KEY);
-  if (!id) {
-    id = 'web-' + (crypto.randomUUID ? crypto.randomUUID() : Date.now() + '-' + Math.random().toString(36).slice(2));
-    localStorage.setItem(SESSION_KEY, id);
+  try {
+    let id = window.localStorage?.getItem(SESSION_KEY);
+    if (!id) {
+      const uuid = typeof window !== 'undefined' && window.crypto?.randomUUID
+        ? window.crypto.randomUUID()
+        : (Date.now() + '-' + Math.random().toString(36).slice(2));
+      id = 'web-' + uuid;
+      window.localStorage?.setItem(SESSION_KEY, id);
+    }
+    return id;
+  } catch {
+    return 'web-' + Date.now();
   }
-  return id;
 }
 
 export default function WebChatWidget() {
@@ -43,13 +50,15 @@ export default function WebChatWidget() {
   const justOpenedRef = useRef(false);
 
   useEffect(() => {
-    const id = getOrCreateSessionId();
-    setSessionId(id);
-    const savedName = localStorage.getItem(NAME_KEY);
-    if (savedName) {
-      setClientName(savedName);
-      if (savedName.trim().length >= 2) setNameConfirmed(true);
-    }
+    try {
+      const id = getOrCreateSessionId();
+      setSessionId(id);
+      const savedName = window.localStorage?.getItem(NAME_KEY);
+      if (savedName) {
+        setClientName(savedName);
+        if (savedName.trim().length >= 2) setNameConfirmed(true);
+      }
+    } catch {}
   }, []);
 
   const fetchMessages = useCallback(async (id, markSeen) => {

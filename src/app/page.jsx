@@ -16,7 +16,7 @@ const ProductDetailModal = dynamic(() => import('@/components/ProductDetailModal
 import WholesaleBanner from '@/components/WholesaleBanner';
 import TrustBar from '@/components/TrustBar';
 import FaqSection from '@/components/FaqSection';
-import { dataStore, CATEGORIES, getProductPrice, DEFAULT_PROMO_BANNERS } from '@/lib/dataStore';
+import { dataStore, CATEGORIES, getProductPrice, DEFAULT_PROMO_BANNERS, DEFAULT_CATEGORY_IMAGES } from '@/lib/dataStore';
 import { getProductStockForSizeColor } from '@/lib/catalogData';
 import { getSearchScores } from '@/lib/searchUtils';
 import { evaluateWholesaleRule, CART_UPDATED_EVENT } from '@/lib/cartStorage';
@@ -34,10 +34,10 @@ export default function Home() {
   const [selectedSubcategory, setSelectedSubcategory] = useState(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [quickFilter, setQuickFilter] = useState('all');
-  const [categoryImages, setCategoryImages] = useState(() => dataStore.getCategoryImages());
-  // Arranca con los banners por defecto (igual en server y cliente, para no
-  // romper la hidratacion) y se actualiza con los guardados al montar.
+  // Arrancan con las categorias y banners por defecto para garantizar hidratacion identica en server y cliente
+  const [categoryImages, setCategoryImages] = useState(DEFAULT_CATEGORY_IMAGES);
   const [promoBanners, setPromoBanners] = useState(() => DEFAULT_PROMO_BANNERS.map((b) => ({ ...b })));
+  const [activeOrder, setActiveOrder] = useState(null);
   // Sorteo activo: arranca apagado (igual en server y cliente) y se toma del
   // store al montar.
   const [raffleEnabled, setRaffleEnabled] = useState(false);
@@ -67,6 +67,7 @@ export default function Home() {
       setCategoryImages(dataStore.getCategoryImages());
       setPromoBanners(dataStore.getPromoBanners());
       setRaffleEnabled(dataStore.isRaffleEnabled());
+      setActiveOrder(dataStore.getActiveOrder());
       if (prods && prods.length > 0) {
         setIsLoading(false);
       }
@@ -530,12 +531,13 @@ export default function Home() {
   const isQuickFiltered = quickFilter !== 'all' || Boolean(selectedSizeFilter);
   const showProductGrid = catalogOpen || hasSearch || isCategoryFiltered || isQuickFiltered;
 
-  const totalCartItemsCount = cartItems.reduce((sum, item) => sum + item.quantity, 0);
-  const cartSubtotal = cartItems.reduce((sum, item) => {
+  const totalCartItemsCount = (cartItems || []).reduce((sum, item) => sum + (Number(item?.quantity) || 0), 0);
+  const cartSubtotal = (cartItems || []).reduce((sum, item) => {
+    if (!item?.product) return sum;
     const p = item.product.unit_price != null
       ? item.product.unit_price
       : getProductPrice(item.product, item.product.selectedSize);
-    return sum + (p * item.quantity);
+    return sum + (Number(p || 0) * (Number(item.quantity) || 1));
   }, 0);
   
   // Evaluación unificada de la regla de 3 unidades para precio mayorista
@@ -571,7 +573,7 @@ export default function Home() {
       <WholesaleBanner />
 
       {/* Active Pending Order Banner */}
-      {dataStore.getActiveOrder() && (
+      {activeOrder && (
         <div style={{
           backgroundColor: '#EFF6FF',
           borderBottom: '2px solid #3B82F6',
@@ -587,7 +589,7 @@ export default function Home() {
           boxShadow: '0 2px 8px rgba(59,130,246,0.15)'
         }}>
           <span>
-            📌 Tenés una compra pendiente (Orden N° <strong>#{dataStore.getActiveOrder()?.id}</strong>) por <strong>${dataStore.getActiveOrder()?.total_amount?.toLocaleString('es-AR')}</strong>
+            📌 Tenés una compra pendiente (Orden N° <strong>#{activeOrder.id}</strong>) por <strong>${Number(activeOrder.total_amount || 0).toLocaleString('es-AR')}</strong>
           </span>
           <button 
             onClick={() => setIsCartOpen(true)}
@@ -601,7 +603,7 @@ export default function Home() {
               cursor: 'pointer'
             }}
           >
-            {dataStore.getActiveOrder()?.receipt_url ? '✓ Ver / Modificar Comprobante' : '💳 Subir Comprobante / Pagar'}
+            {activeOrder.receipt_url ? '✓ Ver / Modificar Comprobante' : '💳 Subir Comprobante / Pagar'}
           </button>
         </div>
       )}
