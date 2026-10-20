@@ -1924,6 +1924,7 @@ function DailyAliasSection({
             const rem = aliasRemaining(a);
             const p = a.dailyLimit ? Math.round(((a.receivedToday || 0) / a.dailyLimit) * 100) : null;
             const full = rem === 0;
+            const near = !full && p !== null && p >= 80;
             const isToday = date === todayAR();
             const isArchivedNow = isToday && a.archived;
             const isPausedNow = isToday && !a.active && !a.archived;
