@@ -835,9 +835,10 @@ export default function SupervisorPage() {
 
   const aliasModal = showAliasManager ? (
     <AliasManager
+      date={date}
       aliases={data?.aliases || []}
       archivedAliases={data?.archivedAliases || []}
-      post={(body) => api('/api/ventas', { method: 'POST', body: JSON.stringify(body) })}
+      post={(body) => api('/api/ventas', { method: 'POST', body: JSON.stringify({ ...body, date: body.date || date }) })}
       onChanged={() => loadData(true)}
       onClose={() => setShowAliasManager(false)}
       startAdding={showAliasManager === 'new'}
@@ -852,8 +853,9 @@ export default function SupervisorPage() {
   const prevLabel = data?.prev ? (period === 'day' ? fmtDate(data.prev.from) : `${fmtDate(data.prev.from)} al ${fmtDate(data.prev.to)}`) : '';
   const hourAR = Number(new Date().toLocaleString('en-US', { timeZone: 'America/Argentina/Buenos_Aires', hour: 'numeric', hour12: false }));
   const greeting = hourAR < 12 ? 'Buen día' : hourAR < 20 ? 'Buenas tardes' : 'Buenas noches';
+  const isTomorrow = date === shiftDate(todayAR(), 'day', 1);
   const bigLabel = period === 'day'
-    ? (isToday ? 'Vendido hoy' : `Vendido el ${rangeLabel}`)
+    ? (isToday ? 'Vendido hoy' : isTomorrow ? 'Planificado para mañana' : `Vendido el ${rangeLabel}`)
     : period === 'week' ? 'Vendido en la semana' : 'Vendido en el mes';
   const cashPct = totals.total > 0 ? Math.round((totals.cash / totals.total) * 100) : 0;
   const ranking = [...(data?.sellers || [])].sort((a, b) => b.total - a.total);
@@ -865,7 +867,7 @@ export default function SupervisorPage() {
   const restoreAlias = async (a) => {
     if (!window.confirm(`¿Volver a activar el alias ${a.alias}?`)) return;
     try {
-      await api('/api/ventas', { method: 'POST', body: JSON.stringify({ action: 'restoreAlias', id: a.id }) });
+      await api('/api/ventas', { method: 'POST', body: JSON.stringify({ action: 'restoreAlias', id: a.id, date }) });
       loadData(true);
     } catch (err) {
       window.alert(err.message || 'No se pudo restaurar.');
@@ -1008,8 +1010,8 @@ export default function SupervisorPage() {
           </div>
           <div className="sv-date">
             <button type="button" className="sv-btn sv-icon" onClick={() => setDate(shiftDate(date, period, -1))} aria-label="Anterior"><ChevronLeft size={16} /></button>
-            <input type="date" value={date} max={todayAR()} onChange={(e) => e.target.value && setDate(e.target.value)} />
-            <button type="button" className="sv-btn sv-icon" onClick={() => setDate(shiftDate(date, period, 1))} disabled={isToday} aria-label="Siguiente"><ChevronRight size={16} /></button>
+            <input type="date" value={date} max={shiftDate(todayAR(), 'day', 1)} onChange={(e) => e.target.value && setDate(e.target.value)} />
+            <button type="button" className="sv-btn sv-icon" onClick={() => setDate(shiftDate(date, period, 1))} disabled={date >= shiftDate(todayAR(), 'day', 1)} aria-label="Siguiente"><ChevronRight size={16} /></button>
             {!isToday && <button type="button" className="sv-btn" onClick={() => setDate(todayAR())}>Hoy</button>}
             <button type="button" className="sv-btn sv-icon" onClick={() => loadData()} disabled={loading} title="Actualizar"><RefreshCw size={14} className={loading ? 'animate-spin' : ''} /></button>
           </div>

@@ -14,7 +14,14 @@ const digits = (v) => String(v ?? '').replace(/\D/g, '');
 const label = { display: 'block', fontSize: '0.72rem', fontWeight: 800, color: 'var(--text-muted)', marginBottom: '3px' };
 const input = { width: '100%', fontSize: '0.9rem', padding: '7px 9px', boxSizing: 'border-box' };
 
-function emptyForm(a) {
+const todayAR = () => new Date().toLocaleString('sv-SE', { timeZone: 'America/Argentina/Buenos_Aires' }).slice(0, 10);
+const tomorrowAR = () => {
+  const t = new Date(`${todayAR()}T12:00:00`);
+  t.setDate(t.getDate() + 1);
+  return t.toISOString().slice(0, 10);
+};
+
+function emptyForm(a, targetDate) {
   return {
     id: a?.id || null,
     alias: a?.alias || '',
@@ -24,12 +31,13 @@ function emptyForm(a) {
     minAmount: a?.minAmount ? String(a.minAmount) : '',
     maxAmount: a?.maxAmount ? String(a.maxAmount) : '',
     dailyLimit: a?.dailyLimit ? String(a.dailyLimit) : '',
-    active: a ? a.active : true
+    active: a ? a.active : true,
+    targetDate: targetDate || todayAR()
   };
 }
 
-function AliasForm({ initial, archivedAliases = [], onCancel, onSave }) {
-  const [f, setF] = useState(() => emptyForm(initial));
+function AliasForm({ initial, archivedAliases = [], defaultDate, onCancel, onSave }) {
+  const [f, setF] = useState(() => emptyForm(initial, defaultDate));
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const set = (k) => (e) => setF((prev) => ({ ...prev, [k]: e.target.value }));
@@ -48,7 +56,7 @@ function AliasForm({ initial, archivedAliases = [], onCancel, onSave }) {
     setBusy(true);
     setError('');
     try {
-      await onSave(f);
+      await onSave({ ...f, date: f.targetDate });
     } catch (err) {
       setError(err.message || 'No se pudo guardar.');
       setBusy(false);
@@ -67,6 +75,35 @@ function AliasForm({ initial, archivedAliases = [], onCancel, onSave }) {
     <form onSubmit={submit} style={{ border: '2px solid var(--dv-accent-fill, #A8175A)', borderRadius: '12px', padding: '12px', backgroundColor: 'var(--bg-surface-elevated, var(--bg-card))' }}>
       {error && <div role="alert" style={{ fontSize: '0.8rem', fontWeight: 700, color: '#B91C1C', backgroundColor: '#FEF2F2', padding: '6px 9px', borderRadius: '8px', marginBottom: '8px' }}>{error}</div>}
 
+      {/* Selector de día (Hoy o Mañana) */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px', padding: '8px 12px', borderRadius: '10px', backgroundColor: 'var(--bg-surface-elevated)', border: '1px solid var(--border-color)' }}>
+        <span style={{ fontSize: '0.76rem', fontWeight: 800, color: 'var(--text-muted)' }}>¿Para qué día?</span>
+        <button
+          type="button"
+          onClick={() => setF((p) => ({ ...p, targetDate: todayAR() }))}
+          style={{
+            padding: '4px 10px', fontSize: '0.75rem', borderRadius: '6px', cursor: 'pointer', fontWeight: 800,
+            border: f.targetDate === todayAR() ? '2px solid var(--dv-accent-fill, #A8175A)' : '1px solid var(--border-color)',
+            backgroundColor: f.targetDate === todayAR() ? 'var(--dv-accent-fill, #A8175A)' : 'var(--bg-card)',
+            color: f.targetDate === todayAR() ? '#fff' : 'var(--text-main)'
+          }}
+        >
+          Hoy
+        </button>
+        <button
+          type="button"
+          onClick={() => setF((p) => ({ ...p, targetDate: tomorrowAR() }))}
+          style={{
+            padding: '4px 10px', fontSize: '0.75rem', borderRadius: '6px', cursor: 'pointer', fontWeight: 800,
+            border: f.targetDate === tomorrowAR() ? '2px solid var(--dv-accent-fill, #A8175A)' : '1px solid var(--border-color)',
+            backgroundColor: f.targetDate === tomorrowAR() ? 'var(--dv-accent-fill, #A8175A)' : 'var(--bg-card)',
+            color: f.targetDate === tomorrowAR() ? '#fff' : 'var(--text-main)'
+          }}
+        >
+          Mañana
+        </button>
+      </div>
+
       {/* Selector rápido para reactivar un alias existente del historial */}
       {archivedAliases.length > 0 && !initial?.id && (
         <div style={{ marginBottom: '12px', padding: '10px 12px', borderRadius: '10px', backgroundColor: 'var(--sv-soft, rgba(168,23,90,0.06))', border: '1px dashed var(--border-color)' }}>
@@ -80,7 +117,7 @@ function AliasForm({ initial, archivedAliases = [], onCancel, onSave }) {
             onChange={(e) => {
               const found = archivedAliases.find((x) => x.id === e.target.value);
               if (found) {
-                setF(emptyForm(found));
+                setF(emptyForm(found, f.targetDate));
               }
             }}
           >
@@ -128,10 +165,17 @@ function AliasForm({ initial, archivedAliases = [], onCancel, onSave }) {
 }
 
 // post(body) -> promesa con la respuesta del POST /api/ventas
-export default function AliasManager({ aliases = [], archivedAliases = [], post, onChanged, onClose, startAdding = false }) {
+export default function AliasManager({ date, aliases = [], archivedAliases = [], post, onChanged, onClose, startAdding = false }) {
   const [editing, setEditing] = useState(startAdding ? 'new' : null); // id | 'new' | null
   const [busyId, setBusyId] = useState(null);
   const [error, setError] = useState('');
+
+  const today = todayAR();
+  const tomorrow = tomorrowAR();
+  const activeDate = date || today;
+  const isTomorrow = activeDate === tomorrow;
+  const isToday = activeDate === today;
+  const dayName = isTomorrow ? 'mañana' : (isToday ? 'hoy' : activeDate);
 
   useEffect(() => {
     const onKey = (e) => { if (e.key === 'Escape' && !editing) onClose(); };
@@ -143,7 +187,7 @@ export default function AliasManager({ aliases = [], archivedAliases = [], post,
     setBusyId(id);
     setError('');
     try {
-      await post(body);
+      await post({ ...body, date: body.date || activeDate });
       await onChanged();
     } catch (err) {
       setError(err.message || 'No se pudo guardar.');
@@ -153,7 +197,7 @@ export default function AliasManager({ aliases = [], archivedAliases = [], post,
   };
 
   const save = async (f) => {
-    await post({ action: 'saveAlias', ...f });
+    await post({ action: 'saveAlias', ...f, date: f.date || activeDate });
     setEditing(null);
     await onChanged();
   };
@@ -163,12 +207,12 @@ export default function AliasManager({ aliases = [], archivedAliases = [], post,
     const j = idx + dir;
     if (j < 0 || j >= ids.length) return;
     [ids[idx], ids[j]] = [ids[j], ids[idx]];
-    run(ids[idx], { action: 'reorderAliases', ids });
+    run(ids[idx], { action: 'reorderAliases', ids, date: activeDate });
   };
 
   const archive = (a) => {
     if (!window.confirm(`¿Sacar el alias ${a.alias}? Las transferencias que ya entraron ahí quedan registradas.`)) return;
-    run(a.id, { action: 'archiveAlias', id: a.id });
+    run(a.id, { action: 'archiveAlias', id: a.id, date: activeDate });
   };
 
   const iconBtn = { background: 'none', border: '1px solid var(--border-color)', borderRadius: '8px', padding: '5px 7px', cursor: 'pointer', color: 'var(--text-main)', display: 'inline-flex', alignItems: 'center', gap: '4px', fontSize: '0.74rem', fontWeight: 700 };
@@ -183,7 +227,9 @@ export default function AliasManager({ aliases = [], archivedAliases = [], post,
       <div style={{ width: '100%', maxWidth: '720px', backgroundColor: 'var(--bg-card)', color: 'var(--text-main)', borderRadius: '16px', border: '1px solid var(--border-color)', padding: '18px', boxShadow: '0 20px 50px rgba(0,0,0,0.25)' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '10px', marginBottom: '12px' }}>
           <div>
-            <h3 style={{ margin: 0, fontSize: '1.5rem', fontWeight: 400, fontFamily: 'var(--font-display)' }}>Alias de cobro</h3>
+            <h3 style={{ margin: 0, fontSize: '1.5rem', fontWeight: 400, fontFamily: 'var(--font-display)' }}>
+              Alias de cobro ({dayName})
+            </h3>
             <p style={{ margin: '2px 0 0', fontSize: '0.8rem', color: 'var(--text-muted)' }}>
               Al cobrar por transferencia se sugiere el <strong>primero de la lista</strong> que acepte el monto. Ordenalos con las flechas.
             </p>
@@ -196,11 +242,11 @@ export default function AliasManager({ aliases = [], archivedAliases = [], post,
         <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
           {aliases.length === 0 && editing !== 'new' && (
             <div style={{ padding: '16px', textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.85rem', border: '1px dashed var(--border-color)', borderRadius: '10px' }}>
-              No hay alias cargados para hoy. Podés agregar uno nuevo o reactivar uno del historial.
+              No hay alias activos para {dayName}. Podés agregar uno nuevo o reactivar uno del historial.
             </div>
           )}
           {aliases.map((a, idx) => (editing === a.id ? (
-            <AliasForm key={a.id} initial={a} archivedAliases={archivedAliases} onCancel={() => setEditing(null)} onSave={save} />
+            <AliasForm key={a.id} initial={a} archivedAliases={archivedAliases} defaultDate={activeDate} onCancel={() => setEditing(null)} onSave={save} />
           ) : (
             <div key={a.id} style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap', border: '1px solid var(--border-color)', borderRadius: '12px', padding: '10px 12px', opacity: busyId === a.id ? 0.5 : a.active ? 1 : 0.6 }}>
               <span style={{ fontWeight: 900, fontSize: '0.8rem', color: 'var(--text-muted)', width: '22px' }}>{idx + 1}.</span>
@@ -225,7 +271,7 @@ export default function AliasManager({ aliases = [], archivedAliases = [], post,
               </div>
             </div>
           )))}
-          {editing === 'new' && <AliasForm initial={null} archivedAliases={archivedAliases} onCancel={() => setEditing(null)} onSave={save} />}
+          {editing === 'new' && <AliasForm initial={null} archivedAliases={archivedAliases} defaultDate={activeDate} onCancel={() => setEditing(null)} onSave={save} />}
         </div>
 
         {editing !== 'new' && (
@@ -260,11 +306,11 @@ export default function AliasManager({ aliases = [], archivedAliases = [], post,
                   <button
                     type="button"
                     style={{ ...iconBtn, color: 'var(--dv-accent-fill, #A8175A)', borderColor: 'var(--dv-accent-fill, #A8175A)' }}
-                    onClick={() => run(a.id, { action: 'restoreAlias', id: a.id })}
+                    onClick={() => run(a.id, { action: 'restoreAlias', id: a.id, date: activeDate })}
                     disabled={!!busyId}
-                    title="Activar este alias para hoy con todo su historial intacto"
+                    title={`Activar este alias para ${dayName} con todo su historial intacto`}
                   >
-                    <Play size={12} /> Activar para hoy
+                    <Play size={12} /> Activar para {dayName}
                   </button>
                 </div>
               ))}
@@ -275,3 +321,4 @@ export default function AliasManager({ aliases = [], archivedAliases = [], post,
     </div>
   );
 }
+

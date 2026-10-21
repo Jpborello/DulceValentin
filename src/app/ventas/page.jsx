@@ -2440,8 +2440,8 @@ export default function VentasPage() {
           ))}
           <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginLeft: 'auto' }}>
             <button type="button" className="qty-btn" onClick={() => setDate(shiftDate(date, period, -1))} aria-label="Anterior"><ChevronLeft size={16} /></button>
-            <input type="date" value={date} max={todayAR()} onChange={(e) => e.target.value && setDate(e.target.value)} className="form-input" style={{ padding: '6px 8px' }} />
-            <button type="button" className="qty-btn" onClick={() => setDate(shiftDate(date, period, 1))} disabled={isToday} aria-label="Siguiente"><ChevronRight size={16} /></button>
+            <input type="date" value={date} max={shiftDate(todayAR(), 'day', 1)} onChange={(e) => e.target.value && setDate(e.target.value)} className="form-input" style={{ padding: '6px 8px' }} />
+            <button type="button" className="qty-btn" onClick={() => setDate(shiftDate(date, period, 1))} disabled={date >= shiftDate(todayAR(), 'day', 1)} aria-label="Siguiente"><ChevronRight size={16} /></button>
             {!isToday && <button type="button" onClick={() => setDate(todayAR())} className="btn-secondary" style={{ padding: '6px 10px', fontSize: '0.8rem' }}>Hoy</button>}
           </div>
         </div>
@@ -2627,9 +2627,10 @@ export default function VentasPage() {
         )}
         {showAliasModal && (
           <AliasManager
+            date={date}
             aliases={data?.aliases || []}
             archivedAliases={data?.archivedAliases || []}
-            post={(body) => api('POST', { ...body, date })}
+            post={(body) => api('POST', { ...body, date: body.date || date })}
             onChanged={load}
             onClose={() => setShowAliasModal(false)}
             startAdding={showAliasModal === 'new'}

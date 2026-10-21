@@ -474,8 +474,9 @@ export async function GET(req) {
     };
   }
 
+  const activeIds = new Set(aliases.map((a) => a.id));
   const archivedAliases = allAliases
-    .filter((a) => a.archived)
+    .filter((a) => !activeIds.has(a.id))
     .map((a) => ({ ...a, active: false, receivedPeriod: round2(periodByAlias[a.id]?.received || 0), countPeriod: periodByAlias[a.id]?.count || 0 }));
 
   const body = { period, date, from, to, prev, sellers: summary, cash, dailyAlias, aliases, archivedAliases, dayTransfers, periodTransfers, supervisorData, driveFolderUrl };
@@ -592,24 +593,33 @@ export async function POST(req) {
         active: body.active !== false,
         updated_at: new Date().toISOString()
       };
+      const targetDate = isDate(body.date) ? body.date : todayAR();
       if (body.id) {
         if (!uuidRe.test(String(body.id))) return fail(400, 'Alias inválido.');
-        const { data, error } = await db.from('payment_aliases').update({ ...row, archived: false }).eq('id', body.id).select('id').maybeSingle();
+        const patch = {
+          ...row,
+          archived: false,
+          created_at: new Date(`${targetDate}T12:00:00-03:00`).toISOString()
+        };
+        const { data, error } = await db.from('payment_aliases').update(patch).eq('id', body.id).select('id').maybeSingle();
         if (error || !data) return fail(500, 'No se pudo guardar el alias.');
         return NextResponse.json({ success: true, id: data.id });
       }
       // Si no se pasó id, verificar si ya existe un alias con este nombre en la base de datos (para no duplicarlo y mantener su historial)
       const { data: existing } = await db.from('payment_aliases').select('id').eq('alias', alias).limit(1).maybeSingle();
       if (existing?.id) {
-        const { data, error } = await db.from('payment_aliases').update({ ...row, archived: false }).eq('id', existing.id).select('id').maybeSingle();
+        const patch = {
+          ...row,
+          archived: false,
+          created_at: new Date(`${targetDate}T12:00:00-03:00`).toISOString()
+        };
+        const { data, error } = await db.from('payment_aliases').update(patch).eq('id', existing.id).select('id').maybeSingle();
         if (error || !data) return fail(500, 'No se pudo reactivar el alias.');
         return NextResponse.json({ success: true, id: data.id, restored: true });
       }
       const { data: last } = await db.from('payment_aliases').select('sort').order('sort', { ascending: false }).limit(1).maybeSingle();
       row.sort = (last?.sort || 0) + 1;
-      if (isDate(body.date) && body.date !== todayAR()) {
-        row.created_at = new Date(`${body.date}T12:00:00-03:00`).toISOString();
-      }
+      row.created_at = new Date(`${targetDate}T12:00:00-03:00`).toISOString();
       const { data, error } = await db.from('payment_aliases').insert(row).select('id').single();
       if (error) return fail(500, 'No se pudo agregar el alias.');
       return NextResponse.json({ success: true, id: data.id });
@@ -619,10 +629,11 @@ export async function POST(req) {
     case 'archiveAlias':
     case 'restoreAlias': {
       if (!uuidRe.test(String(body.id || ''))) return fail(400, 'Alias inválido.');
+      const targetDate = isDate(body.date) ? body.date : todayAR();
       const patch = body.action === 'archiveAlias'
         ? { archived: true, active: false }
         : body.action === 'restoreAlias'
-          ? { archived: false, active: true, created_at: new Date().toISOString() }
+          ? { archived: false, active: true, created_at: new Date(`${targetDate}T12:00:00-03:00`).toISOString() }
           : { active: Boolean(body.active) };
       const { error } = await db.from('payment_aliases').update({ ...patch, updated_at: new Date().toISOString() }).eq('id', body.id);
       if (error) return fail(500, 'No se pudo guardar.');
