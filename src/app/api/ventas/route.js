@@ -785,6 +785,52 @@ export async function POST(req) {
       return NextResponse.json({ success: true });
     }
 
+    case 'addBatchSales': {
+      const items = Array.isArray(body.sales) ? body.sales : [];
+      if (items.length === 0) return fail(400, 'No hay ventas para guardar.');
+      if (items.length > 20) return fail(400, 'Demasiadas ventas en lote.');
+
+      const date = dateOk(body.date || items[0]?.date);
+      if (date > addDays(today, 1)) return fail(400, 'La fecha no puede ser futura.');
+
+      const rowsToInsert = [];
+      for (const item of items) {
+        if (!uuidRe.test(String(item.clientRef || ''))) return fail(400, 'Falta la referencia de una venta.');
+        if (!(await assertSeller(item.sellerId))) return fail(404, 'Vendedora no encontrada.');
+        const amount = parseAmount(item.amount);
+        if (amount === null) return fail(400, 'Monto inválido en una de las ventas (debe ser número entero).');
+        if (!METHODS.includes(item.method)) return fail(400, 'Elegí efectivo o transferencia.');
+
+        const itemNote = String(item.note ?? '').trim().slice(0, 300) || null;
+        const row = {
+          client_ref: item.clientRef,
+          seller_id: item.sellerId,
+          sale_date: isDate(item.date) ? item.date : date,
+          amount,
+          payment_method: item.method,
+          note: itemNote,
+          created_by: userId
+        };
+
+        if (item.method === 'transferencia' && item.aliasId) {
+          if (uuidRe.test(String(item.aliasId))) {
+            row.alias_id = item.aliasId;
+          }
+        }
+
+        rowsToInsert.push(row);
+      }
+
+      const { error } = await db.from('seller_sales').upsert(rowsToInsert, { onConflict: 'client_ref', ignoreDuplicates: true });
+      if (error) return fail(500, 'No se pudieron guardar las ventas.');
+
+      const refs = rowsToInsert.map((r) => r.client_ref);
+      const { data: savedRows } = await db.from('seller_sales').select('id, client_ref').in('client_ref', refs);
+      const saleIds = (savedRows || []).map((r) => r.id);
+
+      return NextResponse.json({ success: true, saleIds });
+    }
+
     case 'addCashCount': {
       if (!uuidRe.test(String(body.clientRef || ''))) return fail(400, 'Falta la referencia del registro.');
       const counted = parseAmount(body.counted, { allowZero: true });
@@ -823,16 +869,19 @@ export async function POST(req) {
       if (!table) return fail(400, 'Tipo inválido.');
       const reason = String(body.reason || '').trim().slice(0, 300);
       if (!reason) return fail(400, 'Indicá el motivo de la anulación.');
+
+      const ids = Array.isArray(body.ids) ? body.ids.filter(Boolean) : (body.id ? [body.id] : []);
+      if (ids.length === 0) return fail(400, 'Falta el id a anular.');
+
       const { data, error } = await db
         .from(table)
         .update({ voided_at: new Date().toISOString(), voided_by: userId, void_reason: reason })
-        .eq('id', body.id)
+        .in('id', ids)
         .is('voided_at', null)
-        .select('id')
-        .maybeSingle();
+        .select('id');
       if (error) return fail(500, 'No se pudo anular.');
-      if (!data) return fail(409, 'Ya estaba anulado.');
-      return NextResponse.json({ success: true });
+      if (!data || data.length === 0) return fail(409, 'Ya estaba anulado.');
+      return NextResponse.json({ success: true, count: data.length });
     }
 
     default:

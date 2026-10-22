@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useState, useMemo, useRef } from 'react';
-import { Users, Plus, Wallet, HandCoins, Loader2, LogOut, X, Download, CloudOff, ChevronLeft, ChevronRight, Save, Banknote, Receipt, Calculator, Trophy, TrendingUp, TrendingDown, History, Send, Target, Sparkles, Pencil, Zap, Undo2, Settings, Check, Building2, AlertTriangle, AlertCircle, Copy, CheckCheck, FileSpreadsheet, Clock, Landmark } from 'lucide-react';
+import { Users, Plus, Wallet, HandCoins, Loader2, LogOut, X, Download, CloudOff, ChevronLeft, ChevronRight, Save, Banknote, Receipt, Calculator, Trophy, TrendingUp, TrendingDown, History, Send, Target, Sparkles, Pencil, Zap, Undo2, Settings, Check, Building2, AlertTriangle, AlertCircle, Copy, CheckCheck, FileSpreadsheet, Clock, Landmark, Trash2 } from 'lucide-react';
 import { supabase } from '@/lib/supabaseClient';
 import { adminFetch } from '@/lib/adminFetch';
 import AliasManager from '@/components/AliasManager';
@@ -24,7 +24,7 @@ const shiftDate = (d, period, dir) => {
   return t.toISOString().slice(0, 10);
 };
 const PERIODS = { day: 'Día', week: 'Semana', month: 'Mes' };
-const METHOD_LABEL = { efectivo: 'Efectivo', transferencia: 'Transferencia' };
+const METHOD_LABEL = { efectivo: 'Efectivo', transferencia: 'Transferencia', dividido: 'Dividido (Efvo + Transf)' };
 const QUEUE_KEY = 'dv_ventas_queue';
 const BIG_AMOUNT = 1000000; // por encima de esto se pide confirmar
 
@@ -198,12 +198,17 @@ function AmountInput({ value, onChange, placeholder = 'Monto', autoFocus = false
 }
 const amountOk = (v) => /^\d+$/.test(String(v ?? '')) && Number(v) > 0;
 
-function MethodToggle({ value, onChange }) {
+function MethodToggle({ value, onChange, showDivided = false }) {
+  const options = {
+    efectivo: 'Efectivo',
+    transferencia: 'Transferencia',
+    ...(showDivided ? { dividido: '⚡ Dividido (Efvo + Transf)' } : {})
+  };
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginBottom: '10px' }}>
-      {Object.entries(METHOD_LABEL).map(([id, label]) => (
+    <div style={{ display: 'grid', gridTemplateColumns: showDivided ? '1fr 1fr 1.3fr' : '1fr 1fr', gap: '8px', marginBottom: '10px' }}>
+      {Object.entries(options).map(([id, label]) => (
         <button key={id} type="button" onClick={() => onChange(id)}
-          style={{ padding: '10px', borderRadius: '10px', fontWeight: 800, cursor: 'pointer', border: value === id ? '2px solid var(--text-main)' : '1px solid var(--border-color)', backgroundColor: value === id ? 'var(--text-main)' : 'var(--bg-card)', color: value === id ? 'var(--bg-page)' : 'var(--text-main)' }}>
+          style={{ padding: '9px 6px', borderRadius: '10px', fontSize: showDivided ? '0.78rem' : '0.85rem', fontWeight: 800, cursor: 'pointer', border: value === id ? (id === 'dividido' ? '2px solid #D97706' : '2px solid var(--text-main)') : '1px solid var(--border-color)', backgroundColor: value === id ? (id === 'dividido' ? '#FEF3C7' : 'var(--text-main)') : 'var(--bg-card)', color: value === id ? (id === 'dividido' ? '#92400E' : 'var(--bg-page)') : 'var(--text-main)' }}>
           {label}
         </button>
       ))}
@@ -318,21 +323,38 @@ function Login({ onLogged }) {
 }
 
 // ---------------------------------------------------------------- Venta / vale
-function EntryModal({ kind, seller, date, aliases = [], onClose, onSaved }) {
+function EntryModal({ kind, seller, date, aliases = [], onClose, onSaved, onOpenSharedModal }) {
   const [amount, setAmount] = useState('');
   const [method, setMethod] = useState('efectivo');
+  const [cashAmount, setCashAmount] = useState('');
+  const [transferAmount, setTransferAmount] = useState('');
   const [note, setNote] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [aliasChoice, setAliasChoice] = useState(null);
   const [copied, setCopied] = useState('');
   const isSale = kind === 'sale';
-  // Venta por transferencia: se elige a qué alias del día entró (se sugiere
-  // el primero que acepta el monto, igual que en la carga rápida).
+  const isDivided = isSale && method === 'dividido';
+  const isTransfer = method === 'transferencia';
+
+  const totalNum = isDivided
+    ? ((amountOk(cashAmount) ? Number(cashAmount) : 0) + (amountOk(transferAmount) ? Number(transferAmount) : 0))
+    : (Number(amount) || 0);
+
+  const transferNum = isDivided ? (Number(transferAmount) || 0) : (Number(amount) || 0);
   const activeAliases = aliases.filter((a) => a.active);
-  const showAliases = isSale && method === 'transferencia' && activeAliases.length > 0;
-  const amountNum = Number(amount) || 0;
-  const chosenAlias = showAliases ? pickAlias(activeAliases, amountNum, aliasChoice) : null;
+  const showAliases = isSale && (isTransfer || (isDivided && transferNum > 0)) && activeAliases.length > 0;
+  const chosenAlias = showAliases ? pickAlias(activeAliases, transferNum, aliasChoice) : null;
+
+  const splitHalf = () => {
+    const base = amountOk(amount) ? Number(amount) : ((Number(cashAmount) || 0) + (Number(transferAmount) || 0));
+    if (base > 0) {
+      const half = Math.floor(base / 2);
+      setCashAmount(String(half));
+      setTransferAmount(String(base - half));
+    }
+  };
+
   const copyAlias = (alias) => {
     navigator.clipboard?.writeText(alias);
     setCopied(alias);
@@ -340,6 +362,53 @@ function EntryModal({ kind, seller, date, aliases = [], onClose, onSaved }) {
   };
 
   const save = async () => {
+    if (isDivided) {
+      if (!amountOk(cashAmount) || !amountOk(transferAmount)) {
+        setError('Ingresá ambos montos (efectivo y transferencia) sin puntos ni comas.');
+        return;
+      }
+      const cNum = Number(cashAmount);
+      const tNum = Number(transferAmount);
+      if (showAliases && !chosenAlias) {
+        setError(`Ningún alias acepta la transferencia de ${money(tNum)}. Revisá los alias.`);
+        return;
+      }
+      setBusy(true);
+      setError('');
+      try {
+        const { queued } = await sendOrQueue({
+          action: 'addBatchSales',
+          sales: [
+            {
+              clientRef: crypto.randomUUID(),
+              sellerId: seller.id,
+              date,
+              amount: cNum,
+              method: 'efectivo',
+              note: `Pago dividido (${money(cNum)} efvo / ${money(tNum)} transf · Total ${money(cNum + tNum)})${note ? ` · ${note}` : ''}`
+            },
+            {
+              clientRef: crypto.randomUUID(),
+              sellerId: seller.id,
+              date,
+              amount: tNum,
+              method: 'transferencia',
+              aliasId: chosenAlias?.id || null,
+              note: `Pago dividido (${money(cNum)} efvo / ${money(tNum)} transf · Total ${money(cNum + tNum)})${note ? ` · ${note}` : ''}`
+            }
+          ]
+        });
+        playSuccessBeep();
+        onSaved(queued);
+        onClose();
+      } catch (err) {
+        setError(err.message);
+      } finally {
+        setBusy(false);
+      }
+      return;
+    }
+
     if (!amountOk(amount)) {
       setError('Poné el monto en pesos, sin puntos ni comas (ej: 15000).');
       return;
@@ -357,6 +426,7 @@ function EntryModal({ kind, seller, date, aliases = [], onClose, onSaved }) {
         aliasId: chosenAlias?.id || null,
         note
       });
+      playSuccessBeep();
       onSaved(queued);
       onClose();
     } catch (err) {
@@ -368,15 +438,102 @@ function EntryModal({ kind, seller, date, aliases = [], onClose, onSaved }) {
 
   return (
     <Modal title={isSale ? 'Nueva venta' : 'Nuevo vale / adelanto'} subtitle={`${seller.name} · ${fmtDate(date)}`} onClose={onClose}>
-      <AmountInput value={amount} onChange={setAmount} placeholder="Monto $" autoFocus />
-      {!isSale && <div style={{ fontSize: '0.78rem', fontWeight: 700, color: 'var(--text-muted)', marginBottom: '4px' }}>¿Cómo se le dio?</div>}
-      <MethodToggle value={method} onChange={setMethod} />
+      {isSale && (
+        <button
+          type="button"
+          onClick={() => { onClose(); onOpenSharedModal?.(seller, amount); }}
+          style={{
+            width: '100%',
+            marginBottom: '12px',
+            padding: '8px 12px',
+            borderRadius: '10px',
+            border: '1.5px dashed #818CF8',
+            backgroundColor: 'rgba(99, 102, 241, 0.08)',
+            color: '#4338CA',
+            fontSize: '0.82rem',
+            fontWeight: 800,
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: '6px'
+          }}
+        >
+          <Users size={15} /> ¿Esta compra fue con otra vendedora? Cargar venta compartida
+        </button>
+      )}
+
+      {isSale ? (
+        <MethodToggle
+          value={method}
+          onChange={(m) => {
+            setMethod(m);
+            if (m === 'dividido' && amountOk(amount)) {
+              const half = Math.floor(Number(amount) / 2);
+              setCashAmount(String(half));
+              setTransferAmount(String(Number(amount) - half));
+            }
+          }}
+          showDivided={true}
+        />
+      ) : (
+        <>
+          <div style={{ fontSize: '0.78rem', fontWeight: 700, color: 'var(--text-muted)', marginBottom: '4px' }}>¿Cómo se le dio?</div>
+          <MethodToggle value={method} onChange={setMethod} />
+        </>
+      )}
+
+      {isDivided ? (
+        <div style={{ backgroundColor: 'var(--bg-surface-elevated)', border: '1px solid var(--border-color)', borderRadius: '12px', padding: '12px', marginBottom: '12px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+            <span style={{ fontSize: '0.78rem', fontWeight: 800, color: 'var(--text-muted)' }}>DIVIDIR EL PAGO</span>
+            <button type="button" onClick={splitHalf} className="btn-secondary" style={{ padding: '3px 8px', fontSize: '0.72rem', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+              <Zap size={12} /> Mitad y Mitad (50 / 50)
+            </button>
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginBottom: '6px' }}>
+            <div>
+              <label style={{ display: 'block', fontSize: '0.74rem', fontWeight: 700, color: 'var(--text-muted)', marginBottom: '3px' }}>💵 Efectivo $</label>
+              <input
+                type="text"
+                inputMode="numeric"
+                value={cashAmount}
+                onChange={(e) => setCashAmount(e.target.value.replace(/[^\d]/g, ''))}
+                placeholder="$ 0"
+                className="form-input"
+                style={{ width: '100%', fontWeight: 800, fontSize: '1rem', padding: '8px' }}
+                autoFocus
+              />
+            </div>
+            <div>
+              <label style={{ display: 'block', fontSize: '0.74rem', fontWeight: 700, color: 'var(--text-muted)', marginBottom: '3px' }}>🏦 Transferencia $</label>
+              <input
+                type="text"
+                inputMode="numeric"
+                value={transferAmount}
+                onChange={(e) => setTransferAmount(e.target.value.replace(/[^\d]/g, ''))}
+                placeholder="$ 0"
+                className="form-input"
+                style={{ width: '100%', fontWeight: 800, fontSize: '1rem', padding: '8px' }}
+              />
+            </div>
+          </div>
+          <div style={{ fontSize: '0.82rem', fontWeight: 800, color: 'var(--accent-gold, #D97706)', textAlign: 'right' }}>
+            Total a cobrar: {money(totalNum)}
+          </div>
+        </div>
+      ) : (
+        <AmountInput value={amount} onChange={setAmount} placeholder="Monto $" autoFocus />
+      )}
+
       {showAliases && (
         <div style={{ marginBottom: '12px' }}>
-          <div style={{ fontSize: '0.78rem', fontWeight: 800, color: 'var(--text-muted)', marginBottom: '6px' }}>¿A qué alias transfirió?</div>
+          <div style={{ fontSize: '0.78rem', fontWeight: 800, color: 'var(--text-muted)', marginBottom: '6px' }}>
+            ¿A qué alias transfirió? {isDivided && <span>({money(transferNum)})</span>}
+          </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
             {activeAliases.map((a) => {
-              const st = aliasStatus(a, amountNum);
+              const st = aliasStatus(a, transferNum);
               const sel = chosenAlias?.id === a.id;
               const rem = aliasRemaining(a);
               return (
@@ -422,7 +579,7 @@ function EntryModal({ kind, seller, date, aliases = [], onClose, onSaved }) {
       )}
       <input value={note} onChange={(e) => setNote(e.target.value)} placeholder={isSale ? 'Nota (opcional)' : 'Motivo (opcional)'} className="form-input" style={{ width: '100%', marginBottom: '12px' }} />
       {error && <div role="alert" style={{ color: '#B91C1C', fontSize: '0.84rem', fontWeight: 600, marginBottom: '10px' }}>{error}</div>}
-      <SaveButton busy={busy} amount={amount} onSave={save} />
+      <SaveButton busy={busy} amount={totalNum} onSave={save} />
     </Modal>
   );
 }
@@ -796,11 +953,23 @@ function SellerNumbersModal({ sellers, currentMap, onClose, onSave }) {
 }
 
 // ---------------------------------------------------------------- Barra de Carga Rápida en Hora Pico
-function QuickSaleBar({ sellers, numberMap, date, aliases = [], onSaleCreated, onOpenNumbersModal, onEditAliases }) {
+function QuickSaleBar({
+  sellers,
+  numberMap,
+  date,
+  aliases = [],
+  onSaleCreated,
+  onOpenNumbersModal,
+  onEditAliases,
+  onOpenSharedModal,
+  onOpenSplitModal
+}) {
   const [sellerInput, setSellerInput] = useState('');
   const [selectedSellerId, setSelectedSellerId] = useState(null);
   const [amount, setAmount] = useState('');
-  const [method, setMethod] = useState('efectivo');
+  const [method, setMethod] = useState('efectivo'); // 'efectivo' | 'transferencia' | 'dividido'
+  const [cashAmount, setCashAmount] = useState('');
+  const [transferAmount, setTransferAmount] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [undoToast, setUndoToast] = useState(null);
@@ -809,16 +978,16 @@ function QuickSaleBar({ sellers, numberMap, date, aliases = [], onSaleCreated, o
   const amountRef = useRef(null);
   const sellerInputRef = useRef(null);
 
-  // Alias de cobro: se sugiere solo el primero que acepta el monto; con
-  // flechas arriba/abajo (o clic en el chip) se elige otro.
+  // Alias de cobro: se sugiere solo el primero que acepta el monto
   const [aliasChoice, setAliasChoice] = useState(null);
   const [aliasCopied, setAliasCopied] = useState(false);
   const activeAliases = useMemo(() => aliases.filter((a) => a.active), [aliases]);
   const amountNum = Number(String(amount).replace(/[^\d]/g, '')) || 0;
-  const chosenAlias = useMemo(() => pickAlias(activeAliases, amountNum, aliasChoice), [activeAliases, amountNum, aliasChoice]);
+  const transferAmountNum = method === 'dividido' ? (Number(transferAmount) || 0) : amountNum;
+  const chosenAlias = useMemo(() => pickAlias(activeAliases, transferAmountNum, aliasChoice), [activeAliases, transferAmountNum, aliasChoice]);
 
   const cycleAlias = (dir) => {
-    const ok = activeAliases.filter((a) => aliasStatus(a, amountNum).ok);
+    const ok = activeAliases.filter((a) => aliasStatus(a, transferAmountNum).ok);
     if (ok.length === 0) return;
     const idx = ok.findIndex((a) => a.id === chosenAlias?.id);
     const next = ok[(idx + dir + ok.length) % ok.length];
@@ -946,6 +1115,8 @@ function QuickSaleBar({ sellers, numberMap, date, aliases = [], onSaleCreated, o
       onSaleCreated(queued);
 
       setAmount('');
+      setCashAmount('');
+      setTransferAmount('');
       setSellerInput('');
       setSelectedSellerId(null);
       setAliasChoice(null);
@@ -960,13 +1131,102 @@ function QuickSaleBar({ sellers, numberMap, date, aliases = [], onSaleCreated, o
     }
   };
 
+  const executeDividedSale = async (targetSeller, targetCash, targetTransfer) => {
+    if (!targetSeller) {
+      setError('Elegí o escribí el número de la vendedora (1 al 20).');
+      return;
+    }
+    if (!amountOk(targetCash) || !amountOk(targetTransfer)) {
+      setError('Ingresá ambos montos (efectivo y transferencia) sin puntos ni comas.');
+      return;
+    }
+
+    const cNum = Number(targetCash);
+    const tNum = Number(targetTransfer);
+    const totalNum = cNum + tNum;
+
+    let saleAlias = null;
+    if (tNum > 0 && activeAliases.length > 0) {
+      saleAlias = pickAlias(activeAliases, tNum, aliasChoice);
+      if (!saleAlias) {
+        setError(`Ningún alias acepta la transferencia de ${money(tNum)} (por tope o límites).`);
+        return;
+      }
+    }
+
+    setBusy(true);
+    setError('');
+
+    try {
+      const clientRef1 = crypto.randomUUID();
+      const clientRef2 = crypto.randomUUID();
+      const sales = [
+        {
+          clientRef: clientRef1,
+          sellerId: targetSeller.id,
+          date,
+          amount: cNum,
+          method: 'efectivo',
+          note: `Pago dividido (${money(cNum)} efvo / ${money(tNum)} transf · Total ${money(totalNum)})`
+        },
+        {
+          clientRef: clientRef2,
+          sellerId: targetSeller.id,
+          date,
+          amount: tNum,
+          method: 'transferencia',
+          aliasId: saleAlias?.id || null,
+          note: `Pago dividido (${money(cNum)} efvo / ${money(tNum)} transf · Total ${money(totalNum)})`
+        }
+      ];
+
+      const { queued, data: res } = await sendOrQueue({
+        action: 'addBatchSales',
+        sales
+      });
+
+      playSuccessBeep();
+
+      if (!queued && res?.saleIds?.length) {
+        setUndoToast({
+          saleIds: res.saleIds,
+          sellerName: targetSeller.name,
+          amount: totalNum,
+          method: 'dividido',
+          cashAmount: cNum,
+          transferAmount: tNum,
+          aliasName: saleAlias?.alias || '',
+          sellerNum: numberMap[targetSeller.id]
+        });
+      }
+
+      onSaleCreated(queued);
+
+      setAmount('');
+      setCashAmount('');
+      setTransferAmount('');
+      setSellerInput('');
+      setSelectedSellerId(null);
+      setAliasChoice(null);
+      setMethod('efectivo');
+
+      setTimeout(() => {
+        if (sellerInputRef.current) sellerInputRef.current.focus();
+      }, 50);
+    } catch (err) {
+      setError(err.message || 'No se pudo guardar la venta dividida.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const handleUndo = async () => {
-    if (!undoToast?.saleId) return;
+    if (!undoToast?.saleId && !undoToast?.saleIds?.length) return;
     try {
       await api('POST', {
         action: 'void',
         kind: 'sale',
-        id: undoToast.saleId,
+        ...(undoToast.saleIds ? { ids: undoToast.saleIds } : { id: undoToast.saleId }),
         reason: 'Deshecho desde Carga Rápida'
       });
       setUndoToast(null);
@@ -1028,18 +1288,15 @@ function QuickSaleBar({ sellers, numberMap, date, aliases = [], onSaleCreated, o
 
     const trimmed = raw.trim();
 
-    // Si escribe comando con espacio (ej: "00 25000" o "4 15000"), permitir que termine de tipear
     if (trimmed.includes(' ') || trimmed.includes('/') || trimmed.includes('.')) {
       return;
     }
 
-    // Caso 1: "00" o "0" (Mostrador directo a caja) -> Salta inmediatamente
     if (trimmed === '00') {
       jumpToAmount();
       return;
     }
 
-    // Caso 2: número de 2 dígitos (ej: "01", "04", "12", "20") -> Salta inmediatamente
     if (/^\d{2}$/.test(trimmed)) {
       const num = parseInt(trimmed, 10);
       const matched = sellerByNumber.get(trimmed) || sellerByNumber.get(num);
@@ -1050,7 +1307,6 @@ function QuickSaleBar({ sellers, numberMap, date, aliases = [], onSaleCreated, o
   };
 
   const handleSellerKeyDown = (e) => {
-    // Espacio o Tab sobre número de vendedora salta directo al monto sin esperar
     if (e.key === ' ' || e.key === 'Tab') {
       const trimmed = sellerInput.trim();
       if (trimmed && !trimmed.includes(' ')) {
@@ -1075,12 +1331,17 @@ function QuickSaleBar({ sellers, numberMap, date, aliases = [], onSaleCreated, o
         const num = parseInt(rawNum, 10);
         const parsedAmount = parts[1];
         const methodChar = (parts[2] || '').toLowerCase();
-        const parsedMethod = methodChar.startsWith('t') ? 'transferencia' : 'efectivo';
+        const parsedMethod = methodChar.startsWith('t') ? 'transferencia' : methodChar.startsWith('d') ? 'dividido' : 'efectivo';
         const matched = (rawNum === '00' || rawNum === '0')
           ? activeSellers.find((s) => s.name.toLowerCase().trim() === 'mostrador')
           : (sellerByNumber.get(rawNum) || sellerByNumber.get(num));
         if (matched && amountOk(parsedAmount)) {
-          executeSale(matched, parsedAmount, parsedMethod);
+          if (parsedMethod === 'dividido') {
+            const half = Math.floor(Number(parsedAmount) / 2);
+            executeDividedSale(matched, String(half), String(Number(parsedAmount) - half));
+          } else {
+            executeSale(matched, parsedAmount, parsedMethod);
+          }
           return;
         }
       }
@@ -1092,7 +1353,6 @@ function QuickSaleBar({ sellers, numberMap, date, aliases = [], onSaleCreated, o
   };
 
   const handleAmountKeyDown = (e) => {
-    // Atajo numérico rápido para alternar Efectivo / Transferencia: 't', '+', '*', 'F2'
     if (e.key === 't' || e.key === 'T' || e.key === '+' || e.key === '*') {
       e.preventDefault();
       setMethod((prev) => (prev === 'efectivo' ? 'transferencia' : 'efectivo'));
@@ -1103,14 +1363,24 @@ function QuickSaleBar({ sellers, numberMap, date, aliases = [], onSaleCreated, o
       setMethod('efectivo');
       return;
     }
-    if ((e.key === 'ArrowUp' || e.key === 'ArrowDown') && method === 'transferencia') {
+    if (e.key === 'd' || e.key === 'D') {
+      e.preventDefault();
+      setMethod('dividido');
+      if (amountOk(amount)) {
+        const total = Number(amount);
+        const half = Math.floor(total / 2);
+        setCashAmount(String(half));
+        setTransferAmount(String(total - half));
+      }
+      return;
+    }
+    if ((e.key === 'ArrowUp' || e.key === 'ArrowDown') && (method === 'transferencia' || (method === 'dividido' && Number(transferAmount) > 0))) {
       e.preventDefault();
       cycleAlias(e.key === 'ArrowDown' ? 1 : -1);
       return;
     }
 
-    // Si el monto está vacío y presiona Backspace o Flecha Izquierda, vuelve al campo N° Vendedora
-    if ((e.key === 'Backspace' || e.key === 'ArrowLeft') && (!amount || amount === '')) {
+    if ((e.key === 'Backspace' || e.key === 'ArrowLeft') && (!amount || amount === '') && method !== 'dividido') {
       e.preventDefault();
       if (sellerInputRef.current) {
         sellerInputRef.current.focus();
@@ -1119,18 +1389,24 @@ function QuickSaleBar({ sellers, numberMap, date, aliases = [], onSaleCreated, o
       return;
     }
 
-    // Si presiona Escape, limpia todo y vuelve al inicio
     if (e.key === 'Escape') {
       e.preventDefault();
       setAmount('');
+      setCashAmount('');
+      setTransferAmount('');
       setSellerInput('');
       setSelectedSellerId(null);
+      setMethod('efectivo');
       if (sellerInputRef.current) sellerInputRef.current.focus();
       return;
     }
 
     if (e.key === 'Enter') {
       e.preventDefault();
+      if (method === 'dividido') {
+        executeDividedSale(parsedSeller, cashAmount, transferAmount);
+        return;
+      }
       let cleanAmount = amount.trim().toLowerCase();
       let chosenMethod = method;
       if (cleanAmount.endsWith('t')) {
@@ -1139,6 +1415,11 @@ function QuickSaleBar({ sellers, numberMap, date, aliases = [], onSaleCreated, o
       } else if (cleanAmount.endsWith('e')) {
         cleanAmount = cleanAmount.slice(0, -1).trim();
         chosenMethod = 'efectivo';
+      } else if (cleanAmount.endsWith('d')) {
+        cleanAmount = cleanAmount.slice(0, -1).trim();
+        const half = Math.floor(Number(cleanAmount) / 2);
+        executeDividedSale(parsedSeller, String(half), String(Number(cleanAmount) - half));
+        return;
       }
       executeSale(parsedSeller, cleanAmount, chosenMethod);
     }
@@ -1194,15 +1475,38 @@ function QuickSaleBar({ sellers, numberMap, date, aliases = [], onSaleCreated, o
           </div>
         </div>
 
-        <button
-          type="button"
-          onClick={onOpenNumbersModal}
-          className="btn-secondary"
-          style={{ padding: '4px 9px', fontSize: '0.75rem', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
-          title="Asignar o cambiar los números del 1 al 20 de las vendedoras"
-        >
-          <Settings size={13} /> Asignar N° (1-20)
-        </button>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+          <button
+            type="button"
+            onClick={() => onOpenSharedModal?.(parsedSeller, amount)}
+            style={{
+              padding: '5px 11px',
+              fontSize: '0.76rem',
+              fontWeight: 800,
+              borderRadius: '8px',
+              border: '1.5px solid #818CF8',
+              backgroundColor: '#EEF2FF',
+              color: '#4338CA',
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '5px',
+              cursor: 'pointer'
+            }}
+            title="Venta atendida por 2 o 3 vendedoras distintas"
+          >
+            <Users size={14} /> 👥 Venta Compartida
+          </button>
+
+          <button
+            type="button"
+            onClick={onOpenNumbersModal}
+            className="btn-secondary"
+            style={{ padding: '5px 10px', fontSize: '0.76rem', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
+            title="Asignar o cambiar los números del 1 al 20 de las vendedoras"
+          >
+            <Settings size={13} /> Asignar N° (1-20)
+          </button>
+        </div>
       </div>
 
       {/* Botonera / Chips táctiles (00 Mostrador y 1 al 20) */}
@@ -1276,7 +1580,7 @@ function QuickSaleBar({ sellers, numberMap, date, aliases = [], onSaleCreated, o
       {/* Inputs Bar con Auto-Salto */}
       <div style={{
         display: 'grid',
-        gridTemplateColumns: 'minmax(140px, 1.2fr) minmax(160px, 1.5fr) minmax(180px, 1fr) minmax(130px, auto)',
+        gridTemplateColumns: 'minmax(140px, 1.1fr) minmax(170px, 1.5fr) minmax(200px, 1.2fr) minmax(130px, auto)',
         gap: '10px',
         alignItems: 'start'
       }}>
@@ -1314,50 +1618,174 @@ function QuickSaleBar({ sellers, numberMap, date, aliases = [], onSaleCreated, o
               Tipeá 00 o el número (salta solo al monto)
             </div>
           )}
+          <div style={{ marginTop: '4px' }}>
+            <button
+              type="button"
+              onClick={() => onOpenSharedModal?.(parsedSeller, amount)}
+              style={{
+                background: 'none',
+                border: 'none',
+                padding: 0,
+                color: '#4F46E5',
+                fontSize: '0.72rem',
+                fontWeight: 700,
+                cursor: 'pointer',
+                textDecoration: 'underline'
+              }}
+            >
+              👥 ¿Venta compartida con otra vendedora? Clic acá
+            </button>
+          </div>
         </div>
 
         {/* Monto con Confirmación Enter */}
         <div>
-          <label style={{ display: 'block', fontSize: '0.74rem', fontWeight: 800, color: 'var(--text-main)', marginBottom: '3px' }}>
-            2. Monto $ (Enter para guardar)
-          </label>
-          <input
-            ref={amountRef}
-            type="text"
-            inputMode="numeric"
-            value={amount}
-            onChange={(e) => {
-              setAmount(e.target.value.trim());
-              setError('');
-            }}
-            onKeyDown={handleAmountKeyDown}
-            placeholder="$ 0"
-            className="form-input"
-            style={{
-              width: '100%',
-              fontSize: '1.2rem',
-              fontWeight: 900,
-              padding: '8px 12px',
-              border: amountOk(amount) ? '2px solid var(--accent-gold, #D97706)' : undefined
-            }}
-          />
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '4px', marginTop: '4px' }}>
-            <span style={{ fontSize: '0.74rem', fontWeight: 700, color: amountOk(amount) ? 'var(--text-main)' : 'var(--text-muted)' }}>
-              {amountOk(amount) ? `= ${money(amount)}` : 'Entero sin puntos'}
-            </span>
-            <div style={{ display: 'flex', gap: '4px' }}>
-              <button type="button" onClick={() => addAmount(10000)} style={{ fontSize: '0.68rem', padding: '1px 5px', borderRadius: '4px', border: '1px solid var(--border-color)', background: 'var(--bg-surface-elevated)', cursor: 'pointer', fontWeight: 700 }}>+10k</button>
-              <button type="button" onClick={() => addAmount(50000)} style={{ fontSize: '0.68rem', padding: '1px 5px', borderRadius: '4px', border: '1px solid var(--border-color)', background: 'var(--bg-surface-elevated)', cursor: 'pointer', fontWeight: 700 }}>+50k</button>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '3px' }}>
+            <label style={{ display: 'block', fontSize: '0.74rem', fontWeight: 800, color: 'var(--text-main)', margin: 0 }}>
+              {method === 'dividido' ? '2. Montos Divididos (Enter)' : '2. Monto $ (Enter para guardar)'}
+            </label>
+            {method === 'dividido' && (
+              <button
+                type="button"
+                onClick={() => {
+                  const base = amountOk(amount) ? Number(amount) : ((Number(cashAmount) || 0) + (Number(transferAmount) || 0));
+                  if (base > 0) {
+                    const half = Math.floor(base / 2);
+                    setCashAmount(String(half));
+                    setTransferAmount(String(base - half));
+                  }
+                }}
+                style={{
+                  fontSize: '0.68rem',
+                  padding: '1px 6px',
+                  borderRadius: '4px',
+                  border: '1px solid #F59E0B',
+                  background: '#FEF3C7',
+                  color: '#92400E',
+                  cursor: 'pointer',
+                  fontWeight: 800
+                }}
+              >
+                ⚡ 50 / 50 (Mitad y mitad)
+              </button>
+            )}
+          </div>
+
+          {method === 'dividido' ? (
+            <div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px' }}>
+                <div>
+                  <input
+                    ref={amountRef}
+                    type="text"
+                    inputMode="numeric"
+                    value={cashAmount}
+                    onChange={(e) => {
+                      setCashAmount(e.target.value.replace(/[^\d]/g, ''));
+                      setError('');
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        executeDividedSale(parsedSeller, cashAmount, transferAmount);
+                      } else {
+                        handleAmountKeyDown(e);
+                      }
+                    }}
+                    placeholder="Efvo $"
+                    className="form-input"
+                    style={{ width: '100%', fontSize: '1rem', fontWeight: 900, padding: '7px 8px' }}
+                  />
+                  <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)', fontWeight: 700 }}>💵 Efectivo</span>
+                </div>
+                <div>
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    value={transferAmount}
+                    onChange={(e) => {
+                      setTransferAmount(e.target.value.replace(/[^\d]/g, ''));
+                      setError('');
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        executeDividedSale(parsedSeller, cashAmount, transferAmount);
+                      } else {
+                        handleAmountKeyDown(e);
+                      }
+                    }}
+                    placeholder="Transf $"
+                    className="form-input"
+                    style={{ width: '100%', fontSize: '1rem', fontWeight: 900, padding: '7px 8px' }}
+                  />
+                  <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)', fontWeight: 700 }}>🏦 Transferencia</span>
+                </div>
+              </div>
+              <div style={{ fontSize: '0.76rem', fontWeight: 800, color: 'var(--accent-gold, #D97706)', marginTop: '4px' }}>
+                Total: {money((Number(cashAmount) || 0) + (Number(transferAmount) || 0))}
+              </div>
             </div>
+          ) : (
+            <>
+              <input
+                ref={amountRef}
+                type="text"
+                inputMode="numeric"
+                value={amount}
+                onChange={(e) => {
+                  setAmount(e.target.value.trim());
+                  setError('');
+                }}
+                onKeyDown={handleAmountKeyDown}
+                placeholder="$ 0"
+                className="form-input"
+                style={{
+                  width: '100%',
+                  fontSize: '1.2rem',
+                  fontWeight: 900,
+                  padding: '8px 12px',
+                  border: amountOk(amount) ? '2px solid var(--accent-gold, #D97706)' : undefined
+                }}
+              />
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '4px', marginTop: '4px' }}>
+                <span style={{ fontSize: '0.74rem', fontWeight: 700, color: amountOk(amount) ? 'var(--text-main)' : 'var(--text-muted)' }}>
+                  {amountOk(amount) ? `= ${money(amount)}` : 'Entero sin puntos'}
+                </span>
+                <div style={{ display: 'flex', gap: '4px' }}>
+                  <button type="button" onClick={() => addAmount(10000)} style={{ fontSize: '0.68rem', padding: '1px 5px', borderRadius: '4px', border: '1px solid var(--border-color)', background: 'var(--bg-surface-elevated)', cursor: 'pointer', fontWeight: 700 }}>+10k</button>
+                  <button type="button" onClick={() => addAmount(50000)} style={{ fontSize: '0.68rem', padding: '1px 5px', borderRadius: '4px', border: '1px solid var(--border-color)', background: 'var(--bg-surface-elevated)', cursor: 'pointer', fontWeight: 700 }}>+50k</button>
+                </div>
+              </div>
+            </>
+          )}
+
+          <div style={{ marginTop: '3px' }}>
+            <button
+              type="button"
+              onClick={() => onOpenSplitModal?.(parsedSeller, amount)}
+              style={{
+                background: 'none',
+                border: 'none',
+                padding: 0,
+                color: '#D97706',
+                fontSize: '0.72rem',
+                fontWeight: 700,
+                cursor: 'pointer',
+                textDecoration: 'underline'
+              }}
+            >
+              ⚡ ¿Pago dividido (efvo + transf)? Clic acá
+            </button>
           </div>
         </div>
 
         {/* Método Toggle con atajos de teclado */}
         <div>
           <label style={{ display: 'block', fontSize: '0.74rem', fontWeight: 700, color: 'var(--text-muted)', marginBottom: '3px' }}>
-            Medio [T] o [E]
+            Medio [E], [T] o [D]
           </label>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '4px' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1.25fr', gap: '4px' }}>
             <button
               type="button"
               onClick={() => setMethod('efectivo')}
@@ -1392,6 +1820,31 @@ function QuickSaleBar({ sellers, numberMap, date, aliases = [], onSaleCreated, o
             >
               Transfer [T]
             </button>
+            <button
+              type="button"
+              onClick={() => {
+                setMethod('dividido');
+                if (amountOk(amount)) {
+                  const total = Number(amount);
+                  const half = Math.floor(total / 2);
+                  setCashAmount(String(half));
+                  setTransferAmount(String(total - half));
+                }
+              }}
+              title="Presioná la letra D para Pago Dividido (Efvo + Transfer)"
+              style={{
+                padding: '9px 4px',
+                borderRadius: '8px',
+                fontSize: '0.74rem',
+                fontWeight: 800,
+                cursor: 'pointer',
+                border: method === 'dividido' ? '2px solid #D97706' : '1px solid var(--border-color)',
+                backgroundColor: method === 'dividido' ? '#FEF3C7' : 'var(--bg-surface-elevated)',
+                color: method === 'dividido' ? '#92400E' : 'var(--text-main)'
+              }}
+            >
+              ⚡ Dividido [D]
+            </button>
           </div>
         </div>
 
@@ -1402,8 +1855,20 @@ function QuickSaleBar({ sellers, numberMap, date, aliases = [], onSaleCreated, o
           </label>
           <button
             type="button"
-            disabled={busy || !parsedSeller || !amountOk(amount)}
-            onClick={() => executeSale(parsedSeller, amount, method)}
+            disabled={
+              busy ||
+              !parsedSeller ||
+              (method === 'dividido'
+                ? (!amountOk(cashAmount) || !amountOk(transferAmount))
+                : !amountOk(amount))
+            }
+            onClick={() => {
+              if (method === 'dividido') {
+                executeDividedSale(parsedSeller, cashAmount, transferAmount);
+              } else {
+                executeSale(parsedSeller, amount, method);
+              }
+            }}
             className="btn-primary"
             style={{
               width: '100%',
@@ -1416,7 +1881,7 @@ function QuickSaleBar({ sellers, numberMap, date, aliases = [], onSaleCreated, o
               fontWeight: 800,
               backgroundColor: 'var(--accent-gold, #D97706)',
               borderColor: 'var(--accent-gold, #D97706)',
-              cursor: (!parsedSeller || !amountOk(amount) || busy) ? 'not-allowed' : 'pointer'
+              cursor: (!parsedSeller || busy || (method === 'dividido' ? (!amountOk(cashAmount) || !amountOk(transferAmount)) : !amountOk(amount))) ? 'not-allowed' : 'pointer'
             }}
           >
             {busy ? <Loader2 size={16} className="animate-spin" /> : <Plus size={16} />} Cargar [Enter]
@@ -1438,21 +1903,21 @@ function QuickSaleBar({ sellers, numberMap, date, aliases = [], onSaleCreated, o
         color: 'var(--text-muted)'
       }}>
         <span>
-          ⌨️ <strong>Atajos rápidos:</strong> <kbd style={{ padding: '1px 5px', borderRadius: '4px', backgroundColor: 'var(--bg-surface-elevated)', border: '1px solid var(--border-color)' }}>Enter</kbd> Guardar · <kbd style={{ padding: '1px 5px', borderRadius: '4px', backgroundColor: 'var(--bg-surface-elevated)', border: '1px solid var(--border-color)' }}>T</kbd> o <kbd style={{ padding: '1px 5px', borderRadius: '4px', backgroundColor: 'var(--bg-surface-elevated)', border: '1px solid var(--border-color)' }}>+</kbd> Transfer · <kbd style={{ padding: '1px 5px', borderRadius: '4px', backgroundColor: 'var(--bg-surface-elevated)', border: '1px solid var(--border-color)' }}>E</kbd> Efectivo · <kbd style={{ padding: '1px 5px', borderRadius: '4px', backgroundColor: 'var(--bg-surface-elevated)', border: '1px solid var(--border-color)' }}>Backspace</kbd> Corregir N° · <kbd style={{ padding: '1px 5px', borderRadius: '4px', backgroundColor: 'var(--bg-surface-elevated)', border: '1px solid var(--border-color)' }}>Esc</kbd> Limpiar
+          ⌨️ <strong>Atajos rápidos:</strong> <kbd style={{ padding: '1px 5px', borderRadius: '4px', backgroundColor: 'var(--bg-surface-elevated)', border: '1px solid var(--border-color)' }}>Enter</kbd> Guardar · <kbd style={{ padding: '1px 5px', borderRadius: '4px', backgroundColor: 'var(--bg-surface-elevated)', border: '1px solid var(--border-color)' }}>T</kbd> o <kbd style={{ padding: '1px 5px', borderRadius: '4px', backgroundColor: 'var(--bg-surface-elevated)', border: '1px solid var(--border-color)' }}>+</kbd> Transfer · <kbd style={{ padding: '1px 5px', borderRadius: '4px', backgroundColor: 'var(--bg-surface-elevated)', border: '1px solid var(--border-color)' }}>E</kbd> Efectivo · <kbd style={{ padding: '1px 5px', borderRadius: '4px', backgroundColor: 'var(--bg-surface-elevated)', border: '1px solid var(--border-color)' }}>D</kbd> Dividido · <kbd style={{ padding: '1px 5px', borderRadius: '4px', backgroundColor: 'var(--bg-surface-elevated)', border: '1px solid var(--border-color)' }}>Backspace</kbd> Corregir N° · <kbd style={{ padding: '1px 5px', borderRadius: '4px', backgroundColor: 'var(--bg-surface-elevated)', border: '1px solid var(--border-color)' }}>Esc</kbd> Limpiar
         </span>
         <span style={{ color: '#047857', fontWeight: 700 }}>
           ⚡ 0 clicks de mouse requeridos
         </span>
       </div>
 
-      {/* Alias de cobro al cobrar por Transferencia */}
-      {method === 'transferencia' && (
+      {/* Alias de cobro al cobrar por Transferencia o Dividido */}
+      {(method === 'transferencia' || (method === 'dividido' && Number(transferAmount) > 0)) && (
         <div style={{
           marginTop: '10px',
           padding: '10px 12px',
           borderRadius: '10px',
-          border: `1.5px solid ${chosenAlias ? (aliasStatus(chosenAlias, amountNum).overLimit ? '#EF4444' : '#10B981') : '#FCA5A5'}`,
-          backgroundColor: chosenAlias ? (aliasStatus(chosenAlias, amountNum).overLimit ? '#FEF2F2' : '#ECFDF5') : '#FEF2F2'
+          border: `1.5px solid ${chosenAlias ? (aliasStatus(chosenAlias, transferAmountNum).overLimit ? '#EF4444' : '#10B981') : '#FCA5A5'}`,
+          backgroundColor: chosenAlias ? (aliasStatus(chosenAlias, transferAmountNum).overLimit ? '#FEF2F2' : '#ECFDF5') : '#FEF2F2'
         }}>
           {activeAliases.length === 0 ? (
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px', flexWrap: 'wrap', fontSize: '0.84rem', fontWeight: 700, color: '#B91C1C' }}>
@@ -1463,16 +1928,16 @@ function QuickSaleBar({ sellers, numberMap, date, aliases = [], onSaleCreated, o
             <>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px', flexWrap: 'wrap' }}>
                 {chosenAlias ? (
-                  <div style={{ color: aliasStatus(chosenAlias, amountNum).overLimit ? '#991B1B' : '#065F46', minWidth: 0 }}>
+                  <div style={{ color: aliasStatus(chosenAlias, transferAmountNum).overLimit ? '#991B1B' : '#065F46', minWidth: 0 }}>
                     <div style={{ fontSize: '0.72rem', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.03em', display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
-                      <span>🏦 Pasale este alias{amountNum ? ` · ${money(amountNum)}` : ''}</span>
-                      {aliasStatus(chosenAlias, amountNum).overLimit && (
+                      <span>🏦 Pasale este alias{transferAmountNum ? ` · ${money(transferAmountNum)}` : ''}</span>
+                      {aliasStatus(chosenAlias, transferAmountNum).overLimit && (
                         <span style={{ backgroundColor: '#EF4444', color: '#FFF', padding: '1px 6px', borderRadius: '4px', fontSize: '0.68rem', fontWeight: 900 }}>
                           🚨 Límite alcanzado (habilitado)
                         </span>
                       )}
                     </div>
-                    <div style={{ fontSize: '1.25rem', fontWeight: 900, fontFamily: 'monospace', wordBreak: 'break-all', color: aliasStatus(chosenAlias, amountNum).overLimit ? '#B91C1C' : 'var(--text-main)' }}>
+                    <div style={{ fontSize: '1.25rem', fontWeight: 900, fontFamily: 'monospace', wordBreak: 'break-all', color: aliasStatus(chosenAlias, transferAmountNum).overLimit ? '#B91C1C' : 'var(--text-main)' }}>
                       {chosenAlias.alias}
                     </div>
                     <div style={{ fontSize: '0.78rem', fontWeight: 600 }}>
@@ -1488,7 +1953,7 @@ function QuickSaleBar({ sellers, numberMap, date, aliases = [], onSaleCreated, o
                   </div>
                 ) : (
                   <div style={{ fontSize: '0.86rem', fontWeight: 800, color: '#B91C1C' }}>
-                    🚫 Ningún alias acepta {money(amountNum)}. Cobralo en efectivo o revisá los alias.
+                    🚫 Ningún alias acepta {money(transferAmountNum)}. Cobralo en efectivo o revisá los alias.
                   </div>
                 )}
                 {chosenAlias && (
@@ -1499,7 +1964,7 @@ function QuickSaleBar({ sellers, numberMap, date, aliases = [], onSaleCreated, o
               </div>
               <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginTop: '8px', alignItems: 'center' }}>
                 {activeAliases.map((a) => {
-                  const st = aliasStatus(a, amountNum);
+                  const st = aliasStatus(a, transferAmountNum);
                   const sel = chosenAlias?.id === a.id;
                   const isOver = st.overLimit;
                   return (
@@ -1565,7 +2030,11 @@ function QuickSaleBar({ sellers, numberMap, date, aliases = [], onSaleCreated, o
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 800, fontSize: '0.88rem' }}>
             <Check size={18} style={{ color: '#059669' }} />
             <span>
-              ✓ Venta de <strong>{money(undoToast.amount)}</strong> cargada a <strong>#{undoToast.sellerNum} {undoToast.sellerName}</strong> ({METHOD_LABEL[undoToast.method]}{undoToast.aliasName ? ` → ${undoToast.aliasName}` : ''})
+              {undoToast.method === 'dividido' ? (
+                <>✓ Venta dividida de <strong>{money(undoToast.amount)}</strong> ({money(undoToast.cashAmount)} efvo + {money(undoToast.transferAmount)} transf{undoToast.aliasName ? ` → ${undoToast.aliasName}` : ''}) cargada a <strong>#{undoToast.sellerNum} {undoToast.sellerName}</strong></>
+              ) : (
+                <>✓ Venta de <strong>{money(undoToast.amount)}</strong> cargada a <strong>#{undoToast.sellerNum} {undoToast.sellerName}</strong> ({METHOD_LABEL[undoToast.method]}{undoToast.aliasName ? ` → ${undoToast.aliasName}` : ''})</>
+              )}
             </span>
           </div>
           <button
@@ -1724,6 +2193,765 @@ function DirectTransferModal({ date, sellers, numberMap, aliases = [], onClose, 
           </button>
         </div>
       </form>
+    </Modal>
+  );
+}
+
+// ---------------------------------------------------------------- Modal Venta Compartida (2 o 3 Vendedoras)
+function SharedSaleModal({
+  date,
+  sellers = [],
+  numberMap = {},
+  aliases = [],
+  onClose,
+  onSaved,
+  initialSeller = null,
+  initialAmount = ''
+}) {
+  const activeSellers = useMemo(() => sellers.filter((s) => s.active !== false), [sellers]);
+
+  const [rows, setRows] = useState(() => [
+    { sellerId: initialSeller?.id || '', amount: initialAmount ? String(initialAmount) : '' },
+    { sellerId: '', amount: '' }
+  ]);
+
+  const [method, setMethod] = useState('efectivo'); // 'efectivo' | 'transferencia' | 'dividido'
+  const [cashAmount, setCashAmount] = useState('');
+  const [transferAmount, setTransferAmount] = useState('');
+  const [aliasChoice, setAliasChoice] = useState(null);
+  const [copied, setCopied] = useState('');
+  const [note, setNote] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+
+  const totalAmount = useMemo(() => {
+    return rows.reduce((sum, r) => sum + (amountOk(r.amount) ? Number(r.amount) : 0), 0);
+  }, [rows]);
+
+  const activeAliases = useMemo(() => aliases.filter((a) => a.active), [aliases]);
+  const isTransfer = method === 'transferencia';
+  const isDivided = method === 'dividido';
+  const transferNum = isDivided ? (Number(transferAmount) || 0) : (isTransfer ? totalAmount : 0);
+  const showAliases = (isTransfer || (isDivided && transferNum > 0)) && activeAliases.length > 0;
+  const chosenAlias = showAliases ? pickAlias(activeAliases, transferNum, aliasChoice) : null;
+
+  const handleSplit5050 = () => {
+    if (totalAmount > 0) {
+      const half = Math.floor(totalAmount / 2);
+      setCashAmount(String(half));
+      setTransferAmount(String(totalAmount - half));
+    }
+  };
+
+  const updateRow = (index, field, value) => {
+    setRows((prev) => prev.map((r, i) => (i === index ? { ...r, [field]: value } : r)));
+    setError('');
+  };
+
+  const addSellerRow = () => {
+    if (rows.length < 3) {
+      setRows((prev) => [...prev, { sellerId: '', amount: '' }]);
+    }
+  };
+
+  const removeSellerRow = (index) => {
+    if (rows.length > 2) {
+      setRows((prev) => prev.filter((_, i) => i !== index));
+    }
+  };
+
+  const copyAlias = (alias) => {
+    navigator.clipboard?.writeText(alias);
+    setCopied(alias);
+    setTimeout(() => setCopied(''), 1500);
+  };
+
+  const save = async () => {
+    for (let i = 0; i < rows.length; i++) {
+      if (!rows[i].sellerId) {
+        setError(`Elegí la vendedora #${i + 1}.`);
+        return;
+      }
+      if (!amountOk(rows[i].amount)) {
+        setError(`Poné el monto que vendió la vendedora #${i + 1} (número entero).`);
+        return;
+      }
+    }
+
+    const sellerIds = rows.map((r) => r.sellerId);
+    if (new Set(sellerIds).size !== rows.length) {
+      setError('No podés seleccionar la misma vendedora más de una vez.');
+      return;
+    }
+
+    if (totalAmount <= 0) {
+      setError('El total de la venta debe ser mayor a 0.');
+      return;
+    }
+
+    if (isDivided) {
+      if (!amountOk(cashAmount) || !amountOk(transferAmount)) {
+        setError('Ingresá los montos en efectivo y transferencia.');
+        return;
+      }
+      const cNum = Number(cashAmount);
+      const tNum = Number(transferAmount);
+      if (cNum + tNum !== totalAmount) {
+        setError(`La suma de Efectivo (${money(cNum)}) y Transferencia (${money(tNum)}) debe ser exactamente igual al total (${money(totalAmount)}).`);
+        return;
+      }
+      if (tNum > 0 && showAliases && !chosenAlias) {
+        setError(`Ningún alias acepta la transferencia de ${money(tNum)}. Revisá los alias.`);
+        return;
+      }
+    }
+
+    if (isTransfer && showAliases && !chosenAlias) {
+      setError(`Ningún alias acepta la transferencia de ${money(totalAmount)}. Revisá los alias.`);
+      return;
+    }
+
+    setBusy(true);
+    setError('');
+
+    try {
+      const summaryParts = rows.map((r) => {
+        const s = sellers.find((x) => x.id === r.sellerId);
+        const num = numberMap[r.sellerId] !== undefined ? `#${numberMap[r.sellerId]} ` : '';
+        return `${num}${s?.name || 'Vendedora'} (${money(r.amount)})`;
+      });
+      const summary = summaryParts.join(' + ');
+
+      let sales = [];
+
+      if (method === 'efectivo') {
+        sales = rows.map((r) => ({
+          clientRef: crypto.randomUUID(),
+          sellerId: r.sellerId,
+          date,
+          amount: Number(r.amount),
+          method: 'efectivo',
+          note: `Venta compartida: ${summary}${note ? ` · ${note}` : ''}`
+        }));
+      } else if (method === 'transferencia') {
+        sales = rows.map((r) => ({
+          clientRef: crypto.randomUUID(),
+          sellerId: r.sellerId,
+          date,
+          amount: Number(r.amount),
+          method: 'transferencia',
+          aliasId: chosenAlias?.id || null,
+          note: `Venta compartida: ${summary}${note ? ` · ${note}` : ''}`
+        }));
+      } else {
+        const cTotal = Number(cashAmount);
+        const tTotal = Number(transferAmount);
+        let cashAllocated = 0;
+        let transferAllocated = 0;
+
+        rows.forEach((r, idx) => {
+          const isLast = idx === rows.length - 1;
+          const sAmt = Number(r.amount);
+          let sCash = isLast ? (cTotal - cashAllocated) : Math.round(cTotal * (sAmt / totalAmount));
+          sCash = Math.max(0, Math.min(sAmt, sCash));
+          const sTransf = sAmt - sCash;
+
+          cashAllocated += sCash;
+          transferAllocated += sTransf;
+
+          if (sCash > 0) {
+            sales.push({
+              clientRef: crypto.randomUUID(),
+              sellerId: r.sellerId,
+              date,
+              amount: sCash,
+              method: 'efectivo',
+              note: `Venta compartida dividida: ${summary} · ${money(cTotal)} efvo / ${money(tTotal)} transf${note ? ` · ${note}` : ''}`
+            });
+          }
+          if (sTransf > 0) {
+            sales.push({
+              clientRef: crypto.randomUUID(),
+              sellerId: r.sellerId,
+              date,
+              amount: sTransf,
+              method: 'transferencia',
+              aliasId: chosenAlias?.id || null,
+              note: `Venta compartida dividida: ${summary} · ${money(cTotal)} efvo / ${money(tTotal)} transf${note ? ` · ${note}` : ''}`
+            });
+          }
+        });
+      }
+
+      const { queued } = await sendOrQueue({
+        action: 'addBatchSales',
+        sales
+      });
+
+      playSuccessBeep();
+      onSaved(queued);
+      onClose();
+    } catch (err) {
+      setError(err.message || 'No se pudo guardar la venta compartida.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Modal
+      title="👥 Venta compartida entre vendedoras"
+      subtitle="La comisión de cada prenda o producto se le asigna a la vendedora que la vendió."
+      onClose={onClose}
+      maxWidth="500px"
+    >
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '12px' }}>
+        {rows.map((row, idx) => (
+          <div
+            key={idx}
+            style={{
+              backgroundColor: 'var(--bg-surface-elevated)',
+              border: '1px solid var(--border-color)',
+              borderRadius: '12px',
+              padding: '10px 12px'
+            }}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+              <span style={{ fontSize: '0.78rem', fontWeight: 800, color: 'var(--text-muted)' }}>
+                Vendedora #{idx + 1}
+              </span>
+              {rows.length > 2 && (
+                <button
+                  type="button"
+                  onClick={() => removeSellerRow(idx)}
+                  style={{
+                    background: 'none',
+                    border: 'none',
+                    color: '#EF4444',
+                    cursor: 'pointer',
+                    padding: '2px 4px',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '3px',
+                    fontSize: '0.74rem',
+                    fontWeight: 700
+                  }}
+                >
+                  <Trash2 size={13} /> Quitar
+                </button>
+              )}
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1.4fr 1fr', gap: '8px' }}>
+              <select
+                value={row.sellerId}
+                onChange={(e) => updateRow(idx, 'sellerId', e.target.value)}
+                className="form-input"
+                style={{ width: '100%', fontWeight: 800, fontSize: '0.88rem', padding: '8px' }}
+              >
+                <option value="">-- Elegir vendedora --</option>
+                {activeSellers.map((s) => {
+                  const isMostrador = s.name.toLowerCase().trim() === 'mostrador';
+                  const num = isMostrador ? '00' : (numberMap[s.id] || '');
+                  return (
+                    <option key={s.id} value={s.id} disabled={rows.some((r, i) => i !== idx && r.sellerId === s.id)}>
+                      #{num} {s.name} {isMostrador ? '(Mostrador)' : ''}
+                    </option>
+                  );
+                })}
+              </select>
+
+              <input
+                type="text"
+                inputMode="numeric"
+                value={row.amount}
+                onChange={(e) => updateRow(idx, 'amount', e.target.value.replace(/[^\d]/g, ''))}
+                placeholder="Vendió $"
+                className="form-input"
+                style={{ width: '100%', fontWeight: 800, fontSize: '0.95rem', padding: '8px' }}
+              />
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {rows.length < 3 && (
+        <button
+          type="button"
+          onClick={addSellerRow}
+          className="btn-secondary"
+          style={{
+            width: '100%',
+            justifyContent: 'center',
+            padding: '8px',
+            fontSize: '0.8rem',
+            fontWeight: 800,
+            marginBottom: '14px',
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: '5px'
+          }}
+        >
+          <Plus size={14} /> + Agregar 3ra vendedora
+        </button>
+      )}
+
+      {/* Resumen Total */}
+      <div style={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        padding: '10px 14px',
+        borderRadius: '10px',
+        backgroundColor: 'rgba(99, 102, 241, 0.08)',
+        border: '1.5px solid #818CF8',
+        marginBottom: '14px'
+      }}>
+        <span style={{ fontSize: '0.85rem', fontWeight: 800, color: '#4338CA' }}>Total de la compra:</span>
+        <span style={{ fontSize: '1.25rem', fontWeight: 900, color: '#4338CA' }}>{money(totalAmount)}</span>
+      </div>
+
+      {/* Método de Cobro */}
+      <div style={{ marginBottom: '12px' }}>
+        <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 800, color: 'var(--text-muted)', marginBottom: '4px' }}>
+          ¿Cómo paga el cliente?
+        </label>
+        <MethodToggle
+          value={method}
+          onChange={(m) => {
+            setMethod(m);
+            if (m === 'dividido' && totalAmount > 0) {
+              const half = Math.floor(totalAmount / 2);
+              setCashAmount(String(half));
+              setTransferAmount(String(totalAmount - half));
+            }
+          }}
+          showDivided={true}
+        />
+      </div>
+
+      {isDivided && (
+        <div style={{ backgroundColor: 'var(--bg-surface-elevated)', border: '1px solid var(--border-color)', borderRadius: '12px', padding: '12px', marginBottom: '12px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+            <span style={{ fontSize: '0.78rem', fontWeight: 800, color: 'var(--text-muted)' }}>DIVIDIR EL PAGO</span>
+            <button type="button" onClick={handleSplit5050} className="btn-secondary" style={{ padding: '3px 8px', fontSize: '0.72rem', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+              <Zap size={12} /> Mitad y Mitad (50 / 50)
+            </button>
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginBottom: '6px' }}>
+            <div>
+              <label style={{ display: 'block', fontSize: '0.74rem', fontWeight: 700, color: 'var(--text-muted)', marginBottom: '3px' }}>💵 Efectivo $</label>
+              <input
+                type="text"
+                inputMode="numeric"
+                value={cashAmount}
+                onChange={(e) => {
+                  const clean = e.target.value.replace(/[^\d]/g, '');
+                  setCashAmount(clean);
+                  if (totalAmount > 0 && clean !== '') {
+                    const diff = totalAmount - Number(clean);
+                    if (diff >= 0) setTransferAmount(String(diff));
+                  }
+                }}
+                placeholder="Efvo $"
+                className="form-input"
+                style={{ width: '100%', fontWeight: 800, fontSize: '1rem', padding: '8px' }}
+              />
+            </div>
+            <div>
+              <label style={{ display: 'block', fontSize: '0.74rem', fontWeight: 700, color: 'var(--text-muted)', marginBottom: '3px' }}>🏦 Transferencia $</label>
+              <input
+                type="text"
+                inputMode="numeric"
+                value={transferAmount}
+                onChange={(e) => {
+                  const clean = e.target.value.replace(/[^\d]/g, '');
+                  setTransferAmount(clean);
+                  if (totalAmount > 0 && clean !== '') {
+                    const diff = totalAmount - Number(clean);
+                    if (diff >= 0) setCashAmount(String(diff));
+                  }
+                }}
+                placeholder="Transf $"
+                className="form-input"
+                style={{ width: '100%', fontWeight: 800, fontSize: '1rem', padding: '8px' }}
+              />
+            </div>
+          </div>
+          <div style={{ fontSize: '0.78rem', fontWeight: 800, color: (Number(cashAmount) + Number(transferAmount)) === totalAmount ? '#047857' : '#B91C1C', textAlign: 'right' }}>
+            Suma: {money((Number(cashAmount) || 0) + (Number(transferAmount) || 0))} / {money(totalAmount)}
+          </div>
+        </div>
+      )}
+
+      {showAliases && (
+        <div style={{ marginBottom: '12px' }}>
+          <div style={{ fontSize: '0.78rem', fontWeight: 800, color: 'var(--text-muted)', marginBottom: '6px' }}>
+            ¿A qué alias transfiere? ({money(transferNum)})
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+            {activeAliases.map((a) => {
+              const st = aliasStatus(a, transferNum);
+              const sel = chosenAlias?.id === a.id;
+              const rem = aliasRemaining(a);
+              return (
+                <div
+                  key={a.id}
+                  role="button"
+                  tabIndex={st.ok ? 0 : -1}
+                  onClick={() => st.ok && setAliasChoice(a.id)}
+                  onKeyDown={(e) => { if ((e.key === 'Enter' || e.key === ' ') && st.ok) { e.preventDefault(); setAliasChoice(a.id); } }}
+                  style={{
+                    display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px',
+                    padding: '8px 10px', borderRadius: '10px', cursor: st.ok ? 'pointer' : 'not-allowed',
+                    border: sel ? '2px solid #10B981' : '1px solid var(--border-color)',
+                    backgroundColor: sel ? 'rgba(16, 185, 129, 0.12)' : 'var(--bg-card)',
+                    opacity: st.ok ? 1 : 0.5
+                  }}
+                >
+                  <div style={{ minWidth: 0 }}>
+                    <div style={{ fontFamily: 'monospace', fontWeight: 900, fontSize: '0.92rem', wordBreak: 'break-all', color: 'var(--text-main)' }}>
+                      {sel ? '✓ ' : ''}{a.alias}
+                    </div>
+                    <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>
+                      {[a.holder, a.bank].filter(Boolean).join(' · ')}
+                      {rem !== null ? ` · quedan ${money(rem)}` : ''}
+                    </div>
+                    {a.description && <div style={{ fontSize: '0.74rem', fontWeight: 700, color: '#D97706' }}>“{a.description}”</div>}
+                    {st.reason && <div style={{ fontSize: '0.72rem', fontWeight: 800, color: st.ok ? '#D97706' : '#DC2626' }}>{st.reason}</div>}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={(e) => { e.stopPropagation(); copyAlias(a.alias); }}
+                    className="btn-secondary"
+                    style={{ padding: '4px 8px', fontSize: '0.72rem', flexShrink: 0, display: 'inline-flex', alignItems: 'center', gap: '4px' }}
+                    title="Copiar alias"
+                  >
+                    {copied === a.alias ? <CheckCheck size={13} /> : <Copy size={13} />}
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      <input
+        value={note}
+        onChange={(e) => setNote(e.target.value)}
+        placeholder="Nota opcional (ej: cliente llevó 3 prendas)"
+        className="form-input"
+        style={{ width: '100%', marginBottom: '12px' }}
+      />
+
+      {error && <div role="alert" style={{ color: '#B91C1C', fontSize: '0.84rem', fontWeight: 600, marginBottom: '10px' }}>{error}</div>}
+
+      <SaveButton busy={busy} amount={totalAmount} onSave={save} label={`Guardar venta compartida (${money(totalAmount)})`} />
+    </Modal>
+  );
+}
+
+// ---------------------------------------------------------------- Modal Pago Dividido (Efectivo + Transferencia)
+function SplitSaleModal({
+  date,
+  sellers = [],
+  numberMap = {},
+  aliases = [],
+  onClose,
+  onSaved,
+  initialSeller = null,
+  initialAmount = ''
+}) {
+  const activeSellers = useMemo(() => sellers.filter((s) => s.active !== false), [sellers]);
+  const [selectedSellerId, setSelectedSellerId] = useState(initialSeller?.id || '');
+  const [totalAmount, setTotalAmount] = useState(initialAmount ? String(initialAmount) : '');
+  const [cashAmount, setCashAmount] = useState('');
+  const [transferAmount, setTransferAmount] = useState('');
+  const [aliasChoice, setAliasChoice] = useState(null);
+  const [copied, setCopied] = useState('');
+  const [note, setNote] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+
+  const activeAliases = useMemo(() => aliases.filter((a) => a.active), [aliases]);
+  const tNum = Number(transferAmount) || 0;
+  const showAliases = tNum > 0 && activeAliases.length > 0;
+  const chosenAlias = showAliases ? pickAlias(activeAliases, tNum, aliasChoice) : null;
+
+  useEffect(() => {
+    if (initialAmount && amountOk(initialAmount)) {
+      const half = Math.floor(Number(initialAmount) / 2);
+      setCashAmount(String(half));
+      setTransferAmount(String(Number(initialAmount) - half));
+    }
+  }, [initialAmount]);
+
+  const handleTotalChange = (val) => {
+    const clean = val.replace(/[^\d]/g, '');
+    setTotalAmount(clean);
+    setError('');
+    if (amountOk(clean)) {
+      const half = Math.floor(Number(clean) / 2);
+      setCashAmount(String(half));
+      setTransferAmount(String(Number(clean) - half));
+    }
+  };
+
+  const handleSplit5050 = () => {
+    const base = amountOk(totalAmount) ? Number(totalAmount) : ((Number(cashAmount) || 0) + (Number(transferAmount) || 0));
+    if (base > 0) {
+      setTotalAmount(String(base));
+      const half = Math.floor(base / 2);
+      setCashAmount(String(half));
+      setTransferAmount(String(base - half));
+    }
+  };
+
+  const handleCashChange = (val) => {
+    const clean = val.replace(/[^\d]/g, '');
+    setCashAmount(clean);
+    setError('');
+    if (amountOk(totalAmount) && clean !== '') {
+      const diff = Number(totalAmount) - Number(clean);
+      if (diff >= 0) setTransferAmount(String(diff));
+    }
+  };
+
+  const handleTransferChange = (val) => {
+    const clean = val.replace(/[^\d]/g, '');
+    setTransferAmount(clean);
+    setError('');
+    if (amountOk(totalAmount) && clean !== '') {
+      const diff = Number(totalAmount) - Number(clean);
+      if (diff >= 0) setCashAmount(String(diff));
+    }
+  };
+
+  const copyAlias = (alias) => {
+    navigator.clipboard?.writeText(alias);
+    setCopied(alias);
+    setTimeout(() => setCopied(''), 1500);
+  };
+
+  const save = async () => {
+    if (!selectedSellerId) {
+      setError('Elegí la vendedora que atendió la venta.');
+      return;
+    }
+    if (!amountOk(cashAmount) || !amountOk(transferAmount)) {
+      setError('Ingresá montos válidos en efectivo y transferencia.');
+      return;
+    }
+    const c = Number(cashAmount);
+    const t = Number(transferAmount);
+    const tot = c + t;
+
+    if (tot <= 0) {
+      setError('El total debe ser mayor a 0.');
+      return;
+    }
+
+    if (t > 0 && showAliases && !chosenAlias) {
+      setError(`Ningún alias acepta ${money(t)}. Revisá los alias.`);
+      return;
+    }
+
+    setBusy(true);
+    setError('');
+    try {
+      const sales = [
+        {
+          clientRef: crypto.randomUUID(),
+          sellerId: selectedSellerId,
+          date,
+          amount: c,
+          method: 'efectivo',
+          note: `Pago dividido (${money(c)} efvo / ${money(t)} transf · Total ${money(tot)})${note ? ` · ${note}` : ''}`
+        },
+        {
+          clientRef: crypto.randomUUID(),
+          sellerId: selectedSellerId,
+          date,
+          amount: t,
+          method: 'transferencia',
+          aliasId: chosenAlias?.id || null,
+          note: `Pago dividido (${money(c)} efvo / ${money(t)} transf · Total ${money(tot)})${note ? ` · ${note}` : ''}`
+        }
+      ];
+
+      const { queued } = await sendOrQueue({
+        action: 'addBatchSales',
+        sales
+      });
+
+      playSuccessBeep();
+      onSaved(queued);
+      onClose();
+    } catch (err) {
+      setError(err.message || 'No se pudo guardar el pago dividido.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const currentTotal = (Number(cashAmount) || 0) + (Number(transferAmount) || 0);
+
+  return (
+    <Modal
+      title="⚡ Pago dividido (Mitad Efectivo y Mitad Transferencia)"
+      subtitle="El cliente paga parte en efectivo y parte por transferencia bancaria."
+      onClose={onClose}
+      maxWidth="460px"
+    >
+      <div style={{ marginBottom: '12px' }}>
+        <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 800, color: 'var(--text-muted)', marginBottom: '4px' }}>
+          Vendedora
+        </label>
+        <select
+          value={selectedSellerId}
+          onChange={(e) => setSelectedSellerId(e.target.value)}
+          className="form-input"
+          style={{ width: '100%', fontWeight: 800, fontSize: '0.92rem', padding: '8px' }}
+        >
+          <option value="">-- Seleccionar vendedora --</option>
+          {activeSellers.map((s) => {
+            const isMostrador = s.name.toLowerCase().trim() === 'mostrador';
+            const num = isMostrador ? '00' : (numberMap[s.id] || '');
+            return (
+              <option key={s.id} value={s.id}>
+                #{num} {s.name} {isMostrador ? '(Mostrador - Autoservicio)' : ''}
+              </option>
+            );
+          })}
+        </select>
+      </div>
+
+      <div style={{ marginBottom: '12px' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+          <label style={{ fontSize: '0.78rem', fontWeight: 800, color: 'var(--text-muted)', margin: 0 }}>
+            Monto Total de la Compra $
+          </label>
+          <button
+            type="button"
+            onClick={handleSplit5050}
+            className="btn-secondary"
+            style={{ padding: '3px 8px', fontSize: '0.72rem', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
+          >
+            <Zap size={12} /> Mitad y Mitad (50 / 50)
+          </button>
+        </div>
+        <input
+          type="text"
+          inputMode="numeric"
+          value={totalAmount}
+          onChange={(e) => handleTotalChange(e.target.value)}
+          placeholder="Ej: 50000"
+          className="form-input"
+          style={{ width: '100%', fontSize: '1.15rem', fontWeight: 900, padding: '8px 12px' }}
+        />
+        <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '2px' }}>
+          Al poner el total, se divide automáticamente mitad y mitad abajo (podés ajustarlo).
+        </div>
+      </div>
+
+      <div style={{ backgroundColor: 'var(--bg-surface-elevated)', border: '1px solid var(--border-color)', borderRadius: '12px', padding: '12px', marginBottom: '12px' }}>
+        <div style={{ fontSize: '0.78rem', fontWeight: 800, color: 'var(--text-muted)', marginBottom: '8px' }}>
+          DESGLOSE DEL COBRO
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginBottom: '6px' }}>
+          <div>
+            <label style={{ display: 'block', fontSize: '0.74rem', fontWeight: 700, color: 'var(--text-muted)', marginBottom: '3px' }}>💵 Efectivo $</label>
+            <input
+              type="text"
+              inputMode="numeric"
+              value={cashAmount}
+              onChange={(e) => handleCashChange(e.target.value)}
+              placeholder="$ 0"
+              className="form-input"
+              style={{ width: '100%', fontWeight: 800, fontSize: '1rem', padding: '8px' }}
+            />
+          </div>
+          <div>
+            <label style={{ display: 'block', fontSize: '0.74rem', fontWeight: 700, color: 'var(--text-muted)', marginBottom: '3px' }}>🏦 Transferencia $</label>
+            <input
+              type="text"
+              inputMode="numeric"
+              value={transferAmount}
+              onChange={(e) => handleTransferChange(e.target.value)}
+              placeholder="$ 0"
+              className="form-input"
+              style={{ width: '100%', fontWeight: 800, fontSize: '1rem', padding: '8px' }}
+            />
+          </div>
+        </div>
+        <div style={{ fontSize: '0.82rem', fontWeight: 800, color: 'var(--accent-gold, #D97706)', textAlign: 'right' }}>
+          Total a cobrar: {money(currentTotal)}
+        </div>
+      </div>
+
+      {showAliases && (
+        <div style={{ marginBottom: '12px' }}>
+          <div style={{ fontSize: '0.78rem', fontWeight: 800, color: 'var(--text-muted)', marginBottom: '6px' }}>
+            ¿A qué alias transfirió? ({money(tNum)})
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+            {activeAliases.map((a) => {
+              const st = aliasStatus(a, tNum);
+              const sel = chosenAlias?.id === a.id;
+              const rem = aliasRemaining(a);
+              return (
+                <div
+                  key={a.id}
+                  role="button"
+                  tabIndex={st.ok ? 0 : -1}
+                  onClick={() => st.ok && setAliasChoice(a.id)}
+                  onKeyDown={(e) => { if ((e.key === 'Enter' || e.key === ' ') && st.ok) { e.preventDefault(); setAliasChoice(a.id); } }}
+                  style={{
+                    display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px',
+                    padding: '8px 10px', borderRadius: '10px', cursor: st.ok ? 'pointer' : 'not-allowed',
+                    border: sel ? '2px solid #10B981' : '1px solid var(--border-color)',
+                    backgroundColor: sel ? 'rgba(16, 185, 129, 0.12)' : 'var(--bg-card)',
+                    opacity: st.ok ? 1 : 0.5
+                  }}
+                >
+                  <div style={{ minWidth: 0 }}>
+                    <div style={{ fontFamily: 'monospace', fontWeight: 900, fontSize: '0.92rem', wordBreak: 'break-all', color: 'var(--text-main)' }}>
+                      {sel ? '✓ ' : ''}{a.alias}
+                    </div>
+                    <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>
+                      {[a.holder, a.bank].filter(Boolean).join(' · ')}
+                      {rem !== null ? ` · quedan ${money(rem)}` : ''}
+                    </div>
+                    {a.description && <div style={{ fontSize: '0.74rem', fontWeight: 700, color: '#D97706' }}>“{a.description}”</div>}
+                    {st.reason && <div style={{ fontSize: '0.72rem', fontWeight: 800, color: st.ok ? '#D97706' : '#DC2626' }}>{st.reason}</div>}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={(e) => { e.stopPropagation(); copyAlias(a.alias); }}
+                    className="btn-secondary"
+                    style={{ padding: '4px 8px', fontSize: '0.72rem', flexShrink: 0, display: 'inline-flex', alignItems: 'center', gap: '4px' }}
+                    title="Copiar alias"
+                  >
+                    {copied === a.alias ? <CheckCheck size={13} /> : <Copy size={13} />}
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      <input
+        value={note}
+        onChange={(e) => setNote(e.target.value)}
+        placeholder="Nota opcional"
+        className="form-input"
+        style={{ width: '100%', marginBottom: '12px' }}
+      />
+
+      {error && <div role="alert" style={{ color: '#B91C1C', fontSize: '0.84rem', fontWeight: 600, marginBottom: '10px' }}>{error}</div>}
+
+      <SaveButton busy={busy} amount={currentTotal} onSave={save} label={`Guardar pago dividido (${money(currentTotal)})`} />
     </Modal>
   );
 }
@@ -2243,6 +3471,10 @@ export default function VentasPage() {
   const [showNumbersModal, setShowNumbersModal] = useState(false);
   const [showAliasModal, setShowAliasModal] = useState(false); // false | 'edit' | 'new'
   const [showDirectTransferModal, setShowDirectTransferModal] = useState(false);
+  const [showSharedSaleModal, setShowSharedSaleModal] = useState(false);
+  const [sharedSalePrefill, setSharedSalePrefill] = useState(null);
+  const [showSplitSaleModal, setShowSplitSaleModal] = useState(false);
+  const [splitSalePrefill, setSplitSalePrefill] = useState(null);
 
   useEffect(() => {
     setGoals(readGoals());
@@ -2463,7 +3695,173 @@ export default function VentasPage() {
                 onSaleCreated={afterSave}
                 onOpenNumbersModal={() => setShowNumbersModal(true)}
                 onEditAliases={() => setShowAliasModal('new')}
+                onOpenSharedModal={(s, a) => {
+                  setSharedSalePrefill({ seller: s, amount: a });
+                  setShowSharedSaleModal(true);
+                }}
+                onOpenSplitModal={(s, a) => {
+                  setSplitSalePrefill({ seller: s, amount: a });
+                  setShowSplitSaleModal(true);
+                }}
               />
+            )}
+
+            {/* Acciones Especiales: Venta Compartida y Pago Dividido */}
+            {period === 'day' && (
+              <div
+                style={{
+                  display: 'grid',
+                  gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))',
+                  gap: '10px',
+                  marginBottom: '16px'
+                }}
+              >
+                {/* Botón Acción 1: Venta Compartida */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSharedSalePrefill(null);
+                    setShowSharedSaleModal(true);
+                  }}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '12px',
+                    padding: '12px 16px',
+                    borderRadius: '12px',
+                    border: '1px solid #C7D2FE',
+                    backgroundColor: '#EEF2FF',
+                    color: '#1E1B4B',
+                    textAlign: 'left',
+                    cursor: 'pointer',
+                    transition: 'all 0.15s ease',
+                    boxShadow: '0 1px 3px rgba(0,0,0,0.04)'
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.backgroundColor = '#E0E7FF';
+                    e.currentTarget.style.borderColor = '#818CF8';
+                    e.currentTarget.style.transform = 'translateY(-1px)';
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.backgroundColor = '#EEF2FF';
+                    e.currentTarget.style.borderColor = '#C7D2FE';
+                    e.currentTarget.style.transform = 'none';
+                  }}
+                >
+                  <div
+                    style={{
+                      width: '42px',
+                      height: '42px',
+                      borderRadius: '10px',
+                      backgroundColor: '#4F46E5',
+                      color: '#FFFFFF',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      flexShrink: 0
+                    }}
+                  >
+                    <Users size={22} />
+                  </div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+                      <span style={{ fontSize: '0.94rem', fontWeight: 900, color: '#312E81' }}>
+                        👥 Venta Compartida
+                      </span>
+                      <span
+                        style={{
+                          fontSize: '0.68rem',
+                          fontWeight: 800,
+                          backgroundColor: '#4F46E5',
+                          color: '#FFFFFF',
+                          padding: '1px 6px',
+                          borderRadius: '4px',
+                          textTransform: 'uppercase',
+                          letterSpacing: '0.04em'
+                        }}
+                      >
+                        2 o 3 Vendedoras
+                      </span>
+                    </div>
+                    <div style={{ fontSize: '0.78rem', color: '#4338CA', marginTop: '2px', lineHeight: 1.25 }}>
+                      Cargá una compra atendida por varias vendedoras. A cada una le suma su comisión justa según lo que vendió.
+                    </div>
+                  </div>
+                </button>
+
+                {/* Botón Acción 2: Pago Dividido */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSplitSalePrefill(null);
+                    setShowSplitSaleModal(true);
+                  }}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '12px',
+                    padding: '12px 16px',
+                    borderRadius: '12px',
+                    border: '1px solid #FDE68A',
+                    backgroundColor: '#FFFBEB',
+                    color: '#78350F',
+                    textAlign: 'left',
+                    cursor: 'pointer',
+                    transition: 'all 0.15s ease',
+                    boxShadow: '0 1px 3px rgba(0,0,0,0.04)'
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.backgroundColor = '#FEF3C7';
+                    e.currentTarget.style.borderColor = '#F59E0B';
+                    e.currentTarget.style.transform = 'translateY(-1px)';
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.backgroundColor = '#FFFBEB';
+                    e.currentTarget.style.borderColor = '#FDE68A';
+                    e.currentTarget.style.transform = 'none';
+                  }}
+                >
+                  <div
+                    style={{
+                      width: '42px',
+                      height: '42px',
+                      borderRadius: '10px',
+                      backgroundColor: '#D97706',
+                      color: '#FFFFFF',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      flexShrink: 0
+                    }}
+                  >
+                    <Zap size={22} />
+                  </div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+                      <span style={{ fontSize: '0.94rem', fontWeight: 900, color: '#92400E' }}>
+                        ⚡ Pago Dividido
+                      </span>
+                      <span
+                        style={{
+                          fontSize: '0.68rem',
+                          fontWeight: 800,
+                          backgroundColor: '#D97706',
+                          color: '#FFFFFF',
+                          padding: '1px 6px',
+                          borderRadius: '4px',
+                          textTransform: 'uppercase',
+                          letterSpacing: '0.04em'
+                        }}
+                      >
+                        Efvo + Transf
+                      </span>
+                    </div>
+                    <div style={{ fontSize: '0.78rem', color: '#B45309', marginTop: '2px', lineHeight: 1.25 }}>
+                      Cobrá mitad y mitad (50/50) o con montos personalizados de efectivo y transferencia en un solo paso.
+                    </div>
+                  </div>
+                </button>
+              </div>
             )}
 
             {/* Alias del Día y Control de Transferencias */}
@@ -2605,10 +4003,54 @@ export default function VentasPage() {
           </>
         )}
 
-        {entry && <EntryModal kind={entry.kind} seller={entry.seller} date={date} aliases={data?.aliases || []} onClose={() => setEntry(null)} onSaved={afterSave} />}
+        {entry && (
+          <EntryModal
+            kind={entry.kind}
+            seller={entry.seller}
+            date={date}
+            aliases={data?.aliases || []}
+            onClose={() => setEntry(null)}
+            onSaved={afterSave}
+            onOpenSharedModal={(s, a) => {
+              setEntry(null);
+              setSharedSalePrefill({ seller: s, amount: a });
+              setShowSharedSaleModal(true);
+            }}
+          />
+        )}
         {payoutSeller && data && <PayoutModal seller={payoutSeller} data={data} onClose={() => setPayoutSeller(null)} onSaved={afterSave} />}
         {showCash && data?.cash && <CashCountModal date={date} cash={data.cash} onClose={() => { setShowCash(false); load(); }} onSaved={(queued) => { if (queued) afterSave(true); }} />}
         {detailSeller && data && <DetailModal seller={detailSeller} periodFrom={data.from} periodTo={data.to} onClose={() => setDetailSeller(null)} onChanged={load} />}
+        {showSharedSaleModal && data?.sellers && (
+          <SharedSaleModal
+            date={date}
+            sellers={data.sellers}
+            numberMap={assignedNumbers}
+            aliases={data.aliases || []}
+            initialSeller={sharedSalePrefill?.seller || null}
+            initialAmount={sharedSalePrefill?.amount || ''}
+            onClose={() => {
+              setShowSharedSaleModal(false);
+              setSharedSalePrefill(null);
+            }}
+            onSaved={afterSave}
+          />
+        )}
+        {showSplitSaleModal && data?.sellers && (
+          <SplitSaleModal
+            date={date}
+            sellers={data.sellers}
+            numberMap={assignedNumbers}
+            aliases={data.aliases || []}
+            initialSeller={splitSalePrefill?.seller || null}
+            initialAmount={splitSalePrefill?.amount || ''}
+            onClose={() => {
+              setShowSplitSaleModal(false);
+              setSplitSalePrefill(null);
+            }}
+            onSaved={afterSave}
+          />
+        )}
         {showGoalModal && (
           <GoalEditModal
             period={period}
