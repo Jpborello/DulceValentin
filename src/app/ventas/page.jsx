@@ -536,19 +536,29 @@ function EntryModal({ kind, seller, date, aliases = [], onClose, onSaved, onOpen
               const st = aliasStatus(a, transferNum);
               const sel = chosenAlias?.id === a.id;
               const rem = aliasRemaining(a);
+              const isOver = st.overLimit;
+              const willOver = st.willOver;
+
+              const borderColor = sel
+                ? (isOver ? '#EF4444' : willOver ? '#F59E0B' : '#10B981')
+                : (isOver ? '#FCA5A5' : willOver ? '#FDE68A' : 'var(--border-color)');
+              const bgColor = sel
+                ? (isOver ? 'rgba(239, 68, 68, 0.12)' : willOver ? 'rgba(245, 158, 11, 0.12)' : 'rgba(16, 185, 129, 0.12)')
+                : (isOver ? '#FEF2F2' : willOver ? '#FFFBEB' : 'var(--bg-card)');
+
               return (
                 <div
                   key={a.id}
                   role="button"
-                  tabIndex={st.ok ? 0 : -1}
-                  onClick={() => st.ok && setAliasChoice(a.id)}
-                  onKeyDown={(e) => { if ((e.key === 'Enter' || e.key === ' ') && st.ok) { e.preventDefault(); setAliasChoice(a.id); } }}
+                  tabIndex={0}
+                  onClick={() => setAliasChoice(a.id)}
+                  onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setAliasChoice(a.id); } }}
                   style={{
                     display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px',
-                    padding: '8px 10px', borderRadius: '10px', cursor: st.ok ? 'pointer' : 'not-allowed',
-                    border: sel ? '2px solid #10B981' : '1px solid var(--border-color)',
-                    backgroundColor: sel ? 'rgba(16, 185, 129, 0.12)' : 'var(--bg-card)',
-                    opacity: st.ok ? 1 : 0.5
+                    padding: '8px 10px', borderRadius: '10px', cursor: 'pointer',
+                    border: sel ? `2px solid ${borderColor}` : `1px solid ${borderColor}`,
+                    backgroundColor: bgColor,
+                    opacity: 1
                   }}
                 >
                   <div style={{ minWidth: 0 }}>
@@ -560,7 +570,15 @@ function EntryModal({ kind, seller, date, aliases = [], onClose, onSaved, onOpen
                       {rem !== null ? ` · quedan ${money(rem)}` : ''}
                     </div>
                     {a.description && <div style={{ fontSize: '0.74rem', fontWeight: 700, color: '#D97706' }}>“{a.description}”</div>}
-                    {st.reason && <div style={{ fontSize: '0.72rem', fontWeight: 800, color: st.ok ? '#D97706' : '#DC2626' }}>{st.reason}</div>}
+                    {st.reason && (
+                      <div style={{
+                        fontSize: '0.72rem',
+                        fontWeight: 800,
+                        color: isOver ? '#DC2626' : (willOver ? '#D97706' : '#059669')
+                      }}>
+                        {isOver ? `🚨 ${st.reason} (habilitado)` : willOver ? `⚠️ ${st.reason} (habilitado)` : `ℹ️ ${st.reason}`}
+                      </div>
+                    )}
                   </div>
                   <button
                     type="button"
@@ -691,6 +709,11 @@ function CashCountModal({ date, cash, onClose, onSaved }) {
         <span>Ventas en efectivo</span><strong>{money(cash.salesCash)}</strong>
         <span>Vales en efectivo</span><span>− {money(cash.advancesCash)}</span>
         <span>Pagos a vendedoras en efectivo</span><span>− {money(cash.payoutsCash)}</span>
+        {Number(cash.expensesCash) > 0 && (
+          <>
+            <span>Gastos de caja en efectivo</span><span style={{ color: '#DC2626', fontWeight: 700 }}>− {money(cash.expensesCash)}</span>
+          </>
+        )}
       </div>
       {result ? (
         <div style={{ padding: '12px', borderRadius: '10px', textAlign: 'center', fontWeight: 800, backgroundColor: result.difference === 0 ? '#ECFDF5' : '#FEF2F2', color: result.difference === 0 ? '#047857' : '#B91C1C' }}>
@@ -713,6 +736,477 @@ function CashCountModal({ date, cash, onClose, onSaved }) {
         </>
       )}
     </Modal>
+  );
+}
+
+// ---------------------------------------------------------------- Modal de Carga de Gasto
+const EXPENSE_CATEGORIES = [
+  { id: 'comida', label: 'Comida / Refrigerio', icon: '🥪' },
+  { id: 'flete', label: 'Flete / Cadetería', icon: '📦' },
+  { id: 'insumos', label: 'Insumos / Bolsas', icon: '🛍️' },
+  { id: 'libreria', label: 'Librería / Cinta', icon: '✂️' },
+  { id: 'limpieza', label: 'Limpieza', icon: '🧹' },
+  { id: 'varios', label: 'Varios', icon: '🏷️' }
+];
+
+function ExpenseModal({ date, sellers = [], onClose, onSaved }) {
+  const [amount, setAmount] = useState('');
+  const [method, setMethod] = useState('efectivo');
+  const [category, setCategory] = useState('varios');
+  const [description, setDescription] = useState('');
+  const [sellerId, setSellerId] = useState('');
+  const [note, setNote] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+
+  const handleSelectCategory = (cat) => {
+    setCategory(cat.id);
+    if (!description || EXPENSE_CATEGORIES.some((c) => c.label === description)) {
+      setDescription(cat.label);
+    }
+  };
+
+  const save = async () => {
+    if (!amountOk(amount)) {
+      setError('Poné el monto en pesos, sin puntos ni comas (ej: 5000).');
+      return;
+    }
+    const cleanDesc = description.trim();
+    if (!cleanDesc) {
+      setError('Ingresá el concepto o detalle del gasto.');
+      return;
+    }
+    setBusy(true);
+    setError('');
+    try {
+      const { queued } = await sendOrQueue({
+        action: 'addExpense',
+        clientRef: crypto.randomUUID(),
+        date,
+        amount: Number(amount),
+        method,
+        category,
+        description: cleanDesc,
+        sellerId: sellerId || null,
+        note
+      });
+      onSaved(queued);
+      onClose();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Modal title="Nuevo gasto de caja" subtitle={fmtDate(date)} onClose={onClose}>
+      <AmountInput value={amount} onChange={setAmount} placeholder="Monto $" autoFocus />
+
+      <div style={{ marginBottom: '10px' }}>
+        <div style={{ fontSize: '0.78rem', fontWeight: 800, color: 'var(--text-muted)', marginBottom: '6px' }}>
+          Categoría rápida:
+        </div>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+          {EXPENSE_CATEGORIES.map((c) => (
+            <button
+              key={c.id}
+              type="button"
+              onClick={() => handleSelectCategory(c)}
+              className="btn-secondary"
+              style={{
+                padding: '4px 8px',
+                fontSize: '0.78rem',
+                borderRadius: '8px',
+                border: category === c.id ? '2px solid var(--accent-gold, #D97706)' : '1px solid var(--border-color)',
+                backgroundColor: category === c.id ? 'rgba(217, 119, 6, 0.12)' : 'var(--bg-card)',
+                fontWeight: category === c.id ? 800 : 500
+              }}
+            >
+              {c.icon} {c.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div style={{ marginBottom: '10px' }}>
+        <input
+          value={description}
+          onChange={(e) => setDescription(e.target.value)}
+          placeholder="Concepto / Detalle (ej. Cinta de embalar)"
+          className="form-input"
+          style={{ width: '100%' }}
+        />
+      </div>
+
+      <div style={{ fontSize: '0.78rem', fontWeight: 700, color: 'var(--text-muted)', marginBottom: '4px' }}>
+        ¿De dónde salió el dinero?
+      </div>
+      <MethodToggle value={method} onChange={setMethod} />
+      <div style={{ fontSize: '0.72rem', color: method === 'efectivo' ? '#B45309' : 'var(--text-muted)', marginTop: '-8px', marginBottom: '10px' }}>
+        {method === 'efectivo' ? 'ℹ️ Se descuenta del efectivo esperado en el arqueo de caja.' : 'ℹ️ Pagado por transferencia (no afecta el efectivo de caja).'}
+      </div>
+
+      {sellers.length > 0 && (
+        <div style={{ marginBottom: '10px' }}>
+          <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 700, color: 'var(--text-muted)', marginBottom: '4px' }}>
+            Personal / Vendedora relacionada (opcional):
+          </label>
+          <select
+            value={sellerId}
+            onChange={(e) => setSellerId(e.target.value)}
+            className="form-input"
+            style={{ width: '100%', padding: '8px' }}
+          >
+            <option value="">Gasto general del local</option>
+            {sellers.map((s) => (
+              <option key={s.id} value={s.id}>{s.name}</option>
+            ))}
+          </select>
+        </div>
+      )}
+
+      <input
+        value={note}
+        onChange={(e) => setNote(e.target.value)}
+        placeholder="Nota adicional (opcional)"
+        className="form-input"
+        style={{ width: '100%', marginBottom: '12px' }}
+      />
+
+      {error && <div role="alert" style={{ color: '#B91C1C', fontSize: '0.84rem', fontWeight: 600, marginBottom: '10px' }}>{error}</div>}
+      <SaveButton busy={busy} amount={amount} onSave={save} label="Guardar gasto" />
+    </Modal>
+  );
+}
+
+// ---------------------------------------------------------------- Modal para Anular Gasto
+function VoidExpenseModal({ expense, onClose, onVoided }) {
+  const [reason, setReason] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+
+  const handleVoid = async () => {
+    const cleanReason = reason.trim();
+    if (!cleanReason) {
+      setError('Indicá el motivo por el cual anulás este gasto.');
+      return;
+    }
+    setBusy(true);
+    setError('');
+    try {
+      const { queued } = await sendOrQueue({
+        action: 'void',
+        kind: 'expense',
+        id: expense.id,
+        reason: cleanReason
+      });
+      onVoided(queued);
+      onClose();
+    } catch (err) {
+      setError(err.message || 'No se pudo anular.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Modal title="Anular gasto" subtitle={`${expense.description} · ${money(expense.amount)}`} onClose={onClose}>
+      <p style={{ fontSize: '0.86rem', color: 'var(--text-muted)', marginBottom: '12px' }}>
+        Por criterio contable, el registro no se borra: quedará marcado como anulado con el motivo que especifiques.
+      </p>
+      <input
+        value={reason}
+        onChange={(e) => setReason(e.target.value)}
+        placeholder="Motivo de la anulación (obligatorio)"
+        className="form-input"
+        autoFocus
+        style={{ width: '100%', marginBottom: '12px' }}
+      />
+      {error && <div role="alert" style={{ color: '#B91C1C', fontSize: '0.84rem', fontWeight: 600, marginBottom: '10px' }}>{error}</div>}
+      <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
+        <button type="button" onClick={onClose} className="btn-secondary" disabled={busy}>Cancelar</button>
+        <button type="button" onClick={handleVoid} className="btn-primary" style={{ backgroundColor: '#DC2626', borderColor: '#DC2626' }} disabled={busy}>
+          {busy ? 'Anulando...' : 'Confirmar anulación'}
+        </button>
+      </div>
+    </Modal>
+  );
+}
+
+// ---------------------------------------------------------------- Sección de Caja, Arqueo y Recuadro de Gastos
+function CashAndExpensesSection({
+  cash,
+  expenses = [],
+  onOpenCashModal,
+  onOpenExpenseModal,
+  onVoidExpense
+}) {
+  const liveExpenses = (expenses || []).filter((e) => !e.voidedAt);
+  const totalExpenses = liveExpenses.reduce((acc, e) => acc + (e.amount || 0), 0);
+  const cashExpenses = liveExpenses.filter((e) => e.paymentMethod === 'efectivo').reduce((acc, e) => acc + (e.amount || 0), 0);
+  const transferExpenses = liveExpenses.filter((e) => e.paymentMethod === 'transferencia').reduce((acc, e) => acc + (e.amount || 0), 0);
+
+  const categoryEmoji = {
+    comida: '🥪',
+    flete: '📦',
+    insumos: '🛍️',
+    libreria: '✂️',
+    limpieza: '🧹',
+    varios: '🏷️'
+  };
+
+  return (
+    <div
+      style={{
+        display: 'grid',
+        gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))',
+        gap: '14px',
+        marginBottom: '16px'
+      }}
+    >
+      {/* 1. Bloque Caja y Arqueo */}
+      <div
+        style={{
+          backgroundColor: 'var(--bg-card)',
+          border: '1px solid var(--border-color)',
+          borderRadius: '14px',
+          padding: '14px 16px',
+          display: 'flex',
+          flexDirection: 'column',
+          justifyContent: 'space-between',
+          gap: '12px'
+        }}
+      >
+        <div>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', marginBottom: '8px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <div style={{
+                width: '32px',
+                height: '32px',
+                borderRadius: '8px',
+                backgroundColor: 'rgba(217, 119, 6, 0.12)',
+                color: 'var(--accent-gold, #D97706)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center'
+              }}>
+                <Calculator size={18} />
+              </div>
+              <div>
+                <h3 style={{ margin: 0, fontSize: '0.98rem', fontWeight: 800 }}>Caja & Arqueo del día</h3>
+                <span style={{ fontSize: '0.74rem', color: 'var(--text-muted)' }}>Control del efectivo físico</span>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={onOpenCashModal}
+              className="btn-primary"
+              style={{ padding: '6px 12px', fontSize: '0.82rem', display: 'inline-flex', alignItems: 'center', gap: '6px' }}
+            >
+              <Calculator size={15} /> {cash.lastCount ? 'Hacer otro arqueo' : 'Hacer arqueo'}
+            </button>
+          </div>
+
+          <div style={{ marginTop: '8px', padding: '10px 12px', backgroundColor: 'var(--bg-surface-elevated)', borderRadius: '10px' }}>
+            <div style={{ fontSize: '0.76rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+              Efectivo esperado en caja (sin fondo inicial)
+            </div>
+            <div style={{ fontSize: '1.45rem', fontWeight: 900, color: 'var(--text-main)', marginTop: '2px' }}>
+              {money(cash.expected)}
+            </div>
+
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px 12px', marginTop: '8px', fontSize: '0.78rem', color: 'var(--text-muted)' }}>
+              <span>Ventas efvo: <strong style={{ color: '#047857' }}>+{money(cash.salesCash)}</strong></span>
+              <span>Vales: <strong style={{ color: '#B45309' }}>−{money(cash.advancesCash)}</strong></span>
+              <span>Liquidaciones: <strong style={{ color: '#B45309' }}>−{money(cash.payoutsCash)}</strong></span>
+              <span>Gastos efvo: <strong style={{ color: '#DC2626' }}>−{money(cash.expensesCash || 0)}</strong></span>
+            </div>
+          </div>
+        </div>
+
+        <div>
+          {cash.lastCount ? (
+            <div
+              style={{
+                padding: '8px 12px',
+                borderRadius: '8px',
+                fontSize: '0.82rem',
+                fontWeight: 700,
+                backgroundColor: Number(cash.lastCount.difference) === 0 ? 'rgba(16, 185, 129, 0.12)' : 'rgba(239, 68, 68, 0.12)',
+                color: Number(cash.lastCount.difference) === 0 ? '#047857' : '#B91C1C',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                flexWrap: 'wrap',
+                gap: '6px'
+              }}
+            >
+              <span>
+                Último arqueo {new Date(cash.lastCount.created_at).toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })}:{' '}
+                {Number(cash.lastCount.difference) === 0
+                  ? '✓ Cerró justo'
+                  : Number(cash.lastCount.difference) > 0
+                  ? `Sobran ${money(cash.lastCount.difference)}`
+                  : `Faltan ${money(-cash.lastCount.difference)}`}
+              </span>
+              <span style={{ fontSize: '0.76rem', opacity: 0.9 }}>
+                Contado: {money(cash.lastCount.counted)} (Fondo {money(cash.lastCount.opening_float)})
+              </span>
+            </div>
+          ) : (
+            <div style={{ fontSize: '0.82rem', color: 'var(--text-muted)', fontStyle: 'italic', display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <Clock size={14} /> Sin arqueo todavía el día de hoy
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* 2. Bloque Recuadro de Gastos */}
+      <div
+        style={{
+          backgroundColor: 'var(--bg-card)',
+          border: '1px solid var(--border-color)',
+          borderRadius: '14px',
+          padding: '14px 16px',
+          display: 'flex',
+          flexDirection: 'column',
+          justifyContent: 'space-between',
+          gap: '10px'
+        }}
+      >
+        <div>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', marginBottom: '8px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <div style={{
+                width: '32px',
+                height: '32px',
+                borderRadius: '8px',
+                backgroundColor: 'rgba(220, 38, 38, 0.12)',
+                color: '#DC2626',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center'
+              }}>
+                <Receipt size={18} />
+              </div>
+              <div>
+                <h3 style={{ margin: 0, fontSize: '0.98rem', fontWeight: 800 }}>Recuadro de Gastos</h3>
+                <span style={{ fontSize: '0.74rem', color: 'var(--text-muted)' }}>
+                  Total: <strong style={{ color: '#DC2626' }}>{money(totalExpenses)}</strong>
+                  {transferExpenses > 0 && ` (${money(cashExpenses)} efvo · ${money(transferExpenses)} transf)`}
+                </span>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={onOpenExpenseModal}
+              className="btn-secondary"
+              style={{
+                padding: '6px 12px',
+                fontSize: '0.82rem',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '5px',
+                borderColor: '#DC2626',
+                color: '#DC2626',
+                fontWeight: 700
+              }}
+            >
+              <Plus size={15} /> Cargar gasto
+            </button>
+          </div>
+
+          {/* Lista de gastos */}
+          <div
+            style={{
+              maxHeight: '160px',
+              overflowY: 'auto',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '6px',
+              paddingRight: '4px'
+            }}
+          >
+            {liveExpenses.length === 0 ? (
+              <div
+                style={{
+                  padding: '18px 12px',
+                  textAlign: 'center',
+                  backgroundColor: 'var(--bg-surface-elevated)',
+                  borderRadius: '10px',
+                  color: 'var(--text-muted)',
+                  fontSize: '0.82rem'
+                }}
+              >
+                <div>Sin gastos registrados hoy.</div>
+                <div style={{ fontSize: '0.72rem', marginTop: '2px' }}>Podés cargar comidas, fletes, insumos o librería.</div>
+              </div>
+            ) : (
+              liveExpenses.map((exp) => (
+                <div
+                  key={exp.id || exp.clientRef}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    gap: '8px',
+                    padding: '8px 10px',
+                    backgroundColor: 'var(--bg-surface-elevated)',
+                    borderRadius: '8px',
+                    fontSize: '0.82rem'
+                  }}
+                >
+                  <div style={{ minWidth: 0, flex: 1 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+                      <span title={exp.category}>{categoryEmoji[exp.category] || '🏷️'}</span>
+                      <strong style={{ color: 'var(--text-main)', wordBreak: 'break-word' }}>{exp.description}</strong>
+                      <span
+                        style={{
+                          fontSize: '0.68rem',
+                          padding: '1px 5px',
+                          borderRadius: '4px',
+                          backgroundColor: exp.paymentMethod === 'efectivo' ? '#FEE2E2' : '#E0E7FF',
+                          color: exp.paymentMethod === 'efectivo' ? '#991B1B' : '#3730A3',
+                          fontWeight: 700
+                        }}
+                      >
+                        {exp.paymentMethod === 'efectivo' ? 'Efvo' : 'Transf'}
+                      </span>
+                    </div>
+                    <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '2px' }}>
+                      {exp.createdAt ? new Date(exp.createdAt).toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' }) : ''}
+                      {exp.sellerName && ` · por ${exp.sellerName}`}
+                      {exp.note && ` · “${exp.note}”`}
+                    </div>
+                  </div>
+
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0 }}>
+                    <strong style={{ fontSize: '0.92rem', color: '#DC2626' }}>−{money(exp.amount)}</strong>
+                    <button
+                      type="button"
+                      onClick={() => onVoidExpense(exp)}
+                      className="btn-secondary"
+                      style={{ padding: '3px 6px', color: '#B91C1C', borderColor: 'transparent', background: 'transparent' }}
+                      title="Anular gasto"
+                    >
+                      <Trash2 size={13} />
+                    </button>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+
+        {liveExpenses.length > 0 && (
+          <div style={{ fontSize: '0.74rem', color: 'var(--text-muted)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span>{liveExpenses.length} {liveExpenses.length === 1 ? 'gasto registrado' : 'gastos registrados'}</span>
+            <span>Efectivo caja: <strong style={{ color: '#DC2626' }}>−{money(cashExpenses)}</strong></span>
+          </div>
+        )}
+      </div>
+    </div>
   );
 }
 
@@ -1916,8 +2410,8 @@ function QuickSaleBar({
           marginTop: '10px',
           padding: '10px 12px',
           borderRadius: '10px',
-          border: `1.5px solid ${chosenAlias ? (aliasStatus(chosenAlias, transferAmountNum).overLimit ? '#EF4444' : '#10B981') : '#FCA5A5'}`,
-          backgroundColor: chosenAlias ? (aliasStatus(chosenAlias, transferAmountNum).overLimit ? '#FEF2F2' : '#ECFDF5') : '#FEF2F2'
+          border: `1.5px solid ${chosenAlias ? (aliasStatus(chosenAlias, transferAmountNum).overLimit ? '#EF4444' : (aliasStatus(chosenAlias, transferAmountNum).willOver ? '#F59E0B' : '#10B981')) : '#FCA5A5'}`,
+          backgroundColor: chosenAlias ? (aliasStatus(chosenAlias, transferAmountNum).overLimit ? '#FEF2F2' : (aliasStatus(chosenAlias, transferAmountNum).willOver ? '#FFFBEB' : '#ECFDF5')) : '#FEF2F2'
         }}>
           {activeAliases.length === 0 ? (
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px', flexWrap: 'wrap', fontSize: '0.84rem', fontWeight: 700, color: '#B91C1C' }}>
@@ -1928,7 +2422,7 @@ function QuickSaleBar({
             <>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px', flexWrap: 'wrap' }}>
                 {chosenAlias ? (
-                  <div style={{ color: aliasStatus(chosenAlias, transferAmountNum).overLimit ? '#991B1B' : '#065F46', minWidth: 0 }}>
+                  <div style={{ color: aliasStatus(chosenAlias, transferAmountNum).overLimit ? '#991B1B' : (aliasStatus(chosenAlias, transferAmountNum).willOver ? '#92400E' : '#065F46'), minWidth: 0 }}>
                     <div style={{ fontSize: '0.72rem', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.03em', display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
                       <span>🏦 Pasale este alias{transferAmountNum ? ` · ${money(transferAmountNum)}` : ''}</span>
                       {aliasStatus(chosenAlias, transferAmountNum).overLimit && (
@@ -1936,8 +2430,13 @@ function QuickSaleBar({
                           🚨 Límite alcanzado (habilitado)
                         </span>
                       )}
+                      {aliasStatus(chosenAlias, transferAmountNum).willOver && (
+                        <span style={{ backgroundColor: '#D97706', color: '#FFF', padding: '1px 6px', borderRadius: '4px', fontSize: '0.68rem', fontWeight: 900 }}>
+                          ⚠️ Pasa el tope ({aliasRemaining(chosenAlias) !== null ? `${money(aliasRemaining(chosenAlias))} disp.` : ''})
+                        </span>
+                      )}
                     </div>
-                    <div style={{ fontSize: '1.25rem', fontWeight: 900, fontFamily: 'monospace', wordBreak: 'break-all', color: aliasStatus(chosenAlias, transferAmountNum).overLimit ? '#B91C1C' : 'var(--text-main)' }}>
+                    <div style={{ fontSize: '1.25rem', fontWeight: 900, fontFamily: 'monospace', wordBreak: 'break-all', color: aliasStatus(chosenAlias, transferAmountNum).overLimit ? '#B91C1C' : (aliasStatus(chosenAlias, transferAmountNum).willOver ? '#B45309' : 'var(--text-main)') }}>
                       {chosenAlias.alias}
                     </div>
                     <div style={{ fontSize: '0.78rem', fontWeight: 600 }}>
@@ -1967,11 +2466,27 @@ function QuickSaleBar({
                   const st = aliasStatus(a, transferAmountNum);
                   const sel = chosenAlias?.id === a.id;
                   const isOver = st.overLimit;
+                  const willOver = st.willOver;
+
+                  let tag = '';
+                  if (isOver) tag = ' · 🚨 Lleno';
+                  else if (willOver) tag = ` · ⚠️ Pasa tope (${money(aliasRemaining(a))})`;
+                  else if (st.reason) tag = ` · ${st.reason}`;
+
+                  const border = sel
+                    ? (isOver ? '2px solid #DC2626' : willOver ? '2px solid #D97706' : '2px solid #047857')
+                    : (isOver ? '1.5px solid #F87171' : willOver ? '1.5px solid #FCD34D' : '1px solid var(--border-color)');
+                  const bg = sel
+                    ? (isOver ? '#DC2626' : willOver ? '#D97706' : '#047857')
+                    : (isOver ? '#FEE2E2' : willOver ? '#FEF3C7' : 'var(--bg-card)');
+                  const color = sel
+                    ? '#FFFFFF'
+                    : (isOver ? '#B91C1C' : willOver ? '#92400E' : 'var(--text-main)');
+
                   return (
                     <button
                       key={a.id}
                       type="button"
-                      disabled={!st.ok}
                       onClick={() => { setAliasChoice(a.id); amountRef.current?.focus(); }}
                       title={`${a.description || aliasRules(a)}${a.note ? ` | Anotación: ${a.note}` : ''}`}
                       style={{
@@ -1979,20 +2494,14 @@ function QuickSaleBar({
                         borderRadius: '8px',
                         fontSize: '0.74rem',
                         fontWeight: 800,
-                        cursor: st.ok ? 'pointer' : 'not-allowed',
-                        border: sel
-                          ? isOver ? '2px solid #DC2626' : '2px solid #047857'
-                          : isOver ? '1.5px solid #F87171' : '1px solid var(--border-color)',
-                        backgroundColor: sel
-                          ? isOver ? '#DC2626' : '#047857'
-                          : isOver ? '#FEE2E2' : st.ok ? 'var(--bg-card)' : 'transparent',
-                        color: sel
-                          ? '#FFFFFF'
-                          : isOver ? '#B91C1C' : st.ok ? 'var(--text-main)' : 'var(--text-muted)',
-                        textDecoration: st.ok ? 'none' : 'line-through'
+                        cursor: 'pointer',
+                        border,
+                        backgroundColor: bg,
+                        color,
+                        textDecoration: 'none'
                       }}
                     >
-                      {a.alias}{isOver ? ' · 🚨 Lleno' : (!st.ok ? ` · ${st.reason}` : '')}
+                      {a.alias}{tag}
                     </button>
                   );
                 })}
@@ -2157,13 +2666,21 @@ function DirectTransferModal({ date, sellers, numberMap, aliases = [], onClose, 
               {!chosenAlias && <option value="">— Sin alias —</option>}
               {activeAliases.map((a) => {
                 const st = aliasStatus(a, Number(amount) || 0);
-                const tag = st.overLimit ? ' · 🚨 Tope superado (habilitado)' : (!st.ok ? ` (${st.reason})` : '');
-                return <option key={a.id} value={a.id} disabled={!st.ok}>{a.alias}{tag}</option>;
+                let tag = '';
+                if (st.overLimit) tag = ' · 🚨 Tope superado (habilitado)';
+                else if (st.willOver) tag = ` · ⚠️ Pasa tope (quedan ${money(aliasRemaining(a))})`;
+                else if (st.reason) tag = ` (${st.reason})`;
+                return <option key={a.id} value={a.id}>{a.alias}{tag}</option>;
               })}
             </select>
             {chosenAlias && aliasStatus(chosenAlias, Number(amount) || 0).overLimit && (
               <div style={{ fontSize: '0.74rem', fontWeight: 800, color: '#DC2626', marginTop: '4px' }}>
                 🚨 Este alias alcanzó su tope diario, pero podés registrar la transferencia igual.
+              </div>
+            )}
+            {chosenAlias && aliasStatus(chosenAlias, Number(amount) || 0).willOver && (
+              <div style={{ fontSize: '0.74rem', fontWeight: 800, color: '#D97706', marginTop: '4px' }}>
+                ⚠️ Esta transferencia supera el margen restante ({money(aliasRemaining(chosenAlias))} disp.), pero podés registrarla igual.
               </div>
             )}
           </div>
@@ -3475,6 +3992,8 @@ export default function VentasPage() {
   const [sharedSalePrefill, setSharedSalePrefill] = useState(null);
   const [showSplitSaleModal, setShowSplitSaleModal] = useState(false);
   const [splitSalePrefill, setSplitSalePrefill] = useState(null);
+  const [showExpenseModal, setShowExpenseModal] = useState(false);
+  const [voidingExpense, setVoidingExpense] = useState(null);
 
   useEffect(() => {
     setGoals(readGoals());
@@ -3581,7 +4100,7 @@ export default function VentasPage() {
       timer = setTimeout(() => loadRef.current(), 600);
     };
     let channel = supabase.channel('ventas-live');
-    ['payment_aliases', 'seller_sales', 'seller_advances', 'seller_payouts', 'cash_counts', 'seller_commission_rates'].forEach((table) => {
+    ['payment_aliases', 'seller_sales', 'seller_advances', 'seller_payouts', 'cash_counts', 'seller_commission_rates', 'cash_expenses'].forEach((table) => {
       channel = channel.on('postgres_changes', { event: '*', schema: 'public', table }, refresh);
     });
     channel.subscribe();
@@ -3880,17 +4399,24 @@ export default function VentasPage() {
               />
             )}
 
-            {/* Caja del dia */}
+            {/* Caja y Arqueo del dia + Recuadro de Gastos */}
             {period === 'day' && data.cash && (
-              <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap', backgroundColor: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: '12px', padding: '10px 14px', marginBottom: '16px', fontSize: '0.88rem' }}>
-                <Calculator size={18} />
-                <span>Efectivo del día (sin fondo inicial): <strong>{money(data.cash.expected)}</strong></span>
-                {data.cash.lastCount ? (
-                  <span style={{ fontWeight: 700, color: Number(data.cash.lastCount.difference) === 0 ? '#047857' : '#B91C1C' }}>
-                    Último arqueo {new Date(data.cash.lastCount.created_at).toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })}: {Number(data.cash.lastCount.difference) === 0 ? 'cerró justo' : Number(data.cash.lastCount.difference) > 0 ? `sobraban ${money(data.cash.lastCount.difference)}` : `faltaban ${money(-data.cash.lastCount.difference)}`}
-                  </span>
-                ) : <span style={{ color: 'var(--text-muted)' }}>Sin arqueo todavía</span>}
-                <button type="button" onClick={() => setShowCash(true)} className="btn-secondary" style={{ marginLeft: 'auto', display: 'inline-flex', alignItems: 'center', gap: '5px' }}><Calculator size={14} /> Hacer arqueo</button>
+              <CashAndExpensesSection
+                cash={data.cash}
+                expenses={data.expenses || []}
+                onOpenCashModal={() => setShowCash(true)}
+                onOpenExpenseModal={() => setShowExpenseModal(true)}
+                onVoidExpense={(exp) => setVoidingExpense(exp)}
+              />
+            )}
+
+            {/* Resumen de gastos en periodos mayores a día */}
+            {period !== 'day' && data.expenses && data.expenses.filter((e) => !e.voidedAt).length > 0 && (
+              <div style={{ backgroundColor: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: '12px', padding: '12px 16px', marginBottom: '16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '8px', fontSize: '0.88rem' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <Receipt size={18} color="#DC2626" />
+                  <span>Gastos del período ({PERIODS[period]}): <strong style={{ color: '#DC2626' }}>{money(data.expenses.filter((e) => !e.voidedAt).reduce((a, b) => a + b.amount, 0))}</strong> ({data.expenses.filter((e) => !e.voidedAt).length} {data.expenses.filter((e) => !e.voidedAt).length === 1 ? 'gasto' : 'gastos'})</span>
+                </div>
               </div>
             )}
 
@@ -4020,6 +4546,21 @@ export default function VentasPage() {
         )}
         {payoutSeller && data && <PayoutModal seller={payoutSeller} data={data} onClose={() => setPayoutSeller(null)} onSaved={afterSave} />}
         {showCash && data?.cash && <CashCountModal date={date} cash={data.cash} onClose={() => { setShowCash(false); load(); }} onSaved={(queued) => { if (queued) afterSave(true); }} />}
+        {showExpenseModal && (
+          <ExpenseModal
+            date={date}
+            sellers={data?.sellers || []}
+            onClose={() => setShowExpenseModal(false)}
+            onSaved={afterSave}
+          />
+        )}
+        {voidingExpense && (
+          <VoidExpenseModal
+            expense={voidingExpense}
+            onClose={() => setVoidingExpense(null)}
+            onVoided={afterSave}
+          />
+        )}
         {detailSeller && data && <DetailModal seller={detailSeller} periodFrom={data.from} periodTo={data.to} onClose={() => setDetailSeller(null)} onChanged={load} />}
         {showSharedSaleModal && data?.sellers && (
           <SharedSaleModal

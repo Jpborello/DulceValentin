@@ -72,10 +72,9 @@ export async function downloadVentasExcel(data) {
     ['C', 'D', 'E', 'G', 'H', 'I', 'J'].forEach((c) => { ws.getCell(`${c}${r}`).numFmt = MONEY_FMT; });
     ws.getCell(`F${r}`).numFmt = '0.0%';
   }
-  ws.getCell(`A${last + 3}`).value = 'Saldo pendiente = todas las comisiones − vales − pagos (acumulado a la fecha de cierre del período). Negativo = vales por encima de la comisión.';
   ws.getCell(`A${last + 3}`).font = { italic: true, size: 9, color: { argb: 'FF6B7280' } };
 
-  const exp = data.export || { sales: [], advances: [], payouts: [], cashCounts: [] };
+  const exp = data.export || { sales: [], advances: [], payouts: [], expenses: [], cashCounts: [] };
   const state = (x) => (x.voided_at ? `Anulado: ${x.void_reason || ''}` : 'Válido');
 
   addTableSheet(wb, 'Ventas', [
@@ -109,6 +108,28 @@ export async function downloadVentasExcel(data) {
     { header: 'Estado', key: 'estado', width: 28 }
   ], exp.payouts.map((x) => ({ fecha: asDate(x.date), hora: hour(x.created_at), vendedora: x.seller_name, monto: Number(x.amount), medio: METHOD[x.payment_method] || x.payment_method, periodo: x.period_from ? `${x.period_from} al ${x.period_to}` : '', nota: x.note || '', estado: state(x) })));
 
+  addTableSheet(wb, 'Gastos', [
+    { header: 'Fecha', key: 'fecha', width: 12, style: dateStyle },
+    { header: 'Hora carga', key: 'hora', width: 11 },
+    { header: 'Categoría', key: 'categoria', width: 16 },
+    { header: 'Concepto / Detalle', key: 'descripcion', width: 30 },
+    { header: 'Monto', key: 'monto', width: 15, style: moneyStyle },
+    { header: 'Medio de pago', key: 'medio', width: 15 },
+    { header: 'Vendedora (si aplica)', key: 'vendedora', width: 20 },
+    { header: 'Nota', key: 'nota', width: 25 },
+    { header: 'Estado', key: 'estado', width: 28 }
+  ], (exp.expenses || []).map((x) => ({
+    fecha: asDate(x.date || x.expense_date),
+    hora: hour(x.created_at),
+    categoria: x.category || 'Varios',
+    descripcion: x.description || '',
+    monto: Number(x.amount),
+    medio: METHOD[x.payment_method] || x.payment_method,
+    vendedora: x.seller_name || '',
+    nota: x.note || '',
+    estado: state(x)
+  })));
+
   addTableSheet(wb, 'Caja', [
     { header: 'Fecha', key: 'fecha', width: 12, style: dateStyle },
     { header: 'Hora', key: 'hora', width: 9 },
@@ -139,9 +160,7 @@ export function cierreText(data) {
     total: acc.total + s.total, cash: acc.cash + s.cash, transfer: acc.transfer + s.transfer,
     commission: acc.commission + s.commission, advances: acc.advances + s.advances, paid: acc.paid + s.paid, count: acc.count + s.salesCount
   }), { total: 0, cash: 0, transfer: 0, commission: 0, advances: 0, paid: 0, count: 0 });
-
   const avgTicket = t.count > 0 ? money(Math.round(t.total / t.count)) : '−';
-
   const lines = [
     `*${isDay ? 'CIERRE DE JORNADA' : 'RESUMEN'} — Dulce Valentín*`,
     `📅 ${isDay ? fmtDate(data.from) : `${fmtDate(data.from)} al ${fmtDate(data.to)}`}`,
@@ -152,6 +171,7 @@ export function cierreText(data) {
     `🧾 Comisiones: ${money(t.commission)}`,
     `💸 Vales: ${money(t.advances)}`,
     `✅ Pagado a vendedoras: ${money(t.paid)}`,
+    ...(data.cash?.expensesCash > 0 ? [`🛒 Gastos de caja: ${money(data.cash.expensesCash)}`] : []),
     ''
   ];
   if (sellers.length > 0) {

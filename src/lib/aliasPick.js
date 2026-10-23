@@ -9,57 +9,79 @@ export function aliasRemaining(a) {
   return Math.max(0, a.dailyLimit - (a.receivedToday || 0));
 }
 
-// { ok, reason, overLimit } — reason es corto para mostrar en el chip.
-// Si se superó el tope diario, overLimit = true pero ok = true
-// (se muestra en rojo pero permite seguir cobrando sin bloquear).
+// { ok, reason, overLimit, willOver } — reason es corto para mostrar en el chip.
+// NUNCA bloquea el cobro ni la asignación: ok siempre es true para alias activos
+// permitiendo cobrar y agregar al alias aunque se pase del tope.
 export function aliasStatus(a, amount) {
-  if (!a) return { ok: false, reason: 'Sin alias', overLimit: false };
-  if (!a.active) return { ok: false, reason: 'Pausado', overLimit: false };
+  if (!a) return { ok: false, reason: 'Sin alias', overLimit: false, willOver: false };
+  if (!a.active) return { ok: false, reason: 'Pausado', overLimit: false, willOver: false };
   const amt = Number(amount) || 0;
   const remaining = aliasRemaining(a);
-  const isOver = remaining !== null && (remaining <= 0 || (amt > 0 && amt > remaining));
+  const alreadyFull = remaining !== null && remaining <= 0;
+  const willOver = remaining !== null && remaining > 0 && amt > 0 && amt > remaining;
 
-  if (amt > 0) {
-    if (a.minAmount && amt < a.minAmount) return { ok: false, reason: `Desde ${fmt(a.minAmount)}`, overLimit: isOver };
-    if (a.maxAmount && amt > a.maxAmount) return { ok: false, reason: `Hasta ${fmt(a.maxAmount)}`, overLimit: isOver };
+  let reason = '';
+  if (alreadyFull) {
+    reason = 'Tope alcanzado';
+  } else if (willOver) {
+    reason = `Pasa tope (${fmt(remaining)} disp.)`;
+  } else if (amt > 0 && a.minAmount && amt < a.minAmount) {
+    reason = `Desde ${fmt(a.minAmount)}`;
+  } else if (amt > 0 && a.maxAmount && amt > a.maxAmount) {
+    reason = `Hasta ${fmt(a.maxAmount)}`;
   }
 
-  if (isOver) {
-    return {
-      ok: true,
-      reason: remaining <= 0 ? 'Tope alcanzado' : `Supera tope (${fmt(remaining)} disp.)`,
-      overLimit: true
-    };
-  }
-
-  return { ok: true, reason: '', overLimit: false };
+  return {
+    ok: true,
+    reason,
+    overLimit: alreadyFull,
+    willOver
+  };
 }
 
 // Devuelve el alias a usar:
-// 1. Si se eligió uno a mano y está activo, se usa (incluso si pasó el tope).
-// 2. Si no, busca el primer activo que acepte el monto y NO haya superado el tope.
-// 3. Si todos superaron el tope, devuelve el primer activo (en rojo) para no bloquear.
+// 1. Si se eligió uno a mano y está activo, SIEMPRE se usa (sin bloquear nunca).
+// 2. Si no, busca el primer activo que tenga margen diario (sin tope o remaining > 0).
+//    Si está por llegar al tope, LO DEJA USAR aunque este monto se pase.
+// 3. Si todos superaron el tope, devuelve el primer activo para no bloquear.
 // null solo si no hay ningún alias activo.
 export function pickAlias(aliases, amount, preferredId) {
   const list = (aliases || []).filter((a) => a.active);
   if (list.length === 0) return null;
 
+  // 1. Si el usuario eligió un alias a mano, siempre se respeta sin bloquear
   if (preferredId) {
     const chosen = list.find((a) => a.id === preferredId);
-    if (chosen && aliasStatus(chosen, amount).ok) return chosen;
+    if (chosen) return chosen;
   }
 
-  // Primero intentamos con uno activo que no supere el tope
-  const perfect = list.find((a) => {
-    const st = aliasStatus(a, amount);
-    return st.ok && !st.overLimit;
+  const amt = Number(amount) || 0;
+
+  // 2. Primero busca uno activo que aún tenga margen en el día (remaining > 0 o sin tope)
+  // y que cumpla min/max. Si este monto hace que se pase del tope pero todavía le quedaba margen,
+  // LO DEJA USAR para completar la transferencia.
+  const candidateWithRoom = list.find((a) => {
+    const rem = aliasRemaining(a);
+    const hasRoom = rem === null || rem > 0;
+    const fitsAmount = amt <= 0 || ((!a.minAmount || amt >= a.minAmount) && (!a.maxAmount || amt <= a.maxAmount));
+    return hasRoom && fitsAmount;
   });
-  if (perfect) return perfect;
+  if (candidateWithRoom) return candidateWithRoom;
 
-  // Si todos superaron el tope, el primero activo permitido
-  const acceptable = list.find((a) => aliasStatus(a, amount).ok);
-  if (acceptable) return acceptable;
+  // 3. Si no calzan min/max pero alguno tiene margen disponible
+  const anyWithRoom = list.find((a) => {
+    const rem = aliasRemaining(a);
+    return rem === null || rem > 0;
+  });
+  if (anyWithRoom) return anyWithRoom;
 
+  // 4. Si todos ya están al tope (remaining <= 0), busca uno que calce en monto
+  const fitsAny = list.find((a) => {
+    return amt <= 0 || ((!a.minAmount || amt >= a.minAmount) && (!a.maxAmount || amt <= a.maxAmount));
+  });
+  if (fitsAny) return fitsAny;
+
+  // 5. Fallback: primer alias activo
   return list[0];
 }
 

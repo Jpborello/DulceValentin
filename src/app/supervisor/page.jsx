@@ -61,7 +61,7 @@ import {
 const SUPERVISOR_EMAIL = 'belenbarbieri93@gmail.com';
 
 // Tablas que, al cambiar, refrescan el panel en vivo (Supabase Realtime).
-const LIVE_TABLES = ['seller_sales', 'seller_advances', 'seller_payouts', 'cash_counts', 'seller_commission_rates', 'payment_aliases'];
+const LIVE_TABLES = ['seller_sales', 'seller_advances', 'seller_payouts', 'cash_expenses', 'cash_counts', 'seller_commission_rates', 'payment_aliases'];
 const POLL_MS = 30000; // respaldo por si se corta el canal en vivo
 
 // adminFetch devuelve el Response crudo: hay que leer el JSON y chequear el status.
@@ -1122,7 +1122,7 @@ export default function SupervisorPage() {
                     <div className="sv-h"><h3>Caja del día</h3><PiggyBank size={18} className="sv-muted" /></div>
                     <span className="sv-label">Efectivo que tiene que haber</span>
                     <div className="sv-num sv-mid">{money(data.cash.expected)}</div>
-                    <p className="sv-muted sv-small">Ventas en efectivo menos vales y pagos en efectivo (sin el fondo inicial).</p>
+                    <p className="sv-muted sv-small">Ventas en efectivo menos vales, pagos y gastos en efectivo (sin el fondo inicial).</p>
                     {data.cash.lastCount ? (
                       <div className={`sv-pill ${Number(data.cash.lastCount.difference) === 0 ? 'sv-pill--ok' : 'sv-pill--bad'}`}>
                         {Number(data.cash.lastCount.difference) === 0

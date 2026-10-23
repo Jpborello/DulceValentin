@@ -131,14 +131,15 @@ async function loadAliases(date, sales) {
 }
 
 async function loadLedger(to) {
-  const [sales, advances, payouts, rates] = await Promise.all([
+  const [sales, advances, payouts, rates, expenses] = await Promise.all([
     db.from('seller_sales').select('*').lte('sale_date', to).order('created_at', { ascending: true }),
     db.from('seller_advances').select('*').lte('advance_date', to).order('created_at', { ascending: true }),
     db.from('seller_payouts').select('*').lte('paid_date', to).order('created_at', { ascending: true }),
-    db.from('seller_commission_rates').select('seller_id, effective_date, pct').lte('effective_date', to).order('effective_date', { ascending: true })
+    db.from('seller_commission_rates').select('seller_id, effective_date, pct').lte('effective_date', to).order('effective_date', { ascending: true }),
+    db.from('cash_expenses').select('*').lte('expense_date', to).order('created_at', { ascending: true })
   ]);
-  if (sales.error || advances.error || payouts.error || rates.error) throw new Error('ledger');
-  return { sales: sales.data || [], advances: advances.data || [], payouts: payouts.data || [], rates: rates.data || [] };
+  if (sales.error || advances.error || payouts.error || rates.error || expenses.error) throw new Error('ledger');
+  return { sales: sales.data || [], advances: advances.data || [], payouts: payouts.data || [], rates: rates.data || [], expenses: expenses.data || [] };
 }
 
 // Numeros de una vendedora en un rango + su saldo acumulado hasta "to".
@@ -299,12 +300,14 @@ export async function GET(req) {
     const salesCash = sum(live(ledger.sales, 'sale_date'));
     const advCash = sum(live(ledger.advances, 'advance_date'));
     const payCash = sum(live(ledger.payouts, 'paid_date'));
+    const expCash = sum(live(ledger.expenses, 'expense_date'));
     const { data: counts } = await db.from('cash_counts').select('*').eq('count_date', date).is('voided_at', null).order('created_at', { ascending: false }).limit(1);
     cash = {
       salesCash: round2(salesCash),
       advancesCash: round2(advCash),
       payoutsCash: round2(payCash),
-      expected: round2(salesCash - advCash - payCash),
+      expensesCash: round2(expCash),
+      expected: round2(salesCash - advCash - payCash - expCash),
       lastCount: counts?.[0] || null
     };
   }
@@ -469,6 +472,7 @@ export async function GET(req) {
       sales: rows(ledger.sales, 'sale_date'),
       advances: rows(ledger.advances, 'advance_date'),
       payouts: rows(ledger.payouts, 'paid_date'),
+      expenses: rows(ledger.expenses, 'expense_date'),
       cashCounts: counts || [],
       aliasByDate
     };
@@ -479,7 +483,26 @@ export async function GET(req) {
     .filter((a) => !activeIds.has(a.id))
     .map((a) => ({ ...a, active: false, receivedPeriod: round2(periodByAlias[a.id]?.received || 0), countPeriod: periodByAlias[a.id]?.count || 0 }));
 
-  const body = { period, date, from, to, prev, sellers: summary, cash, dailyAlias, aliases, archivedAliases, dayTransfers, periodTransfers, supervisorData, driveFolderUrl };
+  const periodExpenses = ledger.expenses
+    .filter((x) => inRange(x.expense_date, from, to))
+    .map((x) => ({
+      id: x.id,
+      clientRef: x.client_ref,
+      amount: Number(x.amount),
+      category: x.category || 'varios',
+      description: x.description || '',
+      paymentMethod: x.payment_method,
+      date: x.expense_date,
+      createdAt: x.created_at,
+      note: x.note || '',
+      sellerId: x.seller_id,
+      sellerName: nameById[x.seller_id] || '',
+      voidedAt: x.voided_at,
+      voidReason: x.void_reason
+    }))
+    .sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
+
+  const body = { period, date, from, to, prev, sellers: summary, cash, dailyAlias, aliases, archivedAliases, dayTransfers, periodTransfers, expenses: periodExpenses, supervisorData, driveFolderUrl };
   if (sellerId) {
     const mine = (rows, key) => rows.filter((x) => x.seller_id === sellerId && inRange(x[key], from, to));
     body.detail = {
@@ -501,6 +524,7 @@ export async function GET(req) {
       sales: rows(ledger.sales, 'sale_date'),
       advances: rows(ledger.advances, 'advance_date'),
       payouts: rows(ledger.payouts, 'paid_date'),
+      expenses: rows(ledger.expenses, 'expense_date'),
       cashCounts: counts || []
     };
   }
@@ -831,6 +855,35 @@ export async function POST(req) {
       return NextResponse.json({ success: true, saleIds });
     }
 
+    case 'addExpense': {
+      if (!uuidRe.test(String(body.clientRef || ''))) return fail(400, 'Falta la referencia del registro.');
+      const amount = parseAmount(body.amount);
+      if (amount === null) return fail(400, 'Poné el monto en pesos, sin puntos ni comas (ej: 15000).');
+      if (!METHODS.includes(body.method)) return fail(400, 'Elegí efectivo o transferencia.');
+      const description = String(body.description || '').trim().slice(0, 200);
+      if (!description) return fail(400, 'Ingresá el concepto o detalle del gasto.');
+      const category = String(body.category || 'varios').trim().slice(0, 50);
+      const date = dateOk(body.date);
+      if (date > addDays(today, 1)) return fail(400, 'La fecha no puede ser futura.');
+
+      const row = {
+        client_ref: body.clientRef,
+        expense_date: date,
+        amount,
+        category,
+        description,
+        payment_method: body.method,
+        seller_id: body.sellerId && uuidRe.test(String(body.sellerId)) ? body.sellerId : null,
+        note,
+        created_by: userId
+      };
+
+      const { error } = await db.from('cash_expenses').upsert(row, { onConflict: 'client_ref', ignoreDuplicates: true });
+      if (error) return fail(500, 'No se pudo guardar el gasto.');
+      const { data: saved } = await db.from('cash_expenses').select('id').eq('client_ref', body.clientRef).maybeSingle();
+      return NextResponse.json({ success: true, expenseId: saved?.id || null });
+    }
+
     case 'addCashCount': {
       if (!uuidRe.test(String(body.clientRef || ''))) return fail(400, 'Falta la referencia del registro.');
       const counted = parseAmount(body.counted, { allowZero: true });
@@ -842,7 +895,10 @@ export async function POST(req) {
         const { data } = await db.from(table).select('amount').eq(key, date).eq('payment_method', 'efectivo').is('voided_at', null);
         return sum(data || []);
       };
-      const movement = (await live('seller_sales', 'sale_date')) - (await live('seller_advances', 'advance_date')) - (await live('seller_payouts', 'paid_date'));
+      const movement = (await live('seller_sales', 'sale_date'))
+        - (await live('seller_advances', 'advance_date'))
+        - (await live('seller_payouts', 'paid_date'))
+        - (await live('cash_expenses', 'expense_date'));
       const expected = round2(opening + movement);
       const difference = round2(counted - expected);
       const { error } = await db.from('cash_counts').upsert({
@@ -865,7 +921,13 @@ export async function POST(req) {
     }
 
     case 'void': {
-      const table = { sale: 'seller_sales', advance: 'seller_advances', payout: 'seller_payouts', cashcount: 'cash_counts' }[body.kind];
+      const table = {
+        sale: 'seller_sales',
+        advance: 'seller_advances',
+        payout: 'seller_payouts',
+        cashcount: 'cash_counts',
+        expense: 'cash_expenses'
+      }[body.kind];
       if (!table) return fail(400, 'Tipo inválido.');
       const reason = String(body.reason || '').trim().slice(0, 300);
       if (!reason) return fail(400, 'Indicá el motivo de la anulación.');
