@@ -51,6 +51,7 @@ import {
 import { supabase } from '@/lib/supabaseClient';
 import { adminFetch } from '@/lib/adminFetch';
 import AliasManager from '@/components/AliasManager';
+import ShareAliasModal from '@/components/ShareAliasModal';
 import { aliasRemaining as aliasLeft, aliasRules } from '@/lib/aliasPick';
 import {
   downloadSupervisorExcel,
@@ -331,6 +332,7 @@ export default function SupervisorPage() {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedSellerFilter, setSelectedSellerFilter] = useState('ALL');
   const [selectedAliasFilter, setSelectedAliasFilter] = useState('ALL');
+  const [sharingAlias, setSharingAlias] = useState(null);
   const [editingNoteAlias, setEditingNoteAlias] = useState(null);
   const [noteText, setNoteText] = useState('');
   const [savingNote, setSavingNote] = useState(false);
@@ -798,8 +800,9 @@ export default function SupervisorPage() {
   };
 
   // Anular movimiento si fuera necesario
-  const handleVoidItem = async (kind, id, currentAmount, extraLabel) => {
-    if (!window.confirm(`¿Seguro que deseás anular este registro de ${money(currentAmount)} (${extraLabel})?`)) {
+  const handleVoidItem = async (kind, id, currentAmount, extraLabel, ids) => {
+    const isMultiple = ids && ids.length > 1;
+    if (!window.confirm(`¿Seguro que deseás anular este registro de ${money(currentAmount)} (${extraLabel})?${isMultiple ? ' Se anularán las ventas compartidas asociadas.' : ''}`)) {
       return;
     }
     const reason = window.prompt('Motivo de anulación:', 'Corrección de supervisora');
@@ -811,7 +814,7 @@ export default function SupervisorPage() {
         body: JSON.stringify({
           action: 'void',
           kind,
-          id,
+          ids: ids || (id ? [id] : []),
           reason: reason.trim()
         })
       });
@@ -944,17 +947,28 @@ export default function SupervisorPage() {
                 <span className="sv-alias-left">{rem !== null ? (full ? `🚨 Superado (${money(a.receivedToday - a.dailyLimit)})` : `quedan ${money(rem)}`) : 'sin tope'}</span>
               </div>
               {a.dailyLimit ? <div className="sv-meter"><span style={{ width: `${Math.min(100, pct)}%` }} className={full ? 'bad' : near ? 'warn' : ''} /></div> : null}
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '10px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '10px', flexWrap: 'wrap', gap: '6px' }}>
                 <span className="sv-alias-count">{a.countToday} transferencias el {fmtDate(date)}</span>
-                <button
-                  type="button"
-                  onClick={() => { setSelectedAliasFilter(a.id); setActiveTab('transfers'); }}
-                  className="sv-btn"
-                  style={{ height: '26px', padding: '0 9px', fontSize: '0.72rem' }}
-                  title="Ver transferencias de este alias"
-                >
-                  <Landmark size={12} /> Ver historial
-                </button>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <button
+                    type="button"
+                    onClick={() => { setSelectedAliasFilter(a.id); setActiveTab('transfers'); }}
+                    className="sv-btn"
+                    style={{ height: '26px', padding: '0 9px', fontSize: '0.72rem' }}
+                    title="Ver transferencias de este alias"
+                  >
+                    <Landmark size={12} /> Ver historial
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setSharingAlias(a)}
+                    className="sv-btn"
+                    style={{ height: '26px', padding: '0 9px', fontSize: '0.72rem', color: '#059669', borderColor: '#A7F3D0', backgroundColor: '#ECFDF5', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
+                    title="Compartir reporte PDF por WhatsApp al dueño del alias"
+                  >
+                    <Send size={12} /> WhatsApp (PDF)
+                  </button>
+                </div>
               </div>
             </div>
           );
@@ -1278,14 +1292,27 @@ export default function SupervisorPage() {
                     <span className="sv-count">{transferAliases.length + (hasNoAliasTransfers ? 1 : 0)}</span>
                   </div>
                   {selectedAliasFilter !== 'ALL' && (
-                    <button
-                      type="button"
-                      onClick={() => setSelectedAliasFilter('ALL')}
-                      className="sv-btn"
-                      style={{ height: '26px', padding: '0 9px', fontSize: '0.72rem' }}
-                    >
-                      <X size={12} /> Ver todos ({transfersList.length})
-                    </button>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      {transferAliases.find((x) => x.id === selectedAliasFilter) && (
+                        <button
+                          type="button"
+                          onClick={() => setSharingAlias(transferAliases.find((x) => x.id === selectedAliasFilter))}
+                          className="sv-btn"
+                          style={{ height: '26px', padding: '0 10px', fontSize: '0.72rem', backgroundColor: '#25D366', color: '#000', fontWeight: 800, border: 'none', display: 'inline-flex', alignItems: 'center', gap: '5px' }}
+                          title={`Enviar reporte PDF de ${transferAliases.find((x) => x.id === selectedAliasFilter)?.alias} por WhatsApp`}
+                        >
+                          <Send size={12} /> Compartir PDF al dueño
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => setSelectedAliasFilter('ALL')}
+                        className="sv-btn"
+                        style={{ height: '26px', padding: '0 9px', fontSize: '0.72rem' }}
+                      >
+                        <X size={12} /> Ver todos ({transfersList.length})
+                      </button>
+                    </div>
                   )}
                 </div>
                 <div className="sv-alias-pills">
@@ -1331,18 +1358,32 @@ export default function SupervisorPage() {
                         <div className="sv-alias-pill-amt">{money(totalOps)}</div>
                         <div className="sv-alias-pill-foot">
                           <span>{a.dailyLimit ? `tope ${money(a.dailyLimit)}` : 'sin tope'}</span>
-                          <button
-                            type="button"
-                            className="sv-pill-note-btn"
-                            title={a.note ? `Nota: “${a.note}”` : 'Agregar anotación'}
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setEditingNoteAlias(a);
-                              setNoteText(a.note || '');
-                            }}
-                          >
-                            <Edit3 size={11} /> {a.note ? 'Nota ✓' : '+ Nota'}
-                          </button>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                            <button
+                              type="button"
+                              className="sv-pill-note-btn"
+                              title={a.note ? `Nota: “${a.note}”` : 'Agregar anotación'}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setEditingNoteAlias(a);
+                                setNoteText(a.note || '');
+                              }}
+                            >
+                              <Edit3 size={11} /> {a.note ? 'Nota ✓' : '+ Nota'}
+                            </button>
+                            <button
+                              type="button"
+                              className="sv-pill-note-btn"
+                              style={{ color: '#25D366', borderColor: 'rgba(37, 211, 102, 0.4)' }}
+                              title="Compartir reporte PDF por WhatsApp al dueño del alias"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setSharingAlias(a);
+                              }}
+                            >
+                              <Send size={11} /> PDF
+                            </button>
+                          </div>
                         </div>
                       </div>
                     );
@@ -1390,7 +1431,14 @@ export default function SupervisorPage() {
                       <tr key={t.id}>
                         <td><b>{t.createdAt ? hour(t.createdAt) : '--:--'}</b><small className="sv-block sv-muted">{fmtDate(t.date)}</small></td>
                         <td><span className="sv-num sv-amt">{money(t.amount)}</span></td>
-                        <td>{t.sellerName}</td>
+                        <td>
+                          <span>{t.sellerName}</span>
+                          {t.isShared && (
+                            <span className="sv-chip" style={{ fontSize: '0.65rem', padding: '1px 6px', backgroundColor: '#6D28D9', color: '#FFF', marginLeft: '6px' }}>
+                              👥 Compartida
+                            </span>
+                          )}
+                        </td>
                         <td>
                           <span
                             className="sv-chip"
@@ -1428,7 +1476,15 @@ export default function SupervisorPage() {
                             </button>
                           )}
                         </td>
-                        <td className="r"><button type="button" className="sv-void" onClick={() => handleVoidItem('sale', t.id, t.amount, `Transferencia de ${t.sellerName}`)}>Anular</button></td>
+                        <td className="r">
+                          <button
+                            type="button"
+                            className="sv-void"
+                            onClick={() => handleVoidItem('sale', t.id, t.amount, `Transferencia de ${t.sellerName}${t.isShared ? ' (Venta compartida)' : ''}`, t.saleIds)}
+                          >
+                            Anular
+                          </button>
+                        </td>
                       </tr>
                     );
                   })}
@@ -1861,6 +1917,23 @@ export default function SupervisorPage() {
               </form>
             </div>
           </div>
+        )}
+
+        {sharingAlias && (
+          <ShareAliasModal
+            alias={sharingAlias}
+            date={date}
+            period={period}
+            transfers={transfersList}
+            onClose={() => setSharingAlias(null)}
+            onSavePhone={async (id, phone) => {
+              await api('/api/ventas', {
+                method: 'POST',
+                body: JSON.stringify({ action: 'saveAliasPhone', id, phone, date })
+              });
+              loadData(true);
+            }}
+          />
         )}
       </main>
     </div>

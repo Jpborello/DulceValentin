@@ -16,6 +16,8 @@
     "@supabase/supabase-js": "^2.49.1",
     "exceljs": "^4.4.0",
     "jsbarcode": "^3.11.6",
+    "jspdf": "^4.2.1",
+    "jspdf-autotable": "^5.0.9",
     "lucide-react": "^0.475.0",
     "next": "^15.1.7",
     "pg": "^8.23.1",

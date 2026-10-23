@@ -27,6 +27,7 @@ function emptyForm(a, targetDate) {
     alias: a?.alias || '',
     holder: a?.holder || '',
     bank: a?.bank || '',
+    phone: a?.phone || '',
     description: a?.description || '',
     minAmount: a?.minAmount ? String(a.minAmount) : '',
     maxAmount: a?.maxAmount ? String(a.maxAmount) : '',
@@ -143,6 +144,10 @@ function AliasForm({ initial, archivedAliases = [], defaultDate, onCancel, onSav
         <div>
           <label style={label}>Banco / billetera</label>
           <input type="text" value={f.bank} onChange={set('bank')} placeholder="ej: Mercado Pago" className="form-input" style={input} />
+        </div>
+        <div>
+          <label style={label}>WhatsApp / Teléfono dueño</label>
+          <input type="tel" value={f.phone} onChange={set('phone')} placeholder="ej: 3412648035" className="form-input" style={input} />
         </div>
       </div>
       <div style={{ marginBottom: '8px' }}>

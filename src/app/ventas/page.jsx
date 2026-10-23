@@ -5,6 +5,7 @@ import { Users, Plus, Wallet, HandCoins, Loader2, LogOut, X, Download, CloudOff,
 import { supabase } from '@/lib/supabaseClient';
 import { adminFetch } from '@/lib/adminFetch';
 import AliasManager from '@/components/AliasManager';
+import ShareAliasModal from '@/components/ShareAliasModal';
 import { pickAlias, aliasStatus, aliasRemaining, aliasRules } from '@/lib/aliasPick';
 import { downloadVentasExcel, cierreText, OWNER_WHATSAPP, downloadTransferenciasExcelForMica, transferenciasWhatsAppText } from '@/lib/ventasExport';
 
@@ -2841,6 +2842,8 @@ function SharedSaleModal({
 
       let sales = [];
 
+      const sharedOpToken = `[op:${crypto.randomUUID()}]`;
+
       if (method === 'efectivo') {
         sales = rows.map((r) => ({
           clientRef: crypto.randomUUID(),
@@ -2858,7 +2861,7 @@ function SharedSaleModal({
           amount: Number(r.amount),
           method: 'transferencia',
           aliasId: chosenAlias?.id || null,
-          note: `Venta compartida: ${summary}${note ? ` · ${note}` : ''}`
+          note: `Venta compartida: ${summary}${note ? ` · ${note}` : ''} ${sharedOpToken}`
         }));
       } else {
         const cTotal = Number(cashAmount);
@@ -2894,7 +2897,7 @@ function SharedSaleModal({
               amount: sTransf,
               method: 'transferencia',
               aliasId: chosenAlias?.id || null,
-              note: `Venta compartida dividida: ${summary} · ${money(cTotal)} efvo / ${money(tTotal)} transf${note ? ` · ${note}` : ''}`
+              note: `Venta compartida dividida: ${summary} · ${money(cTotal)} efvo / ${money(tTotal)} transf${note ? ` · ${note}` : ''} ${sharedOpToken}`
             });
           }
         });
@@ -3487,6 +3490,7 @@ function DailyAliasSection({
   onRefresh
 }) {
   const [copied, setCopied] = useState(false);
+  const [sharingAlias, setSharingAlias] = useState(null);
   const [exportingExcel, setExportingExcel] = useState(false);
   const [voidingId, setVoidingId] = useState(null);
 
@@ -3543,7 +3547,11 @@ function DailyAliasSection({
   };
 
   const handleVoidTransfer = async (transfer) => {
-    if (!window.confirm(`¿Seguro que querés anular la transferencia de ${money(transfer.amount)} cargada a ${transfer.sellerName}?`)) {
+    const isShared = transfer.isShared;
+    const label = isShared
+      ? `la venta compartida de ${money(transfer.amount)} (${transfer.sellerName})`
+      : `la transferencia de ${money(transfer.amount)} cargada a ${transfer.sellerName}`;
+    if (!window.confirm(`¿Seguro que querés anular ${label}?${isShared ? ' Se anularán las ventas compartidas asociadas.' : ''}`)) {
       return;
     }
     const reason = window.prompt('Motivo de anulación:', 'Error en carga de transferencia');
@@ -3554,7 +3562,7 @@ function DailyAliasSection({
       await api('POST', {
         action: 'void',
         kind: 'sale',
-        id: transfer.id,
+        ids: transfer.saleIds || [transfer.id],
         reason: reason.trim()
       });
       onRefresh();
@@ -3684,9 +3692,20 @@ function DailyAliasSection({
                     </div>
                     <div style={{ fontFamily: 'monospace', fontWeight: 900, fontSize: '0.98rem', wordBreak: 'break-all' }}>{a.alias}</div>
                   </div>
-                  <button type="button" onClick={() => copyAlias(a.alias)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: copied === a.alias ? '#059669' : 'var(--text-muted)', display: 'inline-flex', alignItems: 'center', gap: '3px', fontSize: '0.7rem', fontWeight: 800, flexShrink: 0 }} title="Copiar alias">
-                    {copied === a.alias ? <CheckCheck size={14} /> : <Copy size={14} />}
-                  </button>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0 }}>
+                    <button type="button" onClick={() => copyAlias(a.alias)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: copied === a.alias ? '#059669' : 'var(--text-muted)', display: 'inline-flex', alignItems: 'center', gap: '3px', fontSize: '0.7rem', fontWeight: 800 }} title="Copiar alias">
+                      {copied === a.alias ? <CheckCheck size={14} /> : <Copy size={14} />}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setSharingAlias(a)}
+                      style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#059669', display: 'inline-flex', alignItems: 'center', gap: '3px', fontSize: '0.72rem', fontWeight: 800 }}
+                      title="Compartir reporte PDF por WhatsApp al dueño del alias"
+                    >
+                      <Send size={13} />
+                      <span>PDF</span>
+                    </button>
+                  </div>
                 </div>
                 <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>{[a.holder, a.bank].filter(Boolean).join(' · ') || 'Sin titular'} · {aliasRules(a)}</div>
                 {a.description && <div style={{ fontSize: '0.76rem', fontWeight: 800, color: '#92400E', marginTop: '2px' }}>“{a.description}”</div>}
@@ -3767,6 +3786,11 @@ function DailyAliasSection({
                           </span>
                         ) : null}
                         {t.sellerName}
+                        {t.isShared && (
+                          <span style={{ backgroundColor: 'var(--accent-purple, #6D28D9)', color: '#FFF', fontSize: '0.68rem', padding: '1px 5px', borderRadius: '4px', marginLeft: '6px', fontWeight: 800 }}>
+                            👥 Compartida
+                          </span>
+                        )}
                       </td>
                       <td style={{ padding: '8px', fontFamily: 'monospace', fontWeight: 700, whiteSpace: 'nowrap' }}>
                         {t.aliasName || <span style={{ color: 'var(--text-muted)', fontFamily: 'inherit' }}>—</span>}
@@ -3802,6 +3826,20 @@ function DailyAliasSection({
           </div>
         )}
       </div>
+
+      {sharingAlias && (
+        <ShareAliasModal
+          alias={sharingAlias}
+          date={date}
+          period="day"
+          transfers={transfers}
+          onClose={() => setSharingAlias(null)}
+          onSavePhone={async (id, phone) => {
+            await api('POST', { action: 'saveAliasPhone', id, phone });
+            onRefresh();
+          }}
+        />
+      )}
     </div>
   );
 }

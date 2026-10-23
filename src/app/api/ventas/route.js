@@ -81,8 +81,91 @@ function commissionOf(sales, rates, sellerId) {
 // Trae todo lo necesario hasta la fecha "to" (los volumenes son chicos).
 // Alias de cobro (tabla payment_aliases). Montos numericos o null.
 const numOrNull = (v) => (v === null || v === undefined || v === '' ? null : Number(v));
+
+// Identifica si dos transferencias corresponden a una misma operación compartida
+function getTransferGroupKey(t) {
+  if (!t.aliasId) return null;
+  // 1) Si la nota tiene identificador explícito [op:UUID] o [grp:UUID]
+  const opMatch = t.note && t.note.match(/\[op:([^\]]+)\]/);
+  if (opMatch) {
+    return `${t.date}_${t.aliasId}_op_${opMatch[1]}`;
+  }
+  // 2) Si es venta compartida retroactiva (mismo alias, misma fecha, nota empieza con "Venta compartida")
+  if (t.note && (t.note.startsWith('Venta compartida:') || t.note.startsWith('Venta compartida dividida:'))) {
+    const minuteBucket = t.createdAt ? Math.floor(new Date(t.createdAt).getTime() / 60000) : 0;
+    const baseSummary = t.note.split(' · ')[0].trim();
+    return `${t.date}_${t.aliasId}_shared_${baseSummary}_${minuteBucket}`;
+  }
+  return null;
+}
+
+// Consolida transferencias de ventas compartidas en una única operación bancaria real
+function consolidateTransferList(rawTransfers) {
+  const groups = new Map();
+  const result = [];
+
+  rawTransfers.forEach((t) => {
+    const groupKey = getTransferGroupKey(t);
+    if (!groupKey) {
+      result.push({
+        ...t,
+        saleIds: [t.id],
+        clientRefs: [t.clientRef],
+        sellerNames: t.sellerName ? [t.sellerName] : [],
+        isShared: false,
+        sharedParts: []
+      });
+      return;
+    }
+
+    if (!groups.has(groupKey)) {
+      const consolidated = {
+        ...t,
+        amount: 0,
+        sellerId: null,
+        sellerIds: [],
+        sellerNames: [],
+        saleIds: [],
+        clientRefs: [],
+        isShared: true,
+        sharedParts: []
+      };
+      groups.set(groupKey, consolidated);
+      result.push(consolidated);
+    }
+
+    const target = groups.get(groupKey);
+    target.saleIds.push(t.id);
+    target.clientRefs.push(t.clientRef);
+    if (t.sellerId) target.sellerIds.push(t.sellerId);
+    if (t.sellerName && !target.sellerNames.includes(t.sellerName)) {
+      target.sellerNames.push(t.sellerName);
+    }
+    target.amount = round2(target.amount + t.amount);
+    target.sharedParts.push({
+      id: t.id,
+      sellerId: t.sellerId,
+      sellerName: t.sellerName,
+      amount: t.amount,
+      clientRef: t.clientRef
+    });
+    if (t.createdAt && (!target.createdAt || t.createdAt < target.createdAt)) {
+      target.createdAt = t.createdAt;
+    }
+  });
+
+  result.forEach((t) => {
+    if (t.isShared) {
+      t.sellerName = t.sellerNames.join(' + ');
+      t.note = (t.note || '').replace(/\s*\[op:[^\]]+\]/g, '').trim();
+    }
+  });
+
+  return result.sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
+}
+
 async function loadAliases(date, sales) {
-  const [aliasRes, noteRes] = await Promise.all([
+  const [aliasRes, noteRes, phoneRes] = await Promise.all([
     db
       .from('payment_aliases')
       .select('*')
@@ -91,7 +174,11 @@ async function loadAliases(date, sales) {
     db
       .from('categories')
       .select('id, name')
-      .like('id', `_config_alias_note_${date}_%`)
+      .like('id', `_config_alias_note_${date}_%`),
+    db
+      .from('categories')
+      .select('id, name')
+      .like('id', `_config_alias_phone_%`)
   ]);
 
   if (aliasRes.error) return [];
@@ -101,20 +188,39 @@ async function loadAliases(date, sales) {
     notesByAliasId[aId] = r.name || '';
   });
 
+  const phonesByAliasId = {};
+  (phoneRes.data || []).forEach((r) => {
+    const aId = r.id.replace('_config_alias_phone_', '');
+    phonesByAliasId[aId] = r.name || '';
+  });
+
+  const dayTransferSales = sales.filter(
+    (x) => !x.voided_at && x.sale_date === date && x.payment_method === 'transferencia' && x.alias_id
+  );
+  const consolidatedDay = consolidateTransferList(dayTransferSales.map((x) => ({
+    id: x.id,
+    clientRef: x.client_ref,
+    amount: Number(x.amount),
+    sellerId: x.seller_id,
+    date: x.sale_date,
+    createdAt: x.created_at,
+    note: x.note || '',
+    aliasId: x.alias_id
+  })));
+
   const received = {};
   const counts = {};
-  sales
-    .filter((x) => !x.voided_at && x.sale_date === date && x.payment_method === 'transferencia' && x.alias_id)
-    .forEach((x) => {
-      received[x.alias_id] = (received[x.alias_id] || 0) + Number(x.amount);
-      counts[x.alias_id] = (counts[x.alias_id] || 0) + 1;
-    });
+  consolidatedDay.forEach((x) => {
+    received[x.aliasId] = round2((received[x.aliasId] || 0) + x.amount);
+    counts[x.aliasId] = (counts[x.aliasId] || 0) + 1;
+  });
 
   return (aliasRes.data || []).map((a) => ({
     id: a.id,
     alias: a.alias,
     holder: a.holder || '',
     bank: a.bank || '',
+    phone: phonesByAliasId[a.id] || a.phone || '',
     description: a.description || '',
     minAmount: numOrNull(a.min_amount),
     maxAmount: numOrNull(a.max_amount),
@@ -314,7 +420,7 @@ export async function GET(req) {
 
   // Alias del día y registro de transferencias
   const nameById = Object.fromEntries((sellers || []).map((s) => [s.id, s.name]));
-  const periodTransfers = ledger.sales
+  const rawTransfers = ledger.sales
     .filter((x) => !x.voided_at && inRange(x.sale_date, from, to) && x.payment_method === 'transferencia')
     .map((x) => ({
       id: x.id,
@@ -328,6 +434,8 @@ export async function GET(req) {
       aliasId: x.alias_id || null
     }))
     .sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
+
+  const periodTransfers = consolidateTransferList(rawTransfers);
 
   const [allAliases, attRes, gdriveRes] = await Promise.all([
     loadAliases(date, ledger.sales),
@@ -379,7 +487,15 @@ export async function GET(req) {
   periodTransfers.forEach((t) => {
     t.aliasName = t.aliasId ? (aliasNameById[t.aliasId] || 'Alias desconocido') : '';
     t.aliasArchived = Boolean(t.aliasId && allAliases.find((a) => a.id === t.aliasId)?.archived);
-    t.attachment = attMap[String(t.id)] || attMap[t.clientRef] || null;
+    const findAtt = (id, ref) => attMap[String(id)] || (ref ? attMap[ref] : null);
+    let att = findAtt(t.id, t.clientRef);
+    if (!att && t.saleIds) {
+      for (let i = 0; i < t.saleIds.length; i++) {
+        att = findAtt(t.saleIds[i], t.clientRefs?.[i]);
+        if (att) break;
+      }
+    }
+    t.attachment = att || null;
   });
 
   const driveFolderUrl = gdriveRes?.data?.name || '';
@@ -618,6 +734,9 @@ export async function POST(req) {
         updated_at: new Date().toISOString()
       };
       const targetDate = isDate(body.date) ? body.date : todayAR();
+      const phoneVal = body.phone !== undefined ? String(body.phone || '').trim().slice(0, 30) : null;
+      let savedId = null;
+
       if (body.id) {
         if (!uuidRe.test(String(body.id))) return fail(400, 'Alias inválido.');
         const patch = {
@@ -627,26 +746,57 @@ export async function POST(req) {
         };
         const { data, error } = await db.from('payment_aliases').update(patch).eq('id', body.id).select('id').maybeSingle();
         if (error || !data) return fail(500, 'No se pudo guardar el alias.');
-        return NextResponse.json({ success: true, id: data.id });
+        savedId = data.id;
+      } else {
+        // Si no se pasó id, verificar si ya existe un alias con este nombre en la base de datos (para no duplicarlo y mantener su historial)
+        const { data: existing } = await db.from('payment_aliases').select('id').eq('alias', alias).limit(1).maybeSingle();
+        if (existing?.id) {
+          const patch = {
+            ...row,
+            archived: false,
+            created_at: new Date(`${targetDate}T12:00:00-03:00`).toISOString()
+          };
+          const { data, error } = await db.from('payment_aliases').update(patch).eq('id', existing.id).select('id').maybeSingle();
+          if (error || !data) return fail(500, 'No se pudo reactivar el alias.');
+          savedId = data.id;
+        } else {
+          const { data: last } = await db.from('payment_aliases').select('sort').order('sort', { ascending: false }).limit(1).maybeSingle();
+          row.sort = (last?.sort || 0) + 1;
+          row.created_at = new Date(`${targetDate}T12:00:00-03:00`).toISOString();
+          const { data, error } = await db.from('payment_aliases').insert(row).select('id').single();
+          if (error) return fail(500, 'No se pudo agregar el alias.');
+          savedId = data.id;
+        }
       }
-      // Si no se pasó id, verificar si ya existe un alias con este nombre en la base de datos (para no duplicarlo y mantener su historial)
-      const { data: existing } = await db.from('payment_aliases').select('id').eq('alias', alias).limit(1).maybeSingle();
-      if (existing?.id) {
-        const patch = {
-          ...row,
-          archived: false,
-          created_at: new Date(`${targetDate}T12:00:00-03:00`).toISOString()
-        };
-        const { data, error } = await db.from('payment_aliases').update(patch).eq('id', existing.id).select('id').maybeSingle();
-        if (error || !data) return fail(500, 'No se pudo reactivar el alias.');
-        return NextResponse.json({ success: true, id: data.id, restored: true });
+
+      if (savedId && body.phone !== undefined) {
+        const phoneKey = `_config_alias_phone_${savedId}`;
+        if (phoneVal) {
+          await db.from('categories').upsert({ id: phoneKey, name: phoneVal }, { onConflict: 'id' });
+        } else {
+          await db.from('categories').delete().eq('id', phoneKey);
+        }
+        try {
+          await db.from('payment_aliases').update({ phone: phoneVal || null }).eq('id', savedId);
+        } catch {}
       }
-      const { data: last } = await db.from('payment_aliases').select('sort').order('sort', { ascending: false }).limit(1).maybeSingle();
-      row.sort = (last?.sort || 0) + 1;
-      row.created_at = new Date(`${targetDate}T12:00:00-03:00`).toISOString();
-      const { data, error } = await db.from('payment_aliases').insert(row).select('id').single();
-      if (error) return fail(500, 'No se pudo agregar el alias.');
-      return NextResponse.json({ success: true, id: data.id });
+
+      return NextResponse.json({ success: true, id: savedId });
+    }
+
+    case 'saveAliasPhone': {
+      if (!uuidRe.test(String(body.id || ''))) return fail(400, 'Alias inválido.');
+      const phone = String(body.phone || '').trim().slice(0, 30);
+      const key = `_config_alias_phone_${body.id}`;
+      if (!phone) {
+        await db.from('categories').delete().eq('id', key);
+      } else {
+        await db.from('categories').upsert({ id: key, name: phone }, { onConflict: 'id' });
+      }
+      try {
+        await db.from('payment_aliases').update({ phone: phone || null }).eq('id', body.id);
+      } catch {}
+      return NextResponse.json({ success: true, phone });
     }
 
     case 'setAliasActive':
