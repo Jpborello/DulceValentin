@@ -147,9 +147,16 @@ async function sendOrQueue(payload) {
   try {
     return { queued: false, data: await api('POST', payload) };
   } catch (err) {
-    if (err.status) throw err; // el servidor contesto con un error: no se encola
+    // 401/403 = sesion vencida (la pestana quedo abierta demasiado y no se
+    // pudo refrescar el token). Antes esto tiraba el error y la venta SE PERDIA.
+    // Ahora se encola igual que cuando no hay internet: queda guardada en el
+    // dispositivo y se reenvia sola al refrescar la sesion o volver a entrar.
+    // Solo los errores de datos (400/404/409) se muestran, porque nunca van a
+    // guardarse bien.
+    const sessionError = err.status === 401 || err.status === 403;
+    if (err.status && !sessionError) throw err;
     writeQueue([...readQueue(), payload]);
-    return { queued: true };
+    return { queued: true, sessionError };
   }
 }
 
@@ -4157,7 +4164,7 @@ export default function VentasPage() {
 
   const afterSave = (queued) => {
     setQueueSize(readQueue().length);
-    setNotice(queued ? 'Sin conexión: quedó guardado en este dispositivo y se envía solo cuando vuelva internet.' : '');
+    setNotice(queued ? 'La venta quedó guardada en este dispositivo y se envía sola. Si el aviso "sin enviar" no baja en un rato, recargá la página o volvé a iniciar sesión (no se pierde nada).' : '');
     if (!queued) load();
   };
 
