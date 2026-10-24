@@ -236,16 +236,30 @@ async function loadAliases(date, sales) {
   }));
 }
 
+async function fetchAllRows(buildQuery) {
+  const all = [];
+  const pageSize = 1000;
+  let from = 0;
+  while (true) {
+    const { data, error } = await buildQuery().range(from, from + pageSize - 1);
+    if (error) throw error;
+    if (!data || data.length === 0) break;
+    all.push(...data);
+    if (data.length < pageSize) break;
+    from += pageSize;
+  }
+  return all;
+}
+
 async function loadLedger(to) {
   const [sales, advances, payouts, rates, expenses] = await Promise.all([
-    db.from('seller_sales').select('*').lte('sale_date', to).order('created_at', { ascending: true }),
-    db.from('seller_advances').select('*').lte('advance_date', to).order('created_at', { ascending: true }),
-    db.from('seller_payouts').select('*').lte('paid_date', to).order('created_at', { ascending: true }),
-    db.from('seller_commission_rates').select('seller_id, effective_date, pct').lte('effective_date', to).order('effective_date', { ascending: true }),
-    db.from('cash_expenses').select('*').lte('expense_date', to).order('created_at', { ascending: true })
+    fetchAllRows(() => db.from('seller_sales').select('*').lte('sale_date', to).order('created_at', { ascending: true })),
+    fetchAllRows(() => db.from('seller_advances').select('*').lte('advance_date', to).order('created_at', { ascending: true })),
+    fetchAllRows(() => db.from('seller_payouts').select('*').lte('paid_date', to).order('created_at', { ascending: true })),
+    fetchAllRows(() => db.from('seller_commission_rates').select('seller_id, effective_date, pct').lte('effective_date', to).order('effective_date', { ascending: true })),
+    fetchAllRows(() => db.from('cash_expenses').select('*').lte('expense_date', to).order('created_at', { ascending: true }))
   ]);
-  if (sales.error || advances.error || payouts.error || rates.error || expenses.error) throw new Error('ledger');
-  return { sales: sales.data || [], advances: advances.data || [], payouts: payouts.data || [], rates: rates.data || [], expenses: expenses.data || [] };
+  return { sales, advances, payouts, rates, expenses };
 }
 
 // Numeros de una vendedora en un rango + su saldo acumulado hasta "to".

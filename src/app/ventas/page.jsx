@@ -4129,8 +4129,12 @@ export default function VentasPage() {
     const tick = async () => {
       const sent = await flushQueue();
       setQueueSize(readQueue().length);
-      if (sent > 0) load();
+      if (sent > 0) {
+        setNotice('');
+        load();
+      }
     };
+    tick();
     setQueueSize(readQueue().length);
     window.addEventListener('online', tick);
     const id = setInterval(tick, 20000);
@@ -4212,9 +4216,18 @@ export default function VentasPage() {
           <h1 style={{ fontSize: '1.35rem', fontWeight: 900, display: 'flex', alignItems: 'center', gap: '8px' }}><Users size={22} /> Ventas de vendedoras</h1>
           <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
             {queueSize > 0 && (
-              <span title="Se guardaron sin conexión y se envían solos al volver internet" style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', fontSize: '0.8rem', fontWeight: 800, color: '#B45309', backgroundColor: '#FFFBEB', border: '1px solid #FDE68A', padding: '4px 10px', borderRadius: '20px' }}>
-                <CloudOff size={14} /> {queueSize} sin enviar
-              </span>
+              <button
+                type="button"
+                onClick={async () => {
+                  const sent = await flushQueue();
+                  setQueueSize(readQueue().length);
+                  if (sent > 0) { setNotice(''); load(); }
+                }}
+                title="Hacé clic para reintentar enviar ahora"
+                style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', fontSize: '0.8rem', fontWeight: 800, color: '#B45309', backgroundColor: '#FFFBEB', border: '1px solid #FDE68A', padding: '4px 10px', borderRadius: '20px', cursor: 'pointer' }}
+              >
+                <CloudOff size={14} /> {queueSize} sin enviar (reintentar)
+              </button>
             )}
             {data && (
               <button type="button" onClick={sendCierre} className="btn-primary" style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', backgroundColor: '#25D366', borderColor: '#25D366' }} title="Abre WhatsApp con el resumen para Mica">
