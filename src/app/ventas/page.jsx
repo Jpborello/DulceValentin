@@ -161,7 +161,11 @@ async function flushQueue() {
     try {
       await api('POST', item);
     } catch (err) {
-      if (!err.status) remaining.push(item); // sigue sin conexion
+      // Conservar para reintentar si fue falta de conexion (sin status) o
+      // sesion vencida (401/403): asi la venta no se pierde y se reenvia al
+      // volver internet o reloguearse. Solo se descarta un error de datos
+      // (400/404/409), que nunca va a guardarse bien.
+      if (!err.status || err.status === 401 || err.status === 403) remaining.push(item);
     }
   }
   writeQueue(remaining);
