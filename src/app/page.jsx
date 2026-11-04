@@ -926,10 +926,11 @@ export default function Home() {
           <a
             href="https://www.neo-core-sys.com.ar/"
             target="_blank"
-            rel="noopener noreferrer"
+            rel="noopener"
+            title="Desarrollo de Software a Medida y E-commerce en Rosario"
             style={{ color: 'var(--accent-gold-light)', fontWeight: 700 }}
           >
-            Neo Core Sys
+            Neo Core Sys · Software a Medida
           </a>
         </div>
       </footer>
