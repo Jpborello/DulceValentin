@@ -1,12 +1,12 @@
-// Funciones que ya estan programadas pero quedan APAGADAS hasta que el
-// cliente las contrate. Para habilitar una, cambiar false -> true y hacer
-// deploy (la base de datos ya esta preparada para todas).
+// Funciones del sistema habilitadas para Dulce Valentín.
 //
-//   POS:            caja del local (/caja), ventas de vendedoras, cobro,
-//                   comisiones y pestaña "Personal y Comisiones" del admin.
-//   BARCODE_LABELS: boton "Etiquetas" en Control de Stock (codigos de barra
-//                   por talle/color para imprimir y escanear en la caja).
+//   POS:            caja del local (/caja), punto de venta en panel admin,
+//                   lector de código de barras, cobro, comisiones y arqueo.
+//   BARCODE_LABELS: botón "Etiquetas" e impresión con código de barras
+//                   por variante (talle + color).
 export const FEATURES = {
-  POS: false,
-  BARCODE_LABELS: false
+  POS: true,
+  BARCODE_LABELS: true
 };
+
+export default FEATURES;

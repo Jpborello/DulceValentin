@@ -8,6 +8,7 @@ import { dataStore } from '@/lib/dataStore';
 import { getProductColorsForSize } from '@/lib/catalogData';
 import { getProductPrice } from '@/lib/productPricing';
 import { FEATURES } from '@/lib/features';
+import { printThermalSaleTicket } from '@/lib/printUtils';
 
 // Caja del local (2026-10). Vendedoras arman ventas a su nombre (quedan
 // "pendientes de cobro"); la cajera las cobra en efectivo o transferencia.
@@ -30,24 +31,14 @@ async function api(path, options = {}) {
 }
 
 function printTicket(sale, extra = {}) {
-  const win = window.open('', '_blank', 'width=380,height=600');
-  if (!win) return;
-  const rows = (sale.items || []).map((it) => {
-    const p = it.product || {};
-    const variant = [p.selectedSize ? `T.${p.selectedSize}` : '', p.selectedColor || ''].filter(Boolean).join(' ');
-    return `<tr><td>${it.quantity}x ${String(p.name || '').replace(/</g, '&lt;')}${variant ? ` <small>(${variant})</small>` : ''}</td><td style="text-align:right">${money((p.unit_price || 0) * it.quantity)}</td></tr>`;
-  }).join('');
-  win.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>Ticket ${sale.id}</title>
-<style>@page{size:80mm auto;margin:3mm}body{font-family:monospace;font-size:12px;width:72mm;margin:0}h1{font-size:15px;text-align:center;margin:0 0 4px}table{width:100%;border-collapse:collapse}td{padding:2px 0;vertical-align:top}.tot{font-size:15px;font-weight:bold;border-top:1px dashed #000;padding-top:4px}.c{text-align:center}</style></head><body>
-<h1>Dulce Valentín</h1><div class="c">Pte. Perón 5349 - Rosario</div><div class="c">${new Date(sale.paid_at || sale.created_at).toLocaleString('es-AR')}</div>
-<div class="c">Venta ${sale.id}${sale.seller_name ? ` · Vend.: ${sale.seller_name}` : ''}</div><hr>
-<table>${rows}</table>
-<table><tr class="tot"><td>TOTAL</td><td style="text-align:right">${money(sale.total_amount)}</td></tr>
-${extra.method ? `<tr><td>Pago</td><td style="text-align:right">${METHOD_LABEL[extra.method] || extra.method}</td></tr>` : ''}
-${extra.cashReceived ? `<tr><td>Recibido</td><td style="text-align:right">${money(extra.cashReceived)}</td></tr><tr><td>Vuelto</td><td style="text-align:right">${money(extra.change)}</td></tr>` : ''}
-</table><hr><div class="c">¡Gracias por tu compra!</div>
-<script>window.onload=function(){setTimeout(function(){window.print();},200)}<\/script></body></html>`);
-  win.document.close();
+  printThermalSaleTicket({
+    order: sale,
+    cajaName: 'Caja 01',
+    cashier: sale.cashier_name || sale.seller_name || '',
+    paymentMethod: extra.method || sale.payment_method,
+    cashGiven: extra.cashReceived,
+    changeDue: extra.change
+  });
 }
 
 // ---------------------------------------------------------------- Login

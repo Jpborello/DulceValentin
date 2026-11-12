@@ -6,6 +6,7 @@ import {
   normalizeSubcategory,
   isRetiredSubcategory
 } from './catalogData';
+import { ensureBarcodesForProduct } from './barcode';
 
 export const INITIAL_PRODUCTS = CATALOG_PRODUCTS;
 export const CATEGORIES = CATALOG_CATEGORIES;
@@ -942,6 +943,13 @@ class DataStore {
     if (dbUpdates.price !== undefined) dbUpdates.price = Number(dbUpdates.price);
     if (dbUpdates.wholesale_price !== undefined) dbUpdates.wholesale_price = Number(dbUpdates.wholesale_price);
 
+    // Si cambian talles o colores, auto-generar códigos de barra para las nuevas variantes
+    if (updates.sizes !== undefined || updates.stock_per_size !== undefined || updates.colors !== undefined || updates.color_stock !== undefined) {
+      const fullBarcodes = ensureBarcodesForProduct(updatedP);
+      updatedP.barcodes = fullBarcodes;
+      dbUpdates.barcodes = fullBarcodes;
+    }
+
     this.products = this.products.map(p => p.id === id ? updatedP : p);
     this.saveProductsToLocalStorage();
     this.notify();
@@ -1445,7 +1453,7 @@ class DataStore {
       const code = providedCode || generateCode();
       if (providedCode) usedCodes.add(providedCode);
 
-      return {
+      const prod = {
         id: item.id || `p-${Date.now()}-${idx}-${Math.floor(Math.random()*1000)}`,
         code,
         name: (item.name || item.nombre || 'Producto Importado').trim(),
@@ -1463,6 +1471,8 @@ class DataStore {
         is_offer: Boolean(item.is_offer),
         is_top_seller: false
       };
+      prod.barcodes = ensureBarcodesForProduct(prod);
+      return prod;
     });
 
     this.products = [...newFormattedProducts, ...this.products];
@@ -1556,8 +1566,13 @@ class DataStore {
       is_featured: false,
       is_top_seller: false,
       exempt_from_min3: isPromo,
-      sales_count: 0
+      sales_count: 0,
+      barcodes: data.barcodes && typeof data.barcodes === 'object' ? data.barcodes : null
     };
+
+    if (!newProduct.barcodes || Object.keys(newProduct.barcodes).length === 0) {
+      newProduct.barcodes = ensureBarcodesForProduct(newProduct);
+    }
 
     this.products = [newProduct, ...this.products];
     this.saveProductsToLocalStorage();

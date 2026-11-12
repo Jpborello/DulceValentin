@@ -1,10 +1,29 @@
 'use client';
 
 import { FEATURES } from '@/lib/features';
-import { BarChart3, Package, DollarSign, Image as ImageIcon, Layers, Users, Sparkles, FolderPlus, FileSpreadsheet, CreditCard, MessageSquare, PlusCircle, Megaphone, NotebookPen, UserCog, UserPlus } from 'lucide-react';
+import {
+  Barcode,
+  BarChart3,
+  Package,
+  DollarSign,
+  Image as ImageIcon,
+  Layers,
+  Users,
+  Sparkles,
+  FolderPlus,
+  FileSpreadsheet,
+  CreditCard,
+  MessageSquare,
+  PlusCircle,
+  Megaphone,
+  NotebookPen,
+  UserCog,
+  UserPlus
+} from 'lucide-react';
 
 export default function AdminTabsNav({ activeTab, onTabChange }) {
   const tabs = [
+    { id: 'pos', label: '🛒 Punto de Venta (Caja)', icon: Barcode },
     { id: 'metrics', label: 'Métricas & Arqueo de Caja', icon: BarChart3 },
     { id: 'whatsapp', label: '💬 WhatsApp CRM & IA', icon: MessageSquare },
     { id: 'settings', label: '💳 Alias de Transferencia', icon: CreditCard },

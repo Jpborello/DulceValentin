@@ -1,10 +1,11 @@
 'use client';
 
 import { useState, useMemo, useEffect } from 'react';
-import { PlusCircle, X, UploadCloud, Loader2, CheckCircle2, AlertCircle, Tag, Star, Trash2, ArrowLeft, ArrowRight, Image as ImageIcon, Layers, Palette, Plus } from 'lucide-react';
+import { PlusCircle, X, UploadCloud, Loader2, CheckCircle2, AlertCircle, Tag, Star, Trash2, ArrowLeft, ArrowRight, Image as ImageIcon, Layers, Palette, Plus, Barcode, Printer } from 'lucide-react';
 import { supabase } from '@/lib/supabaseClient';
 import { compressImageWithThumb } from '@/lib/compressImage';
 import { getProductColors, POPULAR_COLORS } from '@/lib/catalogData';
+import BarcodeLabelsModal from '@/components/admin/BarcodeLabelsModal';
 
 const EMPTY_FORM = {
   name: '',
@@ -43,6 +44,7 @@ export default function AddProductTab({ categories, onCreateProduct }) {
   const [isSaving, setIsSaving] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
   const [successInfo, setSuccessInfo] = useState(null);
+  const [showLabelsForProduct, setShowLabelsForProduct] = useState(null);
 
   // Auto-activar excepcion x3 si el nombre o la categoría son de una promo/pack
   useEffect(() => {
@@ -399,8 +401,52 @@ export default function AddProductTab({ categories, onCreateProduct }) {
       )}
 
       {successInfo && (
-        <div style={{ backgroundColor: '#D1FAE5', color: '#065F46', border: '1px solid #6EE7B7', padding: '14px 18px', borderRadius: '8px', marginBottom: '18px', fontSize: '0.9rem', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <CheckCircle2 size={20} /> &quot;{successInfo.name}&quot; creado con código <strong>{successInfo.code}</strong>. Ya está activo en la web.
+        <div style={{
+          backgroundColor: '#D1FAE5',
+          color: '#065F46',
+          border: '1px solid #6EE7B7',
+          padding: '16px 20px',
+          borderRadius: '12px',
+          marginBottom: '20px',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          flexWrap: 'wrap',
+          gap: '12px',
+          boxShadow: '0 2px 10px rgba(5,150,105,0.08)'
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+            <CheckCircle2 size={24} style={{ color: '#059669', flexShrink: 0 }} />
+            <div>
+              <div style={{ fontSize: '0.98rem', fontWeight: 800 }}>
+                ¡Prenda &quot;{successInfo.name}&quot; creada con éxito! (Art. {successInfo.code})
+              </div>
+              <div style={{ fontSize: '0.82rem', color: '#047857', marginTop: '3px' }}>
+                ✓ Códigos de barra POS generados automáticamente para cada talle y color. Ya está activa en la web y lista para cobrar en caja.
+              </div>
+            </div>
+          </div>
+
+          <button
+            type="button"
+            onClick={() => setShowLabelsForProduct(successInfo)}
+            className="btn-primary"
+            style={{
+              padding: '8px 16px',
+              fontSize: '0.84rem',
+              fontWeight: 800,
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              background: '#059669',
+              border: 'none',
+              color: '#fff',
+              boxShadow: '0 2px 8px rgba(5,150,105,0.25)',
+              cursor: 'pointer'
+            }}
+          >
+            <Printer size={15} /> Imprimir Etiquetas Ahora
+          </button>
         </div>
       )}
 
@@ -1138,6 +1184,38 @@ export default function AddProductTab({ categories, onCreateProduct }) {
           )}
         </div>
 
+        {/* INFO CÓDIGOS DE BARRA AUTOMÁTICOS */}
+        <div style={{
+          gridColumn: '1 / -1',
+          background: 'var(--bg-surface-elevated)',
+          border: '1px solid var(--border-color)',
+          borderRadius: '12px',
+          padding: '14px 18px',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '14px'
+        }}>
+          <div style={{
+            width: '42px',
+            height: '42px',
+            borderRadius: '10px',
+            background: 'var(--bg-card)',
+            border: '1px solid var(--border-color)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            flexShrink: 0
+          }}>
+            <Barcode size={22} style={{ color: 'var(--accent-gold)' }} />
+          </div>
+          <div style={{ fontSize: '0.82rem', color: 'var(--text-muted)' }}>
+            <strong style={{ color: 'var(--text-main)', display: 'block', marginBottom: '2px', fontSize: '0.88rem' }}>
+              🏷️ Generación Automática de Códigos de Barra para Punto de Venta (POS)
+            </strong>
+            No te preocupes por armar los códigos a mano: al guardar, el sistema le asigna automáticamente a cada variante de talle y color su propio código legible (ej: <code>DV{form.code.trim() || '0235'}-8-ROJO</code>) listo para escanear con la pistola en el mostrador e imprimir en etiquetas térmicas o planchas A4.
+          </div>
+        </div>
+
         <div style={{ gridColumn: '1 / -1' }}>
           <button type="submit" disabled={isSaving} className="btn-primary" style={{ padding: '11px 24px', fontSize: '0.9rem', fontWeight: 800, opacity: isSaving ? 0.7 : 1, display: 'inline-flex', alignItems: 'center', gap: '8px' }}>
             {isSaving ? <Loader2 size={16} className="spin" /> : <Tag size={16} />}
@@ -1145,6 +1223,13 @@ export default function AddProductTab({ categories, onCreateProduct }) {
           </button>
         </div>
       </form>
+
+      {showLabelsForProduct && (
+        <BarcodeLabelsModal
+          product={showLabelsForProduct}
+          onClose={() => setShowLabelsForProduct(null)}
+        />
+      )}
     </div>
   );
 }

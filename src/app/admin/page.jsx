@@ -23,6 +23,7 @@ import BannersTab from '@/components/admin/BannersTab';
 import SuppliersTab from '@/components/admin/SuppliersTab';
 import StaffTab from '@/components/admin/StaffTab';
 import SellersTab from '@/components/admin/SellersTab';
+import PosTab from '@/components/admin/PosTab';
 import { FEATURES } from '@/lib/features';
 
 // Pestana "WhatsApp CRM & IA" (bandeja del chat web + bot). Necesita
@@ -716,6 +717,14 @@ export default function AdminPage() {
       )}
 
       <AdminTabsNav activeTab={activeTab} onTabChange={setActiveTab} />
+
+      {activeTab === 'pos' && (
+        <PosTab
+          products={products}
+          orders={orders}
+          onRefresh={() => dataStore.initAdminFromSupabase()}
+        />
+      )}
 
       {activeTab === 'metrics' && (
         <MetricsTab 

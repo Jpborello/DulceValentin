@@ -37,6 +37,26 @@ export async function POST(req) {
       return NextResponse.json({ success: true, data });
     }
 
+    if (action === 'saveBarcodes') {
+      if (!id || typeof updates !== 'object') {
+        return NextResponse.json({ error: 'Faltan parámetros id o updates' }, { status: 400 });
+      }
+
+      const barcodes = updates.barcodes || updates;
+      const { data, error } = await supabaseAdmin
+        .from('products')
+        .update({ barcodes })
+        .eq('id', id)
+        .select('id, barcodes');
+
+      if (error) {
+        console.error('API Admin Save Barcodes Error:', error);
+        return NextResponse.json({ error: error.message }, { status: 500 });
+      }
+
+      return NextResponse.json({ success: true, data });
+    }
+
     if (action === 'upsertProducts') {
       if (!Array.isArray(productsList) || productsList.length === 0) {
         return NextResponse.json({ error: 'Lista de productos vacía' }, { status: 400 });
