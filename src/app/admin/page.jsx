@@ -701,6 +701,8 @@ export default function AdminPage() {
         visitCount={metrics.visitCount}
         notifPermission={notifPermission}
         onRequestNotif={handleRequestNotif}
+        onOpenBackups={() => setActiveTab('backups')}
+        isBackupsActive={activeTab === 'backups'}
       />
 
       {editSuccessMsg && (
@@ -728,7 +730,11 @@ export default function AdminPage() {
       )}
 
       {activeTab === 'backups' && (
-        <BackupsTab />
+        <BackupsTab
+          products={products}
+          orders={orders}
+          clients={clients}
+        />
       )}
 
       {activeTab === 'metrics' && (

@@ -25,7 +25,6 @@ import {
 export default function AdminTabsNav({ activeTab, onTabChange }) {
   const tabs = [
     { id: 'pos', label: '🛒 Punto de Venta (Caja)', icon: Barcode },
-    { id: 'backups', label: '🛡️ Respaldo & Modo Local', icon: ShieldCheck },
     { id: 'metrics', label: 'Métricas & Arqueo de Caja', icon: BarChart3 },
     { id: 'whatsapp', label: '💬 WhatsApp CRM & IA', icon: MessageSquare },
     { id: 'settings', label: '💳 Alias de Transferencia', icon: CreditCard },

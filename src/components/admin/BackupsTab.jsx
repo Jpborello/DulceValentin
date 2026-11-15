@@ -21,12 +21,13 @@ import {
   Sparkles,
   Wifi,
   WifiOff,
-  ExternalLink,
   HelpCircle,
-  Eye,
-  FileText,
-  DollarSign,
-  Tag
+  Tag,
+  Clock,
+  ArrowUpRight,
+  Database,
+  CheckCheck,
+  Activity
 } from 'lucide-react';
 import BackupGuideModal from '@/components/admin/BackupGuideModal';
 import { adminFetch } from '@/lib/adminFetch';
@@ -43,7 +44,7 @@ import {
 } from '@/lib/localDatabase';
 import { getProductVariants } from '@/lib/barcode';
 
-export default function BackupsTab() {
+export default function BackupsTab({ products = [], orders = [], clients = [] }) {
   const [loading, setLoading] = useState(false);
   const [snapshot, setSnapshot] = useState(null);
   const [meta, setMeta] = useState(null);
@@ -51,7 +52,7 @@ export default function BackupsTab() {
   const [copiedPath, setCopiedPath] = useState(false);
   const [feedbackMsg, setFeedbackMsg] = useState(null);
 
-  // Pestaña interna de la sección
+  // Sub-pestañas internas
   const [activeSection, setActiveSection] = useState('operaciones'); // 'operaciones' | 'catalogo_offline' | 'restaurar'
 
   // Búsqueda en catálogo offline
@@ -80,13 +81,6 @@ export default function BackupsTab() {
       }
     });
 
-    // Abrir la guía automáticamente la primera vez
-    if (typeof window !== 'undefined' && !localStorage.getItem('seen_dv_backup_guide')) {
-      setShowGuide(true);
-      setGuideStep(1);
-      localStorage.setItem('seen_dv_backup_guide', 'true');
-    }
-
     const handleModeChange = (e) => {
       setIsLocalMode(Boolean(e.detail?.isLocal));
     };
@@ -100,6 +94,20 @@ export default function BackupsTab() {
       setFeedbackMsg(null);
     }, 6000);
   };
+
+  // Métricas en vivo (combinando props del sistema con snapshot)
+  const liveMetrics = useMemo(() => {
+    const totalProducts = snapshot?.counts?.products ?? products?.length ?? 0;
+    const totalStock = snapshot?.counts?.totalStock ?? (
+      Array.isArray(products)
+        ? products.reduce((acc, p) => acc + (Number(p.stock) || 0), 0)
+        : 0
+    );
+    const totalOrders = snapshot?.counts?.orders ?? orders?.length ?? 0;
+    const totalClients = snapshot?.counts?.clients ?? clients?.length ?? 0;
+
+    return { totalProducts, totalStock, totalOrders, totalClients };
+  }, [snapshot, products, orders, clients]);
 
   // Sincronizar y Respaldar en 1 Clic
   const handleSyncBackup = async () => {
@@ -131,7 +139,7 @@ export default function BackupsTab() {
         'application/json;charset=utf-8'
       );
 
-      // 3. Disparar también descarga de la planilla de stock por talle y color (esencial para el local)
+      // 3. Disparar descarga de la planilla de stock por talle y color (esencial para el local)
       if (data.csvFiles?.stockVariantes) {
         triggerBrowserFileDownload(
           data.csvFiles.stockVariantes,
@@ -141,7 +149,7 @@ export default function BackupsTab() {
       }
 
       showToast(
-        `¡Respaldo exitoso! Se guardó en "${data.backupDir}" y se descargó una copia en tu navegador.`,
+        `¡Respaldo exitoso! Guardado en "${data.backupDir}" y descargado en el navegador.`,
         'success'
       );
     } catch (err) {
@@ -175,17 +183,16 @@ export default function BackupsTab() {
     );
   };
 
-  // Descargar CSV individual desde el snapshot cargado
+  // Descargar CSV individual
   const handleDownloadCsv = (type) => {
-    if (!snapshot || !snapshot.data) {
-      showToast('Primero realizá un respaldo para poder descargar las planillas.', 'warning');
-      return;
-    }
+    const sourceProducts = snapshot?.data?.products || products || [];
+    const sourceOrders = snapshot?.data?.orders || orders || [];
+    const sourceClients = snapshot?.data?.wholesaleClients || clients || [];
 
-    const dateStr = (snapshot.exportedAt || new Date().toISOString()).slice(0, 10);
+    const dateStr = (snapshot?.exportedAt || new Date().toISOString()).slice(0, 10);
 
     if (type === 'catalogo') {
-      const rows = (snapshot.data.products || []).map((p) => ({
+      const rows = sourceProducts.map((p) => ({
         codigo: p.code || '',
         nombre: p.name || '',
         categoria: p.category || '',
@@ -219,7 +226,7 @@ export default function BackupsTab() {
       showToast('Planilla de Catálogo descargada para Excel.', 'success');
     } else if (type === 'stockVariantes') {
       const rows = [];
-      (snapshot.data.products || []).forEach((p) => {
+      sourceProducts.forEach((p) => {
         const variants = getProductVariants(p);
         const barcodes = p.barcodes || {};
 
@@ -267,7 +274,7 @@ export default function BackupsTab() {
       triggerBrowserFileDownload(csv, `stock_por_talle_y_color_${dateStr}.csv`, 'text/csv;charset=utf-8');
       showToast('Planilla de Stock por Talle y Color descargada para Excel.', 'success');
     } else if (type === 'ventas') {
-      const rows = (snapshot.data.orders || []).map((o) => {
+      const rows = sourceOrders.map((o) => {
         let itemsResumen = '';
         if (Array.isArray(o.items)) {
           itemsResumen = o.items
@@ -320,7 +327,7 @@ export default function BackupsTab() {
     } else if (type === 'clientes') {
       const clientMap = new Map();
 
-      (snapshot.data.wholesaleClients || []).forEach((wc) => {
+      sourceClients.forEach((wc) => {
         const phoneClean = String(wc.phone || '').replace(/\D/g, '');
         const key = phoneClean || String(wc.name || '').trim().toLowerCase();
         if (!key) return;
@@ -336,7 +343,7 @@ export default function BackupsTab() {
         });
       });
 
-      (snapshot.data.orders || []).forEach((o) => {
+      sourceOrders.forEach((o) => {
         const phoneClean = String(o.client_phone || '').replace(/\D/g, '');
         const key = phoneClean || String(o.client_name || '').trim().toLowerCase();
         if (!key) return;
@@ -374,13 +381,18 @@ export default function BackupsTab() {
       triggerBrowserFileDownload(csv, `clientes_y_contactos_${dateStr}.csv`, 'text/csv;charset=utf-8');
       showToast('Directorio de Clientes descargado para Excel.', 'success');
     } else if (type === 'json') {
-      const jsonStr = JSON.stringify(snapshot, null, 2);
+      const dataToSave = snapshot || {
+        version: '1.0.0-local-first',
+        exportedAt: new Date().toISOString(),
+        data: { products, orders, wholesaleClients: clients }
+      };
+      const jsonStr = JSON.stringify(dataToSave, null, 2);
       triggerBrowserFileDownload(jsonStr, `backup_dulce_valentin_${dateStr}.json`, 'application/json;charset=utf-8');
       showToast('Base completa JSON descargada.', 'success');
     }
   };
 
-  // Carga e inspección de archivo de respaldo local
+  // Carga e inspección de archivo de respaldo
   const handleFileChange = (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -408,7 +420,7 @@ export default function BackupsTab() {
     reader.readAsText(file);
   };
 
-  // Aplicar respaldo inspeccionado al modo contingencia local
+  // Aplicar respaldo inspeccionado a la memoria local
   const handleApplyInspected = async () => {
     if (!inspectingSnapshot) return;
     try {
@@ -428,29 +440,29 @@ export default function BackupsTab() {
 
   // Filtrado de productos en catálogo offline
   const filteredOfflineProducts = useMemo(() => {
-    if (!snapshot) return [];
-    return searchLocalProducts(snapshot, offlineSearch);
-  }, [snapshot, offlineSearch]);
+    const list = snapshot?.data?.products || products || [];
+    return searchLocalProducts({ data: { products: list } }, offlineSearch);
+  }, [snapshot, products, offlineSearch]);
 
   // Filtrado de ventas en catálogo offline
   const filteredOfflineOrders = useMemo(() => {
-    if (!snapshot) return [];
-    return searchLocalOrders(snapshot, offlineSearch);
-  }, [snapshot, offlineSearch]);
+    const list = snapshot?.data?.orders || orders || [];
+    return searchLocalOrders({ data: { orders: list } }, offlineSearch);
+  }, [snapshot, orders, offlineSearch]);
 
   const lastBackupDateText = useMemo(() => {
     const raw = meta?.exportedAt || snapshot?.exportedAt;
     if (!raw) return 'Aún no realizado en esta sesión';
     try {
       const d = new Date(raw);
-      return d.toLocaleDateString('es-AR') + ' ' + d.toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' });
+      return d.toLocaleDateString('es-AR') + ' · ' + d.toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' });
     } catch {
       return raw;
     }
   }, [meta, snapshot]);
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '24px', paddingBottom: '50px' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '22px', paddingBottom: '60px' }}>
       {/* Guía Modal Paso a Paso */}
       <BackupGuideModal
         isOpen={showGuide}
@@ -461,7 +473,7 @@ export default function BackupsTab() {
         onFinish={() => setShowGuide(false)}
       />
 
-      {/* Toast / Notificación visual */}
+      {/* Toast Flotante */}
       {feedbackMsg && (
         <div
           style={{
@@ -469,17 +481,18 @@ export default function BackupsTab() {
             bottom: '24px',
             right: '24px',
             zIndex: 9999,
-            backgroundColor: feedbackMsg.type === 'error' ? '#991B1B' : feedbackMsg.type === 'warning' ? '#B45309' : '#14532D',
+            backgroundColor: feedbackMsg.type === 'error' ? '#991B1B' : feedbackMsg.type === 'warning' ? '#B45309' : '#065F46',
             color: '#FFFFFF',
             padding: '12px 20px',
             borderRadius: '12px',
-            boxShadow: '0 10px 25px rgba(0,0,0,0.25)',
+            boxShadow: '0 12px 30px rgba(0,0,0,0.35)',
             display: 'flex',
             alignItems: 'center',
             gap: '10px',
-            fontSize: '0.88rem',
-            fontWeight: 700,
-            maxWidth: '480px',
+            fontSize: '0.86rem',
+            fontWeight: 800,
+            maxWidth: '500px',
+            border: '1px solid rgba(255,255,255,0.15)',
             animation: 'fadeIn 0.2s ease-out'
           }}
         >
@@ -488,13 +501,13 @@ export default function BackupsTab() {
           ) : feedbackMsg.type === 'warning' ? (
             <WifiOff size={18} />
           ) : (
-            <CheckCircle2 size={18} color="#4ADE80" />
+            <CheckCircle2 size={18} color="#34D399" />
           )}
           <span>{feedbackMsg.text}</span>
         </div>
       )}
 
-      {/* Cabecera Principal */}
+      {/* Cabecera Principal - Adaptativa High-Craft */}
       <div
         style={{
           display: 'flex',
@@ -503,35 +516,34 @@ export default function BackupsTab() {
           justifyContent: 'space-between',
           flexWrap: 'wrap',
           gap: '16px',
-          borderBottom: '2px solid var(--border-color, #F3DCE7)',
-          paddingBottom: '18px'
+          borderBottom: '1px solid var(--border-color, #423262)',
+          paddingBottom: '16px'
         }}
       >
-        <div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-            <div
-              style={{
-                width: '42px',
-                height: '42px',
-                borderRadius: '12px',
-                backgroundColor: '#FCEDF3',
-                color: '#A8175A',
-                border: '1px solid #E4BFD4',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center'
-              }}
-            >
-              <ShieldCheck size={24} />
-            </div>
-            <div>
-              <h2 style={{ fontSize: '1.4rem', fontWeight: 900, color: 'var(--text-main, #241E28)', margin: 0 }}>
-                Copias de Seguridad y Blindaje Local-First
-              </h2>
-              <p style={{ fontSize: '0.82rem', color: 'var(--text-muted, #6E656E)', margin: 0 }}>
-                Respaldo en 1 clic en tu PC con Windows, planillas para Excel y modo contingencia offline sin internet.
-              </p>
-            </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+          <div
+            style={{
+              width: '44px',
+              height: '44px',
+              borderRadius: '14px',
+              background: 'linear-gradient(135deg, rgba(245, 85, 157, 0.2) 0%, rgba(168, 23, 90, 0.1) 100%)',
+              color: 'var(--accent-gold, #F5559D)',
+              border: '1px solid var(--border-color-strong, #55407A)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              boxShadow: '0 4px 14px rgba(245, 85, 157, 0.15)'
+            }}
+          >
+            <ShieldCheck size={26} />
+          </div>
+          <div>
+            <h2 style={{ fontSize: '1.45rem', fontWeight: 900, color: 'var(--text-main, #F3EDE6)', margin: 0, letterSpacing: '-0.02em' }}>
+              Copias de Seguridad y Blindaje Local-First
+            </h2>
+            <p style={{ fontSize: '0.82rem', color: 'var(--text-muted, #B3A9AF)', margin: '2px 0 0 0' }}>
+              Respaldo en 1 clic en tu PC con Windows, planillas para Excel y modo contingencia offline (IndexedDB).
+            </p>
           </div>
         </div>
 
@@ -542,18 +554,22 @@ export default function BackupsTab() {
               setGuideStep(1);
               setShowGuide(true);
             }}
-            className="btn-secondary"
             style={{
               display: 'flex',
               alignItems: 'center',
               gap: '6px',
-              padding: '7px 14px',
+              padding: '8px 14px',
               fontSize: '0.82rem',
               fontWeight: 800,
-              cursor: 'pointer'
+              cursor: 'pointer',
+              borderRadius: '10px',
+              border: '1px solid var(--border-color, #423262)',
+              background: 'var(--bg-card, #2E1F42)',
+              color: 'var(--text-main, #F3EDE6)',
+              transition: 'all 0.2s ease'
             }}
           >
-            <HelpCircle size={15} color="#A8175A" />
+            <HelpCircle size={15} color="var(--accent-gold, #F5559D)" />
             ¿Cómo funciona esta pantalla?
           </button>
 
@@ -564,43 +580,45 @@ export default function BackupsTab() {
               display: 'flex',
               alignItems: 'center',
               gap: '7px',
-              padding: '7px 14px',
+              padding: '8px 14px',
               fontSize: '0.82rem',
               fontWeight: 800,
-              borderRadius: '8px',
-              border: isLocalMode ? '1px solid #F59E0B' : '1px solid #BBF7D0',
-              backgroundColor: isLocalMode ? '#FEF3C7' : '#F0FDF4',
-              color: isLocalMode ? '#92400E' : '#166534',
-              cursor: 'pointer'
+              borderRadius: '10px',
+              border: isLocalMode ? '1px solid #F59E0B' : '1px solid rgba(52, 211, 153, 0.4)',
+              background: isLocalMode ? 'rgba(245, 158, 11, 0.15)' : 'rgba(16, 185, 129, 0.12)',
+              color: isLocalMode ? '#FBBF24' : '#34D399',
+              cursor: 'pointer',
+              transition: 'all 0.2s ease'
             }}
           >
             {isLocalMode ? (
               <>
-                <WifiOff size={15} color="#D97706" /> Modo Local (Contingencia)
+                <WifiOff size={15} /> Modo Local (Contingencia)
               </>
             ) : (
               <>
-                <Wifi size={15} color="#16A34A" /> Modo Online (Nube)
+                <Wifi size={15} /> Modo Online (Nube)
               </>
             )}
           </button>
         </div>
       </div>
 
-      {/* Sub-Navegación de Secciones */}
-      <div style={{ display: 'flex', gap: '8px', borderBottom: '1px solid var(--border-color, #F3DCE7)', paddingBottom: '10px' }}>
+      {/* Sub-Navegación de Secciones (Pills) */}
+      <div style={{ display: 'flex', gap: '8px', borderBottom: '1px solid var(--border-color, #423262)', paddingBottom: '12px' }}>
         <button
           type="button"
           onClick={() => setActiveSection('operaciones')}
           style={{
             padding: '8px 16px',
-            fontSize: '0.85rem',
+            fontSize: '0.84rem',
             fontWeight: 800,
-            borderRadius: '8px',
+            borderRadius: '10px',
             border: 'none',
             cursor: 'pointer',
-            backgroundColor: activeSection === 'operaciones' ? '#A8175A' : 'transparent',
-            color: activeSection === 'operaciones' ? '#FFFFFF' : 'var(--text-muted, #6E656E)'
+            backgroundColor: activeSection === 'operaciones' ? 'var(--dv-accent-fill, #C2185B)' : 'transparent',
+            color: activeSection === 'operaciones' ? '#FFFFFF' : 'var(--text-muted, #B3A9AF)',
+            transition: 'all 0.2s ease'
           }}
         >
           ⚡ Panel de Respaldo & Excel
@@ -611,32 +629,32 @@ export default function BackupsTab() {
           onClick={() => setActiveSection('catalogo_offline')}
           style={{
             padding: '8px 16px',
-            fontSize: '0.85rem',
+            fontSize: '0.84rem',
             fontWeight: 800,
-            borderRadius: '8px',
+            borderRadius: '10px',
             border: 'none',
             cursor: 'pointer',
-            backgroundColor: activeSection === 'catalogo_offline' ? '#A8175A' : 'transparent',
-            color: activeSection === 'catalogo_offline' ? '#FFFFFF' : 'var(--text-muted, #6E656E)',
+            backgroundColor: activeSection === 'catalogo_offline' ? 'var(--dv-accent-fill, #C2185B)' : 'transparent',
+            color: activeSection === 'catalogo_offline' ? '#FFFFFF' : 'var(--text-muted, #B3A9AF)',
             display: 'flex',
             alignItems: 'center',
-            gap: '6px'
+            gap: '6px',
+            transition: 'all 0.2s ease'
           }}
         >
           <Barcode size={15} /> Visor de Contingencia Offline
-          {snapshot?.counts?.products && (
-            <span
-              style={{
-                backgroundColor: activeSection === 'catalogo_offline' ? 'rgba(255,255,255,0.25)' : '#FCEDF3',
-                color: activeSection === 'catalogo_offline' ? '#FFFFFF' : '#A8175A',
-                fontSize: '0.72rem',
-                padding: '2px 6px',
-                borderRadius: '6px'
-              }}
-            >
-              {snapshot.counts.products} prendas
-            </span>
-          )}
+          <span
+            style={{
+              backgroundColor: activeSection === 'catalogo_offline' ? 'rgba(255,255,255,0.2)' : 'rgba(245, 85, 157, 0.15)',
+              color: activeSection === 'catalogo_offline' ? '#FFFFFF' : 'var(--accent-gold, #F5559D)',
+              fontSize: '0.72rem',
+              padding: '2px 7px',
+              borderRadius: '6px',
+              fontWeight: 900
+            }}
+          >
+            {liveMetrics.totalProducts} prendas
+          </span>
         </button>
 
         <button
@@ -644,16 +662,17 @@ export default function BackupsTab() {
           onClick={() => setActiveSection('restaurar')}
           style={{
             padding: '8px 16px',
-            fontSize: '0.85rem',
+            fontSize: '0.84rem',
             fontWeight: 800,
-            borderRadius: '8px',
+            borderRadius: '10px',
             border: 'none',
             cursor: 'pointer',
-            backgroundColor: activeSection === 'restaurar' ? '#A8175A' : 'transparent',
-            color: activeSection === 'restaurar' ? '#FFFFFF' : 'var(--text-muted, #6E656E)',
+            backgroundColor: activeSection === 'restaurar' ? 'var(--dv-accent-fill, #C2185B)' : 'transparent',
+            color: activeSection === 'restaurar' ? '#FFFFFF' : 'var(--text-muted, #B3A9AF)',
             display: 'flex',
             alignItems: 'center',
-            gap: '6px'
+            gap: '6px',
+            transition: 'all 0.2s ease'
           }}
         >
           <Upload size={15} /> Inspeccionar Copia Externa
@@ -662,18 +681,20 @@ export default function BackupsTab() {
 
       {/* SECCIÓN 1: PANEL DE RESPALDO & EXCEL */}
       {activeSection === 'operaciones' && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-          {/* Card Principal: Botón 1 Clic y Banner de Carpeta Windows */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '22px' }}>
+          {/* Card Hero Principal: Respaldo 1 Clic con Estética de Alta Gama */}
           <div
             style={{
-              backgroundColor: '#FFFFFF',
-              border: '1px solid var(--border-color, #F3DCE7)',
-              borderRadius: '20px',
-              padding: '24px',
-              boxShadow: '0 4px 20px rgba(36, 30, 40, 0.04)',
+              background: 'linear-gradient(145deg, rgba(194, 24, 91, 0.12) 0%, rgba(23, 14, 36, 0.5) 100%), var(--bg-card, #2E1F42)',
+              border: '1px solid var(--border-color-strong, #55407A)',
+              borderRadius: '22px',
+              padding: '24px 26px',
+              boxShadow: '0 10px 30px rgba(0, 0, 0, 0.25)',
               display: 'flex',
               flexDirection: 'column',
-              gap: '20px'
+              gap: '20px',
+              position: 'relative',
+              overflow: 'hidden'
             }}
           >
             <div
@@ -687,26 +708,39 @@ export default function BackupsTab() {
               }}
             >
               <div>
-                <span
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
+                  <span
+                    style={{
+                      fontSize: '11px',
+                      fontWeight: 900,
+                      textTransform: 'uppercase',
+                      color: '#34D399',
+                      backgroundColor: 'rgba(16, 185, 129, 0.14)',
+                      border: '1px solid rgba(52, 211, 153, 0.3)',
+                      padding: '3px 9px',
+                      borderRadius: '8px',
+                      letterSpacing: '0.06em',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '5px'
+                    }}
+                  >
+                    <CheckCheck size={13} /> Doble Respaldo Físico & Navegador
+                  </span>
+                </div>
+                <h3
                   style={{
-                    fontSize: '11px',
+                    fontSize: '1.35rem',
                     fontWeight: 900,
-                    textTransform: 'uppercase',
-                    color: '#16A34A',
-                    backgroundColor: '#F0FDF4',
-                    border: '1px solid #BBF7D0',
-                    padding: '3px 8px',
-                    borderRadius: '6px',
-                    letterSpacing: '0.05em'
+                    color: 'var(--text-main, #F3EDE6)',
+                    margin: '0 0 4px 0',
+                    letterSpacing: '-0.02em'
                   }}
                 >
-                  Doble Respaldo Automático
-                </span>
-                <h3 style={{ fontSize: '1.25rem', fontWeight: 900, color: 'var(--text-main, #241E28)', margin: '6px 0 2px 0' }}>
                   Respaldo Completo en 1 Clic
                 </h3>
-                <p style={{ fontSize: '0.84rem', color: 'var(--text-muted, #6E656E)', margin: 0 }}>
-                  Vuelca toda la base de datos a tu carpeta local de Windows y descarga planillas tabulares para Excel.
+                <p style={{ fontSize: '0.84rem', color: 'var(--text-muted, #B3A9AF)', margin: 0, lineHeight: 1.45 }}>
+                  Guarda toda la base de datos en tu Windows y descarga simultáneamente las planillas para Microsoft Excel.
                 </p>
               </div>
 
@@ -715,18 +749,20 @@ export default function BackupsTab() {
                 onClick={handleSyncBackup}
                 disabled={loading}
                 style={{
-                  backgroundColor: loading ? '#9CA3AF' : '#16A34A',
+                  background: loading
+                    ? '#6B7280'
+                    : 'linear-gradient(135deg, #10B981 0%, #059669 100%)',
                   color: '#FFFFFF',
                   border: 'none',
                   borderRadius: '14px',
                   padding: '14px 28px',
-                  fontSize: '0.98rem',
+                  fontSize: '0.96rem',
                   fontWeight: 900,
                   display: 'flex',
                   alignItems: 'center',
                   gap: '10px',
                   cursor: loading ? 'not-allowed' : 'pointer',
-                  boxShadow: '0 8px 20px rgba(22, 163, 74, 0.28)',
+                  boxShadow: '0 8px 24px rgba(16, 185, 129, 0.32)',
                   transition: 'all 0.2s ease'
                 }}
               >
@@ -742,11 +778,11 @@ export default function BackupsTab() {
               </button>
             </div>
 
-            {/* Banner de Carpeta Windows */}
+            {/* Banner de Carpeta Windows (Estilo Terminal Sleek) */}
             <div
               style={{
-                backgroundColor: '#FFF8FA',
-                border: '1px solid var(--border-color, #F3DCE7)',
+                backgroundColor: 'var(--bg-surface-dark, #170E24)',
+                border: '1px solid var(--border-color, #423262)',
                 borderRadius: '14px',
                 padding: '14px 18px',
                 display: 'flex',
@@ -756,26 +792,39 @@ export default function BackupsTab() {
                 gap: '12px'
               }}
             >
-              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                <FolderCheck size={22} color="#A8175A" />
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                <div
+                  style={{
+                    width: '36px',
+                    height: '36px',
+                    borderRadius: '10px',
+                    backgroundColor: 'rgba(245, 85, 157, 0.12)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    color: 'var(--accent-gold, #F5559D)'
+                  }}
+                >
+                  <FolderCheck size={20} />
+                </div>
                 <div>
-                  <div style={{ fontSize: '0.74rem', fontWeight: 800, color: 'var(--text-muted, #6E656E)', textTransform: 'uppercase' }}>
+                  <div style={{ fontSize: '0.72rem', fontWeight: 800, color: 'var(--text-muted, #B3A9AF)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
                     Carpeta Física en tu Windows:
                   </div>
-                  <div style={{ fontFamily: 'monospace', fontWeight: 800, fontSize: '0.88rem', color: '#241E28' }}>
+                  <div style={{ fontFamily: 'monospace', fontWeight: 800, fontSize: '0.88rem', color: 'var(--text-main, #F3EDE6)' }}>
                     {meta?.windowsPath || snapshot?.windowsPath || 'C:\\Users\\<Usuario>\\Backups_DulceValentin'}
                   </div>
                 </div>
               </div>
 
-              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                <span style={{ fontSize: '0.76rem', color: 'var(--text-muted, #6E656E)' }}>
-                  Último respaldo: <strong style={{ color: '#241E28' }}>{lastBackupDateText}</strong>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                <span style={{ fontSize: '0.76rem', color: 'var(--text-muted, #B3A9AF)', display: 'flex', alignItems: 'center', gap: '5px' }}>
+                  <Clock size={13} />
+                  Último respaldo: <strong style={{ color: 'var(--text-main, #F3EDE6)' }}>{lastBackupDateText}</strong>
                 </span>
                 <button
                   type="button"
                   onClick={handleCopyPath}
-                  className="btn-secondary"
                   style={{
                     display: 'flex',
                     alignItems: 'center',
@@ -783,13 +832,18 @@ export default function BackupsTab() {
                     padding: '6px 12px',
                     fontSize: '0.78rem',
                     fontWeight: 800,
-                    cursor: 'pointer'
+                    cursor: 'pointer',
+                    borderRadius: '8px',
+                    border: '1px solid var(--border-color-strong, #55407A)',
+                    background: 'var(--bg-card, #2E1F42)',
+                    color: 'var(--text-main, #F3EDE6)',
+                    transition: 'all 0.2s ease'
                   }}
                   title="Copiar ruta de Windows"
                 >
                   {copiedPath ? (
                     <>
-                      <Check size={14} color="#16A34A" /> ¡Copiada!
+                      <Check size={14} color="#34D399" /> ¡Copiada!
                     </>
                   ) : (
                     <>
@@ -801,170 +855,202 @@ export default function BackupsTab() {
             </div>
           </div>
 
-          {/* Tarjetas Bento de Resumen */}
+          {/* Tarjetas Bento de Métricas - Rediseño de Autor */}
           <div
             style={{
               display: 'grid',
-              gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
-              gap: '14px'
+              gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))',
+              gap: '16px'
             }}
           >
+            {/* Card 1: Prendas */}
             <div
               style={{
-                backgroundColor: '#FFFFFF',
-                border: '1px solid var(--border-color, #F3DCE7)',
-                borderRadius: '16px',
-                padding: '16px 20px',
+                background: 'linear-gradient(160deg, rgba(255, 255, 255, 0.03) 0%, rgba(0, 0, 0, 0.2) 100%), var(--bg-card, #2E1F42)',
+                border: '1px solid var(--border-color, #423262)',
+                borderRadius: '18px',
+                padding: '18px 20px',
                 display: 'flex',
-                alignItems: 'center',
-                gap: '14px'
+                flexDirection: 'column',
+                gap: '12px',
+                boxShadow: '0 4px 16px rgba(0, 0, 0, 0.15)'
               }}
             >
-              <div
-                style={{
-                  width: '46px',
-                  height: '46px',
-                  borderRadius: '12px',
-                  backgroundColor: '#FCEDF3',
-                  color: '#A8175A',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  flexShrink: 0
-                }}
-              >
-                <Tag size={22} />
-              </div>
-              <div>
-                <div style={{ fontSize: '0.74rem', color: 'var(--text-muted, #6E656E)', fontWeight: 800 }}>Prendas en Catálogo</div>
-                <div style={{ fontSize: '1.45rem', fontWeight: 900, color: 'var(--text-main, #241E28)', fontFamily: 'monospace' }}>
-                  {snapshot?.counts?.products ?? '324'}
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <span style={{ fontSize: '0.76rem', color: 'var(--text-muted, #B3A9AF)', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                  Prendas en Catálogo
+                </span>
+                <div
+                  style={{
+                    width: '38px',
+                    height: '38px',
+                    borderRadius: '10px',
+                    backgroundColor: 'rgba(245, 85, 157, 0.14)',
+                    color: 'var(--accent-gold, #F5559D)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    border: '1px solid rgba(245, 85, 157, 0.25)'
+                  }}
+                >
+                  <Tag size={19} />
                 </div>
+              </div>
+              <div style={{ fontSize: '1.9rem', fontWeight: 900, color: 'var(--text-main, #F3EDE6)', fontFamily: 'monospace', letterSpacing: '-0.03em' }}>
+                {liveMetrics.totalProducts.toLocaleString('es-AR')}
+              </div>
+              <div style={{ fontSize: '0.74rem', color: 'var(--accent-gold, #F5559D)', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '5px' }}>
+                <span style={{ width: '6px', height: '6px', borderRadius: '50%', backgroundColor: 'var(--accent-gold, #F5559D)' }} />
+                Variantes por talle y color activas
               </div>
             </div>
 
+            {/* Card 2: Stock */}
             <div
               style={{
-                backgroundColor: '#FFFFFF',
-                border: '1px solid var(--border-color, #F3DCE7)',
-                borderRadius: '16px',
-                padding: '16px 20px',
+                background: 'linear-gradient(160deg, rgba(255, 255, 255, 0.03) 0%, rgba(0, 0, 0, 0.2) 100%), var(--bg-card, #2E1F42)',
+                border: '1px solid var(--border-color, #423262)',
+                borderRadius: '18px',
+                padding: '18px 20px',
                 display: 'flex',
-                alignItems: 'center',
-                gap: '14px'
+                flexDirection: 'column',
+                gap: '12px',
+                boxShadow: '0 4px 16px rgba(0, 0, 0, 0.15)'
               }}
             >
-              <div
-                style={{
-                  width: '46px',
-                  height: '46px',
-                  borderRadius: '12px',
-                  backgroundColor: '#F0FDF4',
-                  color: '#16A34A',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  flexShrink: 0
-                }}
-              >
-                <Package size={22} />
-              </div>
-              <div>
-                <div style={{ fontSize: '0.74rem', color: 'var(--text-muted, #6E656E)', fontWeight: 800 }}>Stock Físico Total</div>
-                <div style={{ fontSize: '1.45rem', fontWeight: 900, color: '#16A34A', fontFamily: 'monospace' }}>
-                  {snapshot?.counts?.totalStock ? Number(snapshot.counts.totalStock).toLocaleString('es-AR') : '—'}
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <span style={{ fontSize: '0.76rem', color: 'var(--text-muted, #B3A9AF)', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                  Stock Físico Total
+                </span>
+                <div
+                  style={{
+                    width: '38px',
+                    height: '38px',
+                    borderRadius: '10px',
+                    backgroundColor: 'rgba(16, 185, 129, 0.14)',
+                    color: '#34D399',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    border: '1px solid rgba(16, 185, 129, 0.25)'
+                  }}
+                >
+                  <Package size={19} />
                 </div>
+              </div>
+              <div style={{ fontSize: '1.9rem', fontWeight: 900, color: '#34D399', fontFamily: 'monospace', letterSpacing: '-0.03em' }}>
+                {liveMetrics.totalStock > 0 ? liveMetrics.totalStock.toLocaleString('es-AR') : '—'} <span style={{ fontSize: '1.1rem', fontWeight: 700, color: 'var(--text-muted, #B3A9AF)' }}>u.</span>
+              </div>
+              <div style={{ fontSize: '0.74rem', color: '#34D399', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '5px' }}>
+                <span style={{ width: '6px', height: '6px', borderRadius: '50%', backgroundColor: '#34D399' }} />
+                Unidades físicas en depósito y local
               </div>
             </div>
 
+            {/* Card 3: Ventas */}
             <div
               style={{
-                backgroundColor: '#FFFFFF',
-                border: '1px solid var(--border-color, #F3DCE7)',
-                borderRadius: '16px',
-                padding: '16px 20px',
+                background: 'linear-gradient(160deg, rgba(255, 255, 255, 0.03) 0%, rgba(0, 0, 0, 0.2) 100%), var(--bg-card, #2E1F42)',
+                border: '1px solid var(--border-color, #423262)',
+                borderRadius: '18px',
+                padding: '18px 20px',
                 display: 'flex',
-                alignItems: 'center',
-                gap: '14px'
+                flexDirection: 'column',
+                gap: '12px',
+                boxShadow: '0 4px 16px rgba(0, 0, 0, 0.15)'
               }}
             >
-              <div
-                style={{
-                  width: '46px',
-                  height: '46px',
-                  borderRadius: '12px',
-                  backgroundColor: '#EFF6FF',
-                  color: '#2563EB',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  flexShrink: 0
-                }}
-              >
-                <Layers size={22} />
-              </div>
-              <div>
-                <div style={{ fontSize: '0.74rem', color: 'var(--text-muted, #6E656E)', fontWeight: 800 }}>Ventas Registradas</div>
-                <div style={{ fontSize: '1.45rem', fontWeight: 900, color: '#2563EB', fontFamily: 'monospace' }}>
-                  {snapshot?.counts?.orders ?? '21'}
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <span style={{ fontSize: '0.76rem', color: 'var(--text-muted, #B3A9AF)', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                  Ventas y Pedidos
+                </span>
+                <div
+                  style={{
+                    width: '38px',
+                    height: '38px',
+                    borderRadius: '10px',
+                    backgroundColor: 'rgba(59, 130, 246, 0.14)',
+                    color: '#60A5FA',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    border: '1px solid rgba(59, 130, 246, 0.25)'
+                  }}
+                >
+                  <Layers size={19} />
                 </div>
+              </div>
+              <div style={{ fontSize: '1.9rem', fontWeight: 900, color: '#60A5FA', fontFamily: 'monospace', letterSpacing: '-0.03em' }}>
+                {liveMetrics.totalOrders.toLocaleString('es-AR')}
+              </div>
+              <div style={{ fontSize: '0.74rem', color: '#60A5FA', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '5px' }}>
+                <span style={{ width: '6px', height: '6px', borderRadius: '50%', backgroundColor: '#60A5FA' }} />
+                Tickets emitidos web, local y caja
               </div>
             </div>
 
+            {/* Card 4: Clientes */}
             <div
               style={{
-                backgroundColor: '#FFFFFF',
-                border: '1px solid var(--border-color, #F3DCE7)',
-                borderRadius: '16px',
-                padding: '16px 20px',
+                background: 'linear-gradient(160deg, rgba(255, 255, 255, 0.03) 0%, rgba(0, 0, 0, 0.2) 100%), var(--bg-card, #2E1F42)',
+                border: '1px solid var(--border-color, #423262)',
+                borderRadius: '18px',
+                padding: '18px 20px',
                 display: 'flex',
-                alignItems: 'center',
-                gap: '14px'
+                flexDirection: 'column',
+                gap: '12px',
+                boxShadow: '0 4px 16px rgba(0, 0, 0, 0.15)'
               }}
             >
-              <div
-                style={{
-                  width: '46px',
-                  height: '46px',
-                  borderRadius: '12px',
-                  backgroundColor: '#FEF3C7',
-                  color: '#D97706',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  flexShrink: 0
-                }}
-              >
-                <Users size={22} />
-              </div>
-              <div>
-                <div style={{ fontSize: '0.74rem', color: 'var(--text-muted, #6E656E)', fontWeight: 800 }}>Directorio de Clientes</div>
-                <div style={{ fontSize: '1.45rem', fontWeight: 900, color: '#D97706', fontFamily: 'monospace' }}>
-                  {snapshot?.counts?.clients ?? '225'}
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <span style={{ fontSize: '0.76rem', color: 'var(--text-muted, #B3A9AF)', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                  Directorio Clientes
+                </span>
+                <div
+                  style={{
+                    width: '38px',
+                    height: '38px',
+                    borderRadius: '10px',
+                    backgroundColor: 'rgba(245, 158, 11, 0.14)',
+                    color: '#FBBF24',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    border: '1px solid rgba(245, 158, 11, 0.25)'
+                  }}
+                >
+                  <Users size={19} />
                 </div>
+              </div>
+              <div style={{ fontSize: '1.9rem', fontWeight: 900, color: '#FBBF24', fontFamily: 'monospace', letterSpacing: '-0.03em' }}>
+                {liveMetrics.totalClients.toLocaleString('es-AR')}
+              </div>
+              <div style={{ fontSize: '0.74rem', color: '#FBBF24', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '5px' }}>
+                <span style={{ width: '6px', height: '6px', borderRadius: '50%', backgroundColor: '#FBBF24' }} />
+                Clientes mayoristas con historial
               </div>
             </div>
           </div>
 
-          {/* Sección de Descarga de Planillas Excel */}
+          {/* Sección de Descarga de Planillas Excel - Bento Grid */}
           <div
             style={{
-              backgroundColor: '#FFFFFF',
-              border: '1px solid var(--border-color, #F3DCE7)',
-              borderRadius: '20px',
-              padding: '24px',
+              backgroundColor: 'var(--bg-card, #2E1F42)',
+              border: '1px solid var(--border-color, #423262)',
+              borderRadius: '22px',
+              padding: '24px 26px',
               display: 'flex',
               flexDirection: 'column',
-              gap: '16px'
+              gap: '18px'
             }}
           >
             <div>
-              <h3 style={{ fontSize: '1.15rem', fontWeight: 900, color: 'var(--text-main, #241E28)', margin: 0, display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <FileSpreadsheet size={20} color="#16A34A" />
+              <h3 style={{ fontSize: '1.2rem', fontWeight: 900, color: 'var(--text-main, #F3EDE6)', margin: 0, display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <FileSpreadsheet size={20} color="#34D399" />
                 Descargar Planillas Listas para Excel (.csv)
               </h3>
-              <p style={{ fontSize: '0.82rem', color: 'var(--text-muted, #6E656E)', margin: '4px 0 0 0' }}>
-                Formato UTF-8 con punto y coma. Se abren directamente con doble clic en Windows sin errores de acentos ni columnas movidas.
+              <p style={{ fontSize: '0.82rem', color: 'var(--text-muted, #B3A9AF)', margin: '4px 0 0 0' }}>
+                Formato UTF-8 con punto y coma. Se abren directamente con doble clic en Windows sin errores de caracteres ni columnas desplazadas.
               </p>
             </div>
 
@@ -972,51 +1058,60 @@ export default function BackupsTab() {
               style={{
                 display: 'grid',
                 gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))',
-                gap: '14px'
+                gap: '16px'
               }}
             >
               {/* Planilla 1: Stock Detallado */}
               <div
                 style={{
-                  border: '1px solid #BBF7D0',
-                  backgroundColor: '#F0FDF4',
-                  borderRadius: '14px',
-                  padding: '16px',
+                  border: '1px solid rgba(52, 211, 153, 0.35)',
+                  background: 'linear-gradient(145deg, rgba(16, 185, 129, 0.1) 0%, rgba(23, 14, 36, 0.4) 100%), var(--bg-card, #2E1F42)',
+                  borderRadius: '16px',
+                  padding: '18px',
                   display: 'flex',
                   flexDirection: 'column',
                   justifyContent: 'space-between',
-                  gap: '12px'
+                  gap: '14px'
                 }}
               >
                 <div>
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                    <span style={{ fontWeight: 900, fontSize: '0.92rem', color: '#166534' }}>
+                    <span style={{ fontWeight: 900, fontSize: '0.94rem', color: '#34D399' }}>
                       🏷️ Stock por Talle y Color
                     </span>
-                    <span style={{ fontSize: '11px', backgroundColor: '#DCFCE7', color: '#15803D', padding: '2px 8px', borderRadius: '6px', fontWeight: 800 }}>
-                      Esencial
+                    <span style={{ fontSize: '11px', backgroundColor: 'rgba(16, 185, 129, 0.2)', color: '#34D399', padding: '2px 8px', borderRadius: '6px', fontWeight: 900 }}>
+                      Esencial Local
                     </span>
                   </div>
-                  <p style={{ fontSize: '0.78rem', color: '#14532D', margin: '6px 0 0 0', lineHeight: 1.4 }}>
+                  <p style={{ fontSize: '0.78rem', color: 'var(--text-muted, #B3A9AF)', margin: '6px 0 0 0', lineHeight: 1.45 }}>
                     Desglose de cada variante física con su talle, color, stock disponible y código de barras asignado.
                   </p>
+                  <div style={{ display: 'flex', gap: '5px', flexWrap: 'wrap', marginTop: '10px' }}>
+                    <span style={{ fontSize: '10px', fontFamily: 'monospace', padding: '2px 6px', borderRadius: '4px', background: 'rgba(255,255,255,0.06)', color: 'var(--text-muted, #B3A9AF)' }}>Art.</span>
+                    <span style={{ fontSize: '10px', fontFamily: 'monospace', padding: '2px 6px', borderRadius: '4px', background: 'rgba(255,255,255,0.06)', color: 'var(--text-muted, #B3A9AF)' }}>Talle</span>
+                    <span style={{ fontSize: '10px', fontFamily: 'monospace', padding: '2px 6px', borderRadius: '4px', background: 'rgba(255,255,255,0.06)', color: 'var(--text-muted, #B3A9AF)' }}>Color</span>
+                    <span style={{ fontSize: '10px', fontFamily: 'monospace', padding: '2px 6px', borderRadius: '4px', background: 'rgba(255,255,255,0.06)', color: 'var(--text-muted, #B3A9AF)' }}>Código Barras</span>
+                    <span style={{ fontSize: '10px', fontFamily: 'monospace', padding: '2px 6px', borderRadius: '4px', background: 'rgba(255,255,255,0.06)', color: 'var(--text-muted, #B3A9AF)' }}>Stock</span>
+                  </div>
                 </div>
                 <button
                   type="button"
                   onClick={() => handleDownloadCsv('stockVariantes')}
                   style={{
-                    backgroundColor: '#16A34A',
+                    backgroundColor: '#10B981',
                     color: '#FFFFFF',
                     border: 'none',
-                    borderRadius: '8px',
-                    padding: '8px 14px',
+                    borderRadius: '10px',
+                    padding: '9px 14px',
                     fontSize: '0.82rem',
                     fontWeight: 800,
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
                     gap: '6px',
-                    cursor: 'pointer'
+                    cursor: 'pointer',
+                    boxShadow: '0 4px 12px rgba(16, 185, 129, 0.25)',
+                    transition: 'all 0.2s ease'
                   }}
                 >
                   <Download size={14} /> Descargar Excel Stock
@@ -1026,38 +1121,51 @@ export default function BackupsTab() {
               {/* Planilla 2: Catálogo General */}
               <div
                 style={{
-                  border: '1px solid #E2E8F0',
-                  backgroundColor: '#F8FAFC',
-                  borderRadius: '14px',
-                  padding: '16px',
+                  border: '1px solid var(--border-color, #423262)',
+                  background: 'linear-gradient(145deg, rgba(255, 255, 255, 0.02) 0%, rgba(0, 0, 0, 0.2) 100%), var(--bg-card, #2E1F42)',
+                  borderRadius: '16px',
+                  padding: '18px',
                   display: 'flex',
                   flexDirection: 'column',
                   justifyContent: 'space-between',
-                  gap: '12px'
+                  gap: '14px'
                 }}
               >
                 <div>
-                  <span style={{ fontWeight: 900, fontSize: '0.92rem', color: '#1E293B' }}>
-                    📊 Catálogo de Prendas
-                  </span>
-                  <p style={{ fontSize: '0.78rem', color: '#64748B', margin: '6px 0 0 0', lineHeight: 1.4 }}>
-                    Lista completa con código, nombre, categoría, subcategoría, precios minorista/mayorista y estado.
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <span style={{ fontWeight: 900, fontSize: '0.94rem', color: 'var(--text-main, #F3EDE6)' }}>
+                      📊 Catálogo de Prendas
+                    </span>
+                    <span style={{ fontSize: '11px', backgroundColor: 'rgba(255,255,255,0.08)', color: 'var(--text-muted, #B3A9AF)', padding: '2px 8px', borderRadius: '6px', fontWeight: 800 }}>
+                      Precios
+                    </span>
+                  </div>
+                  <p style={{ fontSize: '0.78rem', color: 'var(--text-muted, #B3A9AF)', margin: '6px 0 0 0', lineHeight: 1.45 }}>
+                    Lista completa con código, nombre, categoría, precios minorista/mayorista y stock total.
                   </p>
+                  <div style={{ display: 'flex', gap: '5px', flexWrap: 'wrap', marginTop: '10px' }}>
+                    <span style={{ fontSize: '10px', fontFamily: 'monospace', padding: '2px 6px', borderRadius: '4px', background: 'rgba(255,255,255,0.06)', color: 'var(--text-muted, #B3A9AF)' }}>Minorista</span>
+                    <span style={{ fontSize: '10px', fontFamily: 'monospace', padding: '2px 6px', borderRadius: '4px', background: 'rgba(255,255,255,0.06)', color: 'var(--text-muted, #B3A9AF)' }}>Mayorista</span>
+                    <span style={{ fontSize: '10px', fontFamily: 'monospace', padding: '2px 6px', borderRadius: '4px', background: 'rgba(255,255,255,0.06)', color: 'var(--text-muted, #B3A9AF)' }}>Ventas</span>
+                  </div>
                 </div>
                 <button
                   type="button"
                   onClick={() => handleDownloadCsv('catalogo')}
-                  className="btn-secondary"
                   style={{
-                    borderRadius: '8px',
-                    padding: '8px 14px',
+                    backgroundColor: 'var(--bg-surface-elevated, #3A2854)',
+                    color: 'var(--text-main, #F3EDE6)',
+                    border: '1px solid var(--border-color-strong, #55407A)',
+                    borderRadius: '10px',
+                    padding: '9px 14px',
                     fontSize: '0.82rem',
                     fontWeight: 800,
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
                     gap: '6px',
-                    cursor: 'pointer'
+                    cursor: 'pointer',
+                    transition: 'all 0.2s ease'
                   }}
                 >
                   <Download size={14} /> Descargar Catálogo
@@ -1067,38 +1175,51 @@ export default function BackupsTab() {
               {/* Planilla 3: Ventas y Pedidos */}
               <div
                 style={{
-                  border: '1px solid #E2E8F0',
-                  backgroundColor: '#F8FAFC',
-                  borderRadius: '14px',
-                  padding: '16px',
+                  border: '1px solid var(--border-color, #423262)',
+                  background: 'linear-gradient(145deg, rgba(255, 255, 255, 0.02) 0%, rgba(0, 0, 0, 0.2) 100%), var(--bg-card, #2E1F42)',
+                  borderRadius: '16px',
+                  padding: '18px',
                   display: 'flex',
                   flexDirection: 'column',
                   justifyContent: 'space-between',
-                  gap: '12px'
+                  gap: '14px'
                 }}
               >
                 <div>
-                  <span style={{ fontWeight: 900, fontSize: '0.92rem', color: '#1E293B' }}>
-                    💰 Ventas y Pedidos
-                  </span>
-                  <p style={{ fontSize: '0.78rem', color: '#64748B', margin: '6px 0 0 0', lineHeight: 1.4 }}>
-                    Historial de ventas con cliente, fecha, medio de pago, total, prendas compradas y cajera/vendedora.
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <span style={{ fontWeight: 900, fontSize: '0.94rem', color: '#60A5FA' }}>
+                      💰 Ventas y Pedidos
+                    </span>
+                    <span style={{ fontSize: '11px', backgroundColor: 'rgba(59, 130, 246, 0.15)', color: '#60A5FA', padding: '2px 8px', borderRadius: '6px', fontWeight: 800 }}>
+                      Auditoría
+                    </span>
+                  </div>
+                  <p style={{ fontSize: '0.78rem', color: 'var(--text-muted, #B3A9AF)', margin: '6px 0 0 0', lineHeight: 1.45 }}>
+                    Historial de ventas con cliente, fecha, medio de pago, total, prendas y cajera/vendedora.
                   </p>
+                  <div style={{ display: 'flex', gap: '5px', flexWrap: 'wrap', marginTop: '10px' }}>
+                    <span style={{ fontSize: '10px', fontFamily: 'monospace', padding: '2px 6px', borderRadius: '4px', background: 'rgba(255,255,255,0.06)', color: 'var(--text-muted, #B3A9AF)' }}>Ticket #</span>
+                    <span style={{ fontSize: '10px', fontFamily: 'monospace', padding: '2px 6px', borderRadius: '4px', background: 'rgba(255,255,255,0.06)', color: 'var(--text-muted, #B3A9AF)' }}>Cliente</span>
+                    <span style={{ fontSize: '10px', fontFamily: 'monospace', padding: '2px 6px', borderRadius: '4px', background: 'rgba(255,255,255,0.06)', color: 'var(--text-muted, #B3A9AF)' }}>Medio Pago</span>
+                  </div>
                 </div>
                 <button
                   type="button"
                   onClick={() => handleDownloadCsv('ventas')}
-                  className="btn-secondary"
                   style={{
-                    borderRadius: '8px',
-                    padding: '8px 14px',
+                    backgroundColor: 'var(--bg-surface-elevated, #3A2854)',
+                    color: 'var(--text-main, #F3EDE6)',
+                    border: '1px solid var(--border-color-strong, #55407A)',
+                    borderRadius: '10px',
+                    padding: '9px 14px',
                     fontSize: '0.82rem',
                     fontWeight: 800,
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
                     gap: '6px',
-                    cursor: 'pointer'
+                    cursor: 'pointer',
+                    transition: 'all 0.2s ease'
                   }}
                 >
                   <Download size={14} /> Descargar Ventas
@@ -1108,38 +1229,51 @@ export default function BackupsTab() {
               {/* Planilla 4: Clientes */}
               <div
                 style={{
-                  border: '1px solid #E2E8F0',
-                  backgroundColor: '#F8FAFC',
-                  borderRadius: '14px',
-                  padding: '16px',
+                  border: '1px solid var(--border-color, #423262)',
+                  background: 'linear-gradient(145deg, rgba(255, 255, 255, 0.02) 0%, rgba(0, 0, 0, 0.2) 100%), var(--bg-card, #2E1F42)',
+                  borderRadius: '16px',
+                  padding: '18px',
                   display: 'flex',
                   flexDirection: 'column',
                   justifyContent: 'space-between',
-                  gap: '12px'
+                  gap: '14px'
                 }}
               >
                 <div>
-                  <span style={{ fontWeight: 900, fontSize: '0.92rem', color: '#1E293B' }}>
-                    👥 Directorio de Clientes
-                  </span>
-                  <p style={{ fontSize: '0.78rem', color: '#64748B', margin: '6px 0 0 0', lineHeight: 1.4 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <span style={{ fontWeight: 900, fontSize: '0.94rem', color: '#FBBF24' }}>
+                      👥 Directorio de Clientes
+                    </span>
+                    <span style={{ fontSize: '11px', backgroundColor: 'rgba(245, 158, 11, 0.15)', color: '#FBBF24', padding: '2px 8px', borderRadius: '6px', fontWeight: 800 }}>
+                      Contactos
+                    </span>
+                  </div>
+                  <p style={{ fontSize: '0.78rem', color: 'var(--text-muted, #B3A9AF)', margin: '6px 0 0 0', lineHeight: 1.45 }}>
                     Nombre, teléfono, DNI, localidad, total gastado histórico y cantidad de compras realizadas.
                   </p>
+                  <div style={{ display: 'flex', gap: '5px', flexWrap: 'wrap', marginTop: '10px' }}>
+                    <span style={{ fontSize: '10px', fontFamily: 'monospace', padding: '2px 6px', borderRadius: '4px', background: 'rgba(255,255,255,0.06)', color: 'var(--text-muted, #B3A9AF)' }}>WhatsApp</span>
+                    <span style={{ fontSize: '10px', fontFamily: 'monospace', padding: '2px 6px', borderRadius: '4px', background: 'rgba(255,255,255,0.06)', color: 'var(--text-muted, #B3A9AF)' }}>Localidad</span>
+                    <span style={{ fontSize: '10px', fontFamily: 'monospace', padding: '2px 6px', borderRadius: '4px', background: 'rgba(255,255,255,0.06)', color: 'var(--text-muted, #B3A9AF)' }}>Total $</span>
+                  </div>
                 </div>
                 <button
                   type="button"
                   onClick={() => handleDownloadCsv('clientes')}
-                  className="btn-secondary"
                   style={{
-                    borderRadius: '8px',
-                    padding: '8px 14px',
+                    backgroundColor: 'var(--bg-surface-elevated, #3A2854)',
+                    color: 'var(--text-main, #F3EDE6)',
+                    border: '1px solid var(--border-color-strong, #55407A)',
+                    borderRadius: '10px',
+                    padding: '9px 14px',
                     fontSize: '0.82rem',
                     fontWeight: 800,
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
                     gap: '6px',
-                    cursor: 'pointer'
+                    cursor: 'pointer',
+                    transition: 'all 0.2s ease'
                   }}
                 >
                   <Download size={14} /> Descargar Clientes
@@ -1148,20 +1282,21 @@ export default function BackupsTab() {
             </div>
 
             {/* Descarga JSON maestro */}
-            <div style={{ borderTop: '1px solid var(--border-color, #F3DCE7)', paddingTop: '14px', display: 'flex', justifyContent: 'flex-end' }}>
+            <div style={{ borderTop: '1px solid var(--border-color, #423262)', paddingTop: '14px', display: 'flex', justifyContent: 'flex-end' }}>
               <button
                 type="button"
                 onClick={() => handleDownloadCsv('json')}
                 style={{
                   background: 'transparent',
                   border: 'none',
-                  color: 'var(--text-muted, #6E656E)',
+                  color: 'var(--text-muted, #B3A9AF)',
                   fontSize: '0.78rem',
                   fontWeight: 700,
                   display: 'flex',
                   alignItems: 'center',
                   gap: '5px',
-                  cursor: 'pointer'
+                  cursor: 'pointer',
+                  transition: 'color 0.2s ease'
                 }}
               >
                 <Download size={13} /> Descargar Base Completa Maestra (.json)
@@ -1177,8 +1312,8 @@ export default function BackupsTab() {
           {/* Card de Aviso de Modo Contingencia */}
           <div
             style={{
-              backgroundColor: '#FFFDF0',
-              border: '1px solid #FEF08A',
+              backgroundColor: 'rgba(245, 158, 11, 0.12)',
+              border: '1px solid rgba(245, 158, 11, 0.3)',
               borderRadius: '16px',
               padding: '16px 20px',
               display: 'flex',
@@ -1188,13 +1323,13 @@ export default function BackupsTab() {
               gap: '12px'
             }}
           >
-            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-              <WifiOff size={22} color="#D97706" />
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+              <WifiOff size={22} color="#FBBF24" />
               <div>
-                <strong style={{ color: '#92400E', fontSize: '0.9rem', display: 'block' }}>
+                <strong style={{ color: '#FBBF24', fontSize: '0.92rem', display: 'block' }}>
                   Modo de Operación Local a 0ms (IndexedDB)
                 </strong>
-                <span style={{ color: '#78350F', fontSize: '0.78rem' }}>
+                <span style={{ color: 'var(--text-muted, #B3A9AF)', fontSize: '0.78rem' }}>
                   Consultá artículos, precios por menor/mayor, stock por talle y color sin requerir conexión a internet.
                 </span>
               </div>
@@ -1205,33 +1340,33 @@ export default function BackupsTab() {
                 type="button"
                 onClick={() => setOfflineTab('productos')}
                 style={{
-                  padding: '6px 14px',
+                  padding: '7px 14px',
                   fontSize: '0.8rem',
                   fontWeight: 800,
                   borderRadius: '8px',
                   border: 'none',
                   cursor: 'pointer',
-                  backgroundColor: offlineTab === 'productos' ? '#92400E' : '#FEF3C7',
-                  color: offlineTab === 'productos' ? '#FFFFFF' : '#92400E'
+                  backgroundColor: offlineTab === 'productos' ? 'var(--dv-accent-fill, #C2185B)' : 'rgba(255,255,255,0.06)',
+                  color: offlineTab === 'productos' ? '#FFFFFF' : 'var(--text-muted, #B3A9AF)'
                 }}
               >
-                👗 Catálogo & Stock ({snapshot?.counts?.products ?? 0})
+                👗 Catálogo & Stock ({liveMetrics.totalProducts})
               </button>
               <button
                 type="button"
                 onClick={() => setOfflineTab('ventas')}
                 style={{
-                  padding: '6px 14px',
+                  padding: '7px 14px',
                   fontSize: '0.8rem',
                   fontWeight: 800,
                   borderRadius: '8px',
                   border: 'none',
                   cursor: 'pointer',
-                  backgroundColor: offlineTab === 'ventas' ? '#92400E' : '#FEF3C7',
-                  color: offlineTab === 'ventas' ? '#FFFFFF' : '#92400E'
+                  backgroundColor: offlineTab === 'ventas' ? 'var(--dv-accent-fill, #C2185B)' : 'rgba(255,255,255,0.06)',
+                  color: offlineTab === 'ventas' ? '#FFFFFF' : 'var(--text-muted, #B3A9AF)'
                 }}
               >
-                💰 Ventas ({snapshot?.counts?.orders ?? 0})
+                💰 Ventas ({liveMetrics.totalOrders})
               </button>
             </div>
           </div>
@@ -1240,7 +1375,7 @@ export default function BackupsTab() {
           <div style={{ position: 'relative' }}>
             <Search
               size={18}
-              color="var(--text-muted, #6E656E)"
+              color="var(--text-muted, #B3A9AF)"
               style={{ position: 'absolute', left: '16px', top: '50%', transform: 'translateY(-50%)' }}
             />
             <input
@@ -1258,7 +1393,9 @@ export default function BackupsTab() {
                 padding: '12px 16px 12px 46px',
                 fontSize: '0.92rem',
                 borderRadius: '14px',
-                border: '1px solid var(--border-color, #F3DCE7)'
+                border: '1px solid var(--border-color, #423262)',
+                background: 'var(--bg-card, #2E1F42)',
+                color: 'var(--text-main, #F3EDE6)'
               }}
             />
           </div>
@@ -1269,16 +1406,16 @@ export default function BackupsTab() {
               {filteredOfflineProducts.length === 0 ? (
                 <div
                   style={{
-                    backgroundColor: '#FFFFFF',
-                    border: '1px dashed var(--border-color, #F3DCE7)',
+                    backgroundColor: 'var(--bg-card, #2E1F42)',
+                    border: '1px dashed var(--border-color, #423262)',
                     borderRadius: '16px',
                     padding: '40px',
                     textAlign: 'center',
-                    color: 'var(--text-muted, #6E656E)'
+                    color: 'var(--text-muted, #B3A9AF)'
                   }}
                 >
-                  <Tag size={36} color="#A8175A" style={{ margin: '0 auto 10px auto', opacity: 0.6 }} />
-                  <strong style={{ display: 'block', fontSize: '1rem', color: 'var(--text-main, #241E28)' }}>
+                  <Tag size={36} color="var(--accent-gold, #F5559D)" style={{ margin: '0 auto 10px auto', opacity: 0.6 }} />
+                  <strong style={{ display: 'block', fontSize: '1rem', color: 'var(--text-main, #F3EDE6)' }}>
                     No se encontraron prendas para esa búsqueda
                   </strong>
                   <p style={{ fontSize: '0.82rem', margin: '4px 0 0 0' }}>
@@ -1294,14 +1431,14 @@ export default function BackupsTab() {
                     <div
                       key={p.id}
                       style={{
-                        backgroundColor: '#FFFFFF',
-                        border: '1px solid var(--border-color, #F3DCE7)',
+                        backgroundColor: 'var(--bg-card, #2E1F42)',
+                        border: '1px solid var(--border-color, #423262)',
                         borderRadius: '16px',
-                        padding: '16px',
+                        padding: '16px 20px',
                         display: 'flex',
                         flexDirection: 'column',
                         gap: '12px',
-                        boxShadow: '0 2px 8px rgba(36, 30, 40, 0.03)'
+                        boxShadow: '0 2px 8px rgba(0, 0, 0, 0.15)'
                       }}
                     >
                       <div
@@ -1319,52 +1456,53 @@ export default function BackupsTab() {
                               width: '44px',
                               height: '44px',
                               borderRadius: '10px',
-                              backgroundColor: '#FCEDF3',
-                              color: '#A8175A',
+                              backgroundColor: 'rgba(245, 85, 157, 0.14)',
+                              color: 'var(--accent-gold, #F5559D)',
                               display: 'flex',
                               alignItems: 'center',
                               justifyContent: 'center',
                               fontWeight: 900,
                               fontSize: '0.78rem',
-                              flexShrink: 0
+                              flexShrink: 0,
+                              border: '1px solid rgba(245, 85, 157, 0.25)'
                             }}
                           >
                             {p.code ? `DV${p.code}` : 'DV'}
                           </div>
                           <div>
-                            <div style={{ fontWeight: 800, fontSize: '0.98rem', color: 'var(--text-main, #241E28)' }}>
+                            <div style={{ fontWeight: 800, fontSize: '0.98rem', color: 'var(--text-main, #F3EDE6)' }}>
                               {p.name}
                             </div>
-                            <div style={{ fontSize: '0.76rem', color: 'var(--text-muted, #6E656E)' }}>
+                            <div style={{ fontSize: '0.76rem', color: 'var(--text-muted, #B3A9AF)' }}>
                               {p.category} {p.subcategory ? `· ${p.subcategory}` : ''} {p.code ? `· Art. ${p.code}` : ''}
                             </div>
                           </div>
                         </div>
 
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
                           <div style={{ textAlign: 'right' }}>
-                            <div style={{ fontSize: '0.7rem', color: 'var(--text-muted, #6E656E)', fontWeight: 700 }}>
+                            <div style={{ fontSize: '0.7rem', color: 'var(--text-muted, #B3A9AF)', fontWeight: 700 }}>
                               Precio Minorista
                             </div>
-                            <div style={{ fontWeight: 900, fontSize: '1.05rem', color: '#16A34A', fontFamily: 'monospace' }}>
+                            <div style={{ fontWeight: 900, fontSize: '1.05rem', color: '#34D399', fontFamily: 'monospace' }}>
                               ${Number(p.price || 0).toLocaleString('es-AR')}
                             </div>
                           </div>
 
-                          <div style={{ textAlign: 'right', borderLeft: '1px solid #E2E8F0', paddingLeft: '14px' }}>
-                            <div style={{ fontSize: '0.7rem', color: 'var(--text-muted, #6E656E)', fontWeight: 700 }}>
+                          <div style={{ textAlign: 'right', borderLeft: '1px solid var(--border-color, #423262)', paddingLeft: '16px' }}>
+                            <div style={{ fontSize: '0.7rem', color: 'var(--text-muted, #B3A9AF)', fontWeight: 700 }}>
                               Precio Mayorista
                             </div>
-                            <div style={{ fontWeight: 900, fontSize: '1.05rem', color: '#2563EB', fontFamily: 'monospace' }}>
+                            <div style={{ fontWeight: 900, fontSize: '1.05rem', color: '#60A5FA', fontFamily: 'monospace' }}>
                               ${Number(p.wholesale_price || p.price || 0).toLocaleString('es-AR')}
                             </div>
                           </div>
 
-                          <div style={{ textAlign: 'right', borderLeft: '1px solid #E2E8F0', paddingLeft: '14px' }}>
-                            <div style={{ fontSize: '0.7rem', color: 'var(--text-muted, #6E656E)', fontWeight: 700 }}>
+                          <div style={{ textAlign: 'right', borderLeft: '1px solid var(--border-color, #423262)', paddingLeft: '16px' }}>
+                            <div style={{ fontSize: '0.7rem', color: 'var(--text-muted, #B3A9AF)', fontWeight: 700 }}>
                               Stock Total
                             </div>
-                            <div style={{ fontWeight: 900, fontSize: '1.05rem', color: '#241E28', fontFamily: 'monospace' }}>
+                            <div style={{ fontWeight: 900, fontSize: '1.05rem', color: 'var(--text-main, #F3EDE6)', fontFamily: 'monospace' }}>
                               {Number(p.stock || 0)} u.
                             </div>
                           </div>
@@ -1375,8 +1513,8 @@ export default function BackupsTab() {
                       {variants && variants.length > 0 && (
                         <div
                           style={{
-                            backgroundColor: '#FFF8FA',
-                            border: '1px solid #F3DCE7',
+                            backgroundColor: 'var(--bg-surface-dark, #170E24)',
+                            border: '1px solid var(--border-color, #423262)',
                             borderRadius: '12px',
                             padding: '10px 14px',
                             display: 'flex',
@@ -1390,8 +1528,8 @@ export default function BackupsTab() {
                               <div
                                 key={v.key}
                                 style={{
-                                  backgroundColor: '#FFFFFF',
-                                  border: '1px solid #E4BFD4',
+                                  backgroundColor: 'var(--bg-card, #2E1F42)',
+                                  border: '1px solid var(--border-color-strong, #55407A)',
                                   borderRadius: '8px',
                                   padding: '5px 10px',
                                   fontSize: '0.76rem',
@@ -1400,14 +1538,14 @@ export default function BackupsTab() {
                                   gap: '8px'
                                 }}
                               >
-                                <span style={{ fontWeight: 800, color: '#A8175A' }}>
+                                <span style={{ fontWeight: 800, color: 'var(--accent-gold, #F5559D)' }}>
                                   {v.label}
                                 </span>
                                 <span
                                   style={{
-                                    backgroundColor: v.stock > 0 ? '#DCFCE7' : '#FEE2E2',
-                                    color: v.stock > 0 ? '#15803D' : '#B91C1C',
-                                    fontWeight: 800,
+                                    backgroundColor: v.stock > 0 ? 'rgba(16, 185, 129, 0.16)' : 'rgba(239, 68, 68, 0.16)',
+                                    color: v.stock > 0 ? '#34D399' : '#F87171',
+                                    fontWeight: 900,
                                     padding: '2px 6px',
                                     borderRadius: '4px',
                                     fontSize: '0.72rem'
@@ -1419,9 +1557,9 @@ export default function BackupsTab() {
                                   <span
                                     style={{
                                       fontFamily: 'monospace',
-                                      color: '#6E656E',
+                                      color: 'var(--text-muted, #B3A9AF)',
                                       fontSize: '0.7rem',
-                                      backgroundColor: '#F3F4F6',
+                                      backgroundColor: 'rgba(255,255,255,0.06)',
                                       padding: '2px 5px',
                                       borderRadius: '4px'
                                     }}
@@ -1447,16 +1585,16 @@ export default function BackupsTab() {
               {filteredOfflineOrders.length === 0 ? (
                 <div
                   style={{
-                    backgroundColor: '#FFFFFF',
-                    border: '1px dashed var(--border-color, #F3DCE7)',
+                    backgroundColor: 'var(--bg-card, #2E1F42)',
+                    border: '1px dashed var(--border-color, #423262)',
                     borderRadius: '16px',
                     padding: '40px',
                     textAlign: 'center',
-                    color: 'var(--text-muted, #6E656E)'
+                    color: 'var(--text-muted, #B3A9AF)'
                   }}
                 >
-                  <Layers size={36} color="#A8175A" style={{ margin: '0 auto 10px auto', opacity: 0.6 }} />
-                  <strong style={{ display: 'block', fontSize: '1rem', color: 'var(--text-main, #241E28)' }}>
+                  <Layers size={36} color="var(--accent-gold, #F5559D)" style={{ margin: '0 auto 10px auto', opacity: 0.6 }} />
+                  <strong style={{ display: 'block', fontSize: '1rem', color: 'var(--text-main, #F3EDE6)' }}>
                     No se encontraron pedidos
                   </strong>
                 </div>
@@ -1465,10 +1603,10 @@ export default function BackupsTab() {
                   <div
                     key={o.id}
                     style={{
-                      backgroundColor: '#FFFFFF',
-                      border: '1px solid var(--border-color, #F3DCE7)',
+                      backgroundColor: 'var(--bg-card, #2E1F42)',
+                      border: '1px solid var(--border-color, #423262)',
                       borderRadius: '16px',
-                      padding: '16px',
+                      padding: '16px 20px',
                       display: 'flex',
                       flexDirection: 'column',
                       gap: '8px'
@@ -1476,32 +1614,32 @@ export default function BackupsTab() {
                   >
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                        <span style={{ fontWeight: 900, fontFamily: 'monospace', fontSize: '0.9rem', color: '#A8175A' }}>
+                        <span style={{ fontWeight: 900, fontFamily: 'monospace', fontSize: '0.9rem', color: 'var(--accent-gold, #F5559D)' }}>
                           #{o.id}
                         </span>
-                        <span style={{ fontWeight: 800, fontSize: '0.88rem', color: 'var(--text-main, #241E28)' }}>
+                        <span style={{ fontWeight: 800, fontSize: '0.88rem', color: 'var(--text-main, #F3EDE6)' }}>
                           {o.client_name || 'Sin identificar'}
                         </span>
                         {o.client_phone && (
-                          <span style={{ fontSize: '0.78rem', color: 'var(--text-muted, #6E656E)' }}>
+                          <span style={{ fontSize: '0.78rem', color: 'var(--text-muted, #B3A9AF)' }}>
                             · Tel: {o.client_phone}
                           </span>
                         )}
                       </div>
-                      <div style={{ fontWeight: 900, fontSize: '1rem', color: '#16A34A', fontFamily: 'monospace' }}>
+                      <div style={{ fontWeight: 900, fontSize: '1rem', color: '#34D399', fontFamily: 'monospace' }}>
                         ${Number(o.total_amount || 0).toLocaleString('es-AR')}
                       </div>
                     </div>
 
-                    <div style={{ fontSize: '0.76rem', color: 'var(--text-muted, #6E656E)', display: 'flex', gap: '12px' }}>
+                    <div style={{ fontSize: '0.76rem', color: 'var(--text-muted, #B3A9AF)', display: 'flex', gap: '12px' }}>
                       <span>Fecha: {o.created_at ? new Date(o.created_at).toLocaleString('es-AR') : '—'}</span>
                       <span>Canal: <strong>{o.channel || 'web'}</strong></span>
                       <span>Pago: <strong>{o.payment_method || 'no especificado'}</strong></span>
-                      <span>Estado: <strong style={{ color: o.status === 'completed' || o.status === 'pagado' ? '#16A34A' : '#D97706' }}>{o.status}</strong></span>
+                      <span>Estado: <strong style={{ color: o.status === 'completed' || o.status === 'pagado' ? '#34D399' : '#FBBF24' }}>{o.status}</strong></span>
                     </div>
 
                     {Array.isArray(o.items) && o.items.length > 0 && (
-                      <div style={{ fontSize: '0.76rem', color: '#4B5563', borderTop: '1px solid #F3F4F6', paddingTop: '6px' }}>
+                      <div style={{ fontSize: '0.76rem', color: 'var(--text-muted, #B3A9AF)', borderTop: '1px solid var(--border-color, #423262)', paddingTop: '6px' }}>
                         {o.items.map((it, idx) => (
                           <span key={idx} style={{ marginRight: '8px' }}>
                             • {it.quantity || 1}x {it.name || 'Prenda'} {it.size ? `(T.${it.size})` : ''} {it.color ? `[${it.color}]` : ''}
@@ -1522,20 +1660,20 @@ export default function BackupsTab() {
         <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
           <div
             style={{
-              backgroundColor: '#FFFFFF',
-              border: '1px solid var(--border-color, #F3DCE7)',
-              borderRadius: '20px',
-              padding: '24px',
+              backgroundColor: 'var(--bg-card, #2E1F42)',
+              border: '1px solid var(--border-color, #423262)',
+              borderRadius: '22px',
+              padding: '24px 26px',
               display: 'flex',
               flexDirection: 'column',
               gap: '16px'
             }}
           >
             <div>
-              <h3 style={{ fontSize: '1.2rem', fontWeight: 900, color: 'var(--text-main, #241E28)', margin: 0 }}>
+              <h3 style={{ fontSize: '1.2rem', fontWeight: 900, color: 'var(--text-main, #F3EDE6)', margin: 0 }}>
                 Inspeccionar o Cargar Archivo de Copia (.json)
               </h3>
-              <p style={{ fontSize: '0.82rem', color: 'var(--text-muted, #6E656E)', margin: '4px 0 0 0' }}>
+              <p style={{ fontSize: '0.82rem', color: 'var(--text-muted, #B3A9AF)', margin: '4px 0 0 0' }}>
                 Podés cargar cualquier archivo <code style={{ fontFamily: 'monospace' }}>backup_dulce_valentin_*.json</code> generado anteriormente para verificar sus métricas o cargarlo a la memoria local de contingencia.
               </p>
             </div>
@@ -1543,8 +1681,8 @@ export default function BackupsTab() {
             <div
               onClick={() => fileInputRef.current?.click()}
               style={{
-                border: '2px dashed #E4BFD4',
-                backgroundColor: '#FFF8FA',
+                border: '2px dashed var(--border-color-strong, #55407A)',
+                backgroundColor: 'var(--bg-surface-dark, #170E24)',
                 borderRadius: '16px',
                 padding: '36px',
                 textAlign: 'center',
@@ -1552,11 +1690,11 @@ export default function BackupsTab() {
                 transition: 'border-color 0.2s ease'
               }}
             >
-              <Upload size={32} color="#A8175A" style={{ margin: '0 auto 10px auto' }} />
-              <strong style={{ fontSize: '0.94rem', color: 'var(--text-main, #241E28)', display: 'block' }}>
+              <Upload size={32} color="var(--accent-gold, #F5559D)" style={{ margin: '0 auto 10px auto' }} />
+              <strong style={{ fontSize: '0.94rem', color: 'var(--text-main, #F3EDE6)', display: 'block' }}>
                 Hacé clic acá para seleccionar tu archivo de respaldo
               </strong>
-              <span style={{ fontSize: '0.78rem', color: 'var(--text-muted, #6E656E)' }}>
+              <span style={{ fontSize: '0.78rem', color: 'var(--text-muted, #B3A9AF)' }}>
                 Formatos soportados: .json generado por el Blindaje Local de Dulce Valentín
               </span>
               <input
@@ -1571,11 +1709,11 @@ export default function BackupsTab() {
             {inspectError && (
               <div
                 style={{
-                  backgroundColor: '#FEF2F2',
-                  border: '1px solid #FCA5A5',
+                  backgroundColor: 'rgba(239, 68, 68, 0.15)',
+                  border: '1px solid #EF4444',
                   borderRadius: '10px',
                   padding: '12px',
-                  color: '#991B1B',
+                  color: '#F87171',
                   fontSize: '0.82rem',
                   fontWeight: 700
                 }}
@@ -1587,18 +1725,18 @@ export default function BackupsTab() {
             {inspectingSnapshot && (
               <div
                 style={{
-                  backgroundColor: '#F0FDF4',
-                  border: '1px solid #BBF7D0',
-                  borderRadius: '14px',
-                  padding: '18px',
+                  backgroundColor: 'rgba(16, 185, 129, 0.1)',
+                  border: '1px solid rgba(52, 211, 153, 0.35)',
+                  borderRadius: '16px',
+                  padding: '18px 20px',
                   display: 'flex',
                   flexDirection: 'column',
                   gap: '14px'
                 }}
               >
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <CheckCircle2 size={20} color="#16A34A" />
-                  <strong style={{ color: '#166534', fontSize: '0.94rem' }}>
+                  <CheckCircle2 size={20} color="#34D399" />
+                  <strong style={{ color: '#34D399', fontSize: '0.94rem' }}>
                     Archivo de respaldo válido y verificado
                   </strong>
                 </div>
@@ -1611,27 +1749,27 @@ export default function BackupsTab() {
                     fontSize: '0.8rem'
                   }}
                 >
-                  <div style={{ backgroundColor: '#FFFFFF', padding: '10px', borderRadius: '8px', border: '1px solid #DCFCE7' }}>
-                    <span style={{ color: '#64748B', display: 'block' }}>Fecha de Emisión:</span>
-                    <strong style={{ color: '#1E293B' }}>
+                  <div style={{ backgroundColor: 'var(--bg-card, #2E1F42)', padding: '10px', borderRadius: '10px', border: '1px solid var(--border-color, #423262)' }}>
+                    <span style={{ color: 'var(--text-muted, #B3A9AF)', display: 'block' }}>Fecha de Emisión:</span>
+                    <strong style={{ color: 'var(--text-main, #F3EDE6)' }}>
                       {inspectingSnapshot.exportedAt ? new Date(inspectingSnapshot.exportedAt).toLocaleString('es-AR') : '—'}
                     </strong>
                   </div>
-                  <div style={{ backgroundColor: '#FFFFFF', padding: '10px', borderRadius: '8px', border: '1px solid #DCFCE7' }}>
-                    <span style={{ color: '#64748B', display: 'block' }}>Prendas:</span>
-                    <strong style={{ color: '#1E293B', fontFamily: 'monospace' }}>
+                  <div style={{ backgroundColor: 'var(--bg-card, #2E1F42)', padding: '10px', borderRadius: '10px', border: '1px solid var(--border-color, #423262)' }}>
+                    <span style={{ color: 'var(--text-muted, #B3A9AF)', display: 'block' }}>Prendas:</span>
+                    <strong style={{ color: 'var(--text-main, #F3EDE6)', fontFamily: 'monospace' }}>
                       {inspectingSnapshot.counts?.products ?? inspectingSnapshot.data?.products?.length ?? 0}
                     </strong>
                   </div>
-                  <div style={{ backgroundColor: '#FFFFFF', padding: '10px', borderRadius: '8px', border: '1px solid #DCFCE7' }}>
-                    <span style={{ color: '#64748B', display: 'block' }}>Stock Físico:</span>
-                    <strong style={{ color: '#16A34A', fontFamily: 'monospace' }}>
+                  <div style={{ backgroundColor: 'var(--bg-card, #2E1F42)', padding: '10px', borderRadius: '10px', border: '1px solid var(--border-color, #423262)' }}>
+                    <span style={{ color: 'var(--text-muted, #B3A9AF)', display: 'block' }}>Stock Físico:</span>
+                    <strong style={{ color: '#34D399', fontFamily: 'monospace' }}>
                       {inspectingSnapshot.counts?.totalStock ?? '—'}
                     </strong>
                   </div>
-                  <div style={{ backgroundColor: '#FFFFFF', padding: '10px', borderRadius: '8px', border: '1px solid #DCFCE7' }}>
-                    <span style={{ color: '#64748B', display: 'block' }}>Ventas / Pedidos:</span>
-                    <strong style={{ color: '#2563EB', fontFamily: 'monospace' }}>
+                  <div style={{ backgroundColor: 'var(--bg-card, #2E1F42)', padding: '10px', borderRadius: '10px', border: '1px solid var(--border-color, #423262)' }}>
+                    <span style={{ color: 'var(--text-muted, #B3A9AF)', display: 'block' }}>Ventas / Pedidos:</span>
+                    <strong style={{ color: '#60A5FA', fontFamily: 'monospace' }}>
                       {inspectingSnapshot.counts?.orders ?? inspectingSnapshot.data?.orders?.length ?? 0}
                     </strong>
                   </div>
@@ -1642,17 +1780,18 @@ export default function BackupsTab() {
                     type="button"
                     onClick={handleApplyInspected}
                     style={{
-                      backgroundColor: '#16A34A',
+                      backgroundColor: '#10B981',
                       color: '#FFFFFF',
                       border: 'none',
-                      borderRadius: '8px',
+                      borderRadius: '10px',
                       padding: '10px 18px',
                       fontSize: '0.85rem',
                       fontWeight: 800,
                       cursor: 'pointer',
                       display: 'flex',
                       alignItems: 'center',
-                      gap: '6px'
+                      gap: '6px',
+                      boxShadow: '0 4px 12px rgba(16, 185, 129, 0.25)'
                     }}
                   >
                     <CheckCircle2 size={16} /> Cargar en Modo Local (IndexedDB)
@@ -1666,4 +1805,3 @@ export default function BackupsTab() {
     </div>
   );
 }
-

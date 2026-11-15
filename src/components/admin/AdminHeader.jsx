@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { ArrowLeft, LogOut, ShieldCheck, Eye, Bell, BellOff, BellRing } from 'lucide-react';
 import ThemeToggle from '@/components/ThemeToggle';
 
-export default function AdminHeader({ onLogout, visitCount, notifPermission, onRequestNotif }) {
+export default function AdminHeader({ onLogout, visitCount, notifPermission, onRequestNotif, onOpenBackups, isBackupsActive }) {
   return (
     <div className="admin-header-row">
       <div>
@@ -17,8 +17,32 @@ export default function AdminHeader({ onLogout, visitCount, notifPermission, onR
         <h1 className="admin-header-title">Panel de Administración — Dulce Valentín</h1>
       </div>
 
-      <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
+      <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
         <ThemeToggle />
+        {onOpenBackups && (
+          <button
+            type="button"
+            onClick={onOpenBackups}
+            style={{
+              fontSize: '0.84rem',
+              padding: '7px 15px',
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '7px',
+              cursor: 'pointer',
+              fontWeight: 800,
+              borderRadius: 'var(--radius-full, 9999px)',
+              background: isBackupsActive ? 'var(--dv-accent-fill, #C2185B)' : 'rgba(245, 85, 157, 0.14)',
+              color: isBackupsActive ? '#FFFFFF' : 'var(--accent-gold, #F5559D)',
+              border: isBackupsActive ? '1px solid var(--dv-accent-fill, #C2185B)' : '1px solid var(--border-color-strong, #55407A)',
+              boxShadow: isBackupsActive ? '0 4px 14px rgba(194, 24, 91, 0.35)' : 'none',
+              transition: 'all 0.2s ease'
+            }}
+            title="Respaldo físico en 1 clic en Windows, planillas para Excel y modo offline"
+          >
+            <ShieldCheck size={16} /> Respaldo & Modo Local
+          </button>
+        )}
         {notifPermission !== undefined && (
           notifPermission === 'granted' ? (
             <span

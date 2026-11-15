@@ -11,10 +11,7 @@ import {
   ArrowLeft,
   CheckCircle2,
   FolderCheck,
-  Sparkles,
-  Barcode,
-  Layers,
-  HelpCircle
+  Barcode
 } from 'lucide-react';
 
 export default function BackupGuideModal({
@@ -32,8 +29,8 @@ export default function BackupGuideModal({
       style={{
         position: 'fixed',
         inset: 0,
-        backgroundColor: 'rgba(36, 30, 40, 0.65)',
-        backdropFilter: 'blur(6px)',
+        backgroundColor: 'rgba(10, 6, 15, 0.75)',
+        backdropFilter: 'blur(8px)',
         zIndex: 9999,
         display: 'flex',
         alignItems: 'center',
@@ -44,14 +41,15 @@ export default function BackupGuideModal({
     >
       <div
         style={{
-          backgroundColor: '#FFFFFF',
-          border: '1px solid var(--border-color-strong, #E4BFD4)',
+          backgroundColor: 'var(--bg-card, #2E1F42)',
+          border: '1px solid var(--border-color-strong, #55407A)',
           borderRadius: '24px',
           padding: '28px',
           maxWidth: '560px',
           width: '100%',
-          boxShadow: '0 25px 50px -12px rgba(36, 30, 40, 0.25)',
-          position: 'relative'
+          boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.5)',
+          position: 'relative',
+          color: 'var(--text-main, #F3EDE6)'
         }}
       >
         {/* Cabecera del Modal */}
@@ -60,7 +58,7 @@ export default function BackupGuideModal({
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'space-between',
-            borderBottom: '1px solid var(--border-color, #F3DCE7)',
+            borderBottom: '1px solid var(--border-color, #423262)',
             paddingBottom: '14px',
             marginBottom: '20px'
           }}
@@ -70,18 +68,18 @@ export default function BackupGuideModal({
               style={{
                 fontSize: '11px',
                 fontWeight: 900,
-                color: '#A8175A',
+                color: 'var(--accent-gold, #F5559D)',
                 textTransform: 'uppercase',
                 letterSpacing: '0.08em',
-                backgroundColor: '#FCE0EC',
-                border: '1px solid #F3DCE7',
+                backgroundColor: 'rgba(245, 85, 157, 0.14)',
+                border: '1px solid rgba(245, 85, 157, 0.3)',
                 padding: '4px 10px',
                 borderRadius: '10px'
               }}
             >
               Paso {step} de 4
             </span>
-            <span style={{ fontSize: '13px', color: 'var(--text-muted, #6E656E)', fontWeight: 700 }}>
+            <span style={{ fontSize: '13px', color: 'var(--text-muted, #B3A9AF)', fontWeight: 700 }}>
               Guía de Uso Rápido
             </span>
           </div>
@@ -94,7 +92,7 @@ export default function BackupGuideModal({
               cursor: 'pointer',
               padding: '6px',
               borderRadius: '8px',
-              color: 'var(--text-muted, #6E656E)',
+              color: 'var(--text-muted, #B3A9AF)',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center'
@@ -113,42 +111,42 @@ export default function BackupGuideModal({
                 style={{
                   width: '56px',
                   height: '56px',
-                  backgroundColor: '#FCEDF3',
-                  border: '1px solid #E4BFD4',
-                  color: '#A8175A',
+                  backgroundColor: 'rgba(245, 85, 157, 0.15)',
+                  border: '1px solid rgba(245, 85, 157, 0.3)',
+                  color: 'var(--accent-gold, #F5559D)',
                   borderRadius: '16px',
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
-                  boxShadow: '0 2px 8px rgba(168, 23, 90, 0.1)'
+                  boxShadow: '0 4px 14px rgba(245, 85, 157, 0.15)'
                 }}
               >
                 <ShieldCheck size={30} />
               </div>
-              <h3 style={{ fontSize: '1.35rem', fontWeight: 900, color: 'var(--text-main, #241E28)', margin: 0, letterSpacing: '-0.02em' }}>
+              <h3 style={{ fontSize: '1.35rem', fontWeight: 900, color: 'var(--text-main, #F3EDE6)', margin: 0, letterSpacing: '-0.02em' }}>
                 ¿Para qué sirve esta pantalla?
               </h3>
-              <p style={{ fontSize: '0.9rem', color: 'var(--text-muted, #6E656E)', lineHeight: 1.55, margin: 0 }}>
-                Esta sección es tu <strong>caja fuerte digital</strong>. Te permite guardar una copia completa y actualizada de todas las prendas, precios, stock por talle y color, códigos de barra, ventas y clientes directamente en tu computadora.
+              <p style={{ fontSize: '0.9rem', color: 'var(--text-muted, #B3A9AF)', lineHeight: 1.55, margin: 0 }}>
+                Esta sección es tu <strong style={{ color: 'var(--text-main, #F3EDE6)' }}>caja fuerte digital</strong>. Te permite guardar una copia completa de todas las prendas, precios, stock por talle y color, códigos de barra, ventas y clientes en tu propia computadora.
               </p>
               <div
                 style={{
-                  backgroundColor: '#FFF8FA',
-                  border: '1px solid #F3DCE7',
+                  backgroundColor: 'var(--bg-surface-dark, #170E24)',
+                  border: '1px solid var(--border-color, #423262)',
                   borderRadius: '16px',
-                  padding: '14px',
+                  padding: '16px',
                   display: 'flex',
                   flexDirection: 'column',
                   gap: '6px',
                   fontSize: '0.84rem'
                 }}
               >
-                <p style={{ fontWeight: 800, color: '#A8175A', display: 'flex', alignItems: 'center', gap: '6px', margin: 0 }}>
-                  <CheckCircle2 size={16} color="#16A34A" />
+                <p style={{ fontWeight: 800, color: '#34D399', display: 'flex', alignItems: 'center', gap: '6px', margin: 0 }}>
+                  <CheckCircle2 size={16} />
                   Tranquilidad y Blindaje Total:
                 </p>
-                <p style={{ color: 'var(--text-muted, #6E656E)', margin: 0, lineHeight: 1.45 }}>
-                  Si alguna vez se corta internet en el local o hay inconvenientes con el servidor de la nube, la información de Dulce Valentín nunca se pierde porque tenés una copia física exacta guardada en tu equipo.
+                <p style={{ color: 'var(--text-muted, #B3A9AF)', margin: 0, lineHeight: 1.45 }}>
+                  Si alguna vez se corta internet en el local o hay inconvenientes con la nube, la información de Dulce Valentín nunca se pierde porque tenés una copia física exacta guardada en tu equipo.
                 </p>
               </div>
             </div>
@@ -160,41 +158,41 @@ export default function BackupGuideModal({
                 style={{
                   width: '56px',
                   height: '56px',
-                  backgroundColor: '#16A34A',
+                  backgroundColor: '#10B981',
                   color: '#FFFFFF',
                   borderRadius: '16px',
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
-                  boxShadow: '0 4px 14px rgba(22, 163, 74, 0.3)'
+                  boxShadow: '0 4px 14px rgba(16, 185, 129, 0.3)'
                 }}
               >
                 <HardDriveDownload size={30} />
               </div>
-              <h3 style={{ fontSize: '1.35rem', fontWeight: 900, color: 'var(--text-main, #241E28)', margin: 0, letterSpacing: '-0.02em' }}>
+              <h3 style={{ fontSize: '1.35rem', fontWeight: 900, color: 'var(--text-main, #F3EDE6)', margin: 0, letterSpacing: '-0.02em' }}>
                 El botón: Respaldo en 1 Clic
               </h3>
-              <p style={{ fontSize: '0.9rem', color: 'var(--text-muted, #6E656E)', lineHeight: 1.55, margin: 0 }}>
-                Para generar un respaldo nuevo, solo tocás el botón verde <strong style={{ color: '#16A34A' }}>&quot;Sincronizar y Respaldar en 1 Clic&quot;</strong>.
+              <p style={{ fontSize: '0.9rem', color: 'var(--text-muted, #B3A9AF)', lineHeight: 1.55, margin: 0 }}>
+                Para generar un respaldo nuevo, solo tocás el botón verde <strong style={{ color: '#34D399' }}>&quot;Sincronizar y Respaldar en 1 Clic&quot;</strong>.
               </p>
               <div
                 style={{
-                  backgroundColor: '#F0FDF4',
-                  border: '1px solid #BBF7D0',
+                  backgroundColor: 'var(--bg-surface-dark, #170E24)',
+                  border: '1px solid rgba(52, 211, 153, 0.3)',
                   borderRadius: '16px',
-                  padding: '14px',
+                  padding: '16px',
                   display: 'flex',
                   flexDirection: 'column',
                   gap: '8px',
                   fontSize: '0.84rem'
                 }}
               >
-                <p style={{ fontWeight: 800, color: '#166534', display: 'flex', alignItems: 'center', gap: '6px', margin: 0 }}>
+                <p style={{ fontWeight: 800, color: '#34D399', display: 'flex', alignItems: 'center', gap: '6px', margin: 0 }}>
                   <FolderCheck size={16} />
                   El sistema hace todo en automático:
                 </p>
-                <ul style={{ margin: 0, paddingLeft: '18px', color: '#14532D', lineHeight: 1.5, fontSize: '0.82rem' }}>
-                  <li>Crea la carpeta <code style={{ backgroundColor: '#FFFFFF', padding: '2px 6px', borderRadius: '4px', fontFamily: 'monospace', fontWeight: 800 }}>Backups_DulceValentin</code> en tu usuario de Windows.</li>
+                <ul style={{ margin: 0, paddingLeft: '18px', color: 'var(--text-muted, #B3A9AF)', lineHeight: 1.5, fontSize: '0.82rem' }}>
+                  <li>Crea la carpeta <code style={{ backgroundColor: 'rgba(255,255,255,0.08)', padding: '2px 6px', borderRadius: '4px', fontFamily: 'monospace', fontWeight: 800, color: 'var(--text-main, #F3EDE6)' }}>Backups_DulceValentin</code> en tu usuario de Windows.</li>
                   <li>Guarda allí la base completa en formato JSON y 4 planillas listas para Excel.</li>
                   <li>Descarga en simultáneo una copia al navegador como doble respaldo seguro.</li>
                 </ul>
@@ -208,9 +206,9 @@ export default function BackupGuideModal({
                 style={{
                   width: '56px',
                   height: '56px',
-                  backgroundColor: '#FFFBEB',
-                  border: '1px solid #FDE68A',
-                  color: '#D97706',
+                  backgroundColor: 'rgba(245, 158, 11, 0.15)',
+                  border: '1px solid rgba(245, 158, 11, 0.3)',
+                  color: '#FBBF24',
                   borderRadius: '16px',
                   display: 'flex',
                   alignItems: 'center',
@@ -219,29 +217,29 @@ export default function BackupGuideModal({
               >
                 <WifiOff size={30} />
               </div>
-              <h3 style={{ fontSize: '1.35rem', fontWeight: 900, color: 'var(--text-main, #241E28)', margin: 0, letterSpacing: '-0.02em' }}>
+              <h3 style={{ fontSize: '1.35rem', fontWeight: 900, color: 'var(--text-main, #F3EDE6)', margin: 0, letterSpacing: '-0.02em' }}>
                 Modo Local (si se corta Internet)
               </h3>
-              <p style={{ fontSize: '0.9rem', color: 'var(--text-muted, #6E656E)', lineHeight: 1.55, margin: 0 }}>
+              <p style={{ fontSize: '0.9rem', color: 'var(--text-muted, #B3A9AF)', lineHeight: 1.55, margin: 0 }}>
                 ¿Se cayó la conexión o Fibertel/proveedor no responde en pleno horario de venta en el local?
               </p>
               <div
                 style={{
-                  backgroundColor: '#FFFDF0',
-                  border: '1px solid #FEF08A',
+                  backgroundColor: 'var(--bg-surface-dark, #170E24)',
+                  border: '1px solid rgba(245, 158, 11, 0.3)',
                   borderRadius: '16px',
-                  padding: '14px',
+                  padding: '16px',
                   display: 'flex',
                   flexDirection: 'column',
                   gap: '8px',
                   fontSize: '0.84rem'
                 }}
               >
-                <p style={{ fontWeight: 800, color: '#92400E', margin: 0, display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <p style={{ fontWeight: 800, color: '#FBBF24', margin: 0, display: 'flex', alignItems: 'center', gap: '6px' }}>
                   <Barcode size={16} />
                   El local sigue funcionando:
                 </p>
-                <p style={{ color: '#78350F', margin: 0, lineHeight: 1.45 }}>
+                <p style={{ color: 'var(--text-muted, #B3A9AF)', margin: 0, lineHeight: 1.45 }}>
                   Al activar el <strong>Modo Local / Contingencia</strong>, podés buscar cualquier prenda por nombre, código de artículo (ej. 0314) o código de barras, ver su precio por menor/mayor y verificar cuántas unidades quedan por talle y color a 0ms sin internet.
                 </p>
               </div>
@@ -254,9 +252,9 @@ export default function BackupGuideModal({
                 style={{
                   width: '56px',
                   height: '56px',
-                  backgroundColor: '#EFF6FF',
-                  border: '1px solid #BFDBFE',
-                  color: '#2563EB',
+                  backgroundColor: 'rgba(59, 130, 246, 0.15)',
+                  border: '1px solid rgba(59, 130, 246, 0.3)',
+                  color: '#60A5FA',
                   borderRadius: '16px',
                   display: 'flex',
                   alignItems: 'center',
@@ -265,10 +263,10 @@ export default function BackupGuideModal({
               >
                 <FileSpreadsheet size={30} />
               </div>
-              <h3 style={{ fontSize: '1.35rem', fontWeight: 900, color: 'var(--text-main, #241E28)', margin: 0, letterSpacing: '-0.02em' }}>
+              <h3 style={{ fontSize: '1.35rem', fontWeight: 900, color: 'var(--text-main, #F3EDE6)', margin: 0, letterSpacing: '-0.02em' }}>
                 Planillas de Excel listas para usar
               </h3>
-              <p style={{ fontSize: '0.9rem', color: 'var(--text-muted, #6E656E)', lineHeight: 1.55, margin: 0 }}>
+              <p style={{ fontSize: '0.9rem', color: 'var(--text-muted, #B3A9AF)', lineHeight: 1.55, margin: 0 }}>
                 Cada respaldo genera 4 archivos compatibles con Microsoft Excel (formato UTF-8 con punto y coma):
               </p>
               <div
@@ -279,21 +277,21 @@ export default function BackupGuideModal({
                   fontSize: '0.8rem'
                 }}
               >
-                <div style={{ backgroundColor: '#F8FAFC', border: '1px solid #E2E8F0', padding: '10px', borderRadius: '12px' }}>
-                  <strong style={{ color: '#1E293B', display: 'block', marginBottom: '2px' }}>📊 Catálogo General</strong>
-                  <span style={{ color: '#64748B', fontSize: '0.74rem' }}>Precios, stock total y categorías</span>
+                <div style={{ backgroundColor: 'var(--bg-surface-dark, #170E24)', border: '1px solid var(--border-color, #423262)', padding: '10px', borderRadius: '12px' }}>
+                  <strong style={{ color: 'var(--text-main, #F3EDE6)', display: 'block', marginBottom: '2px' }}>📊 Catálogo General</strong>
+                  <span style={{ color: 'var(--text-muted, #B3A9AF)', fontSize: '0.74rem' }}>Precios, stock total y categorías</span>
                 </div>
-                <div style={{ backgroundColor: '#F8FAFC', border: '1px solid #E2E8F0', padding: '10px', borderRadius: '12px' }}>
-                  <strong style={{ color: '#1E293B', display: 'block', marginBottom: '2px' }}>🏷️ Stock Talle y Color</strong>
-                  <span style={{ color: '#64748B', fontSize: '0.74rem' }}>Unidades físicas y código de barra</span>
+                <div style={{ backgroundColor: 'var(--bg-surface-dark, #170E24)', border: '1px solid var(--border-color, #423262)', padding: '10px', borderRadius: '12px' }}>
+                  <strong style={{ color: '#34D399', display: 'block', marginBottom: '2px' }}>🏷️ Stock Talle y Color</strong>
+                  <span style={{ color: 'var(--text-muted, #B3A9AF)', fontSize: '0.74rem' }}>Unidades físicas y código de barra</span>
                 </div>
-                <div style={{ backgroundColor: '#F8FAFC', border: '1px solid #E2E8F0', padding: '10px', borderRadius: '12px' }}>
-                  <strong style={{ color: '#1E293B', display: 'block', marginBottom: '2px' }}>💰 Ventas y Pedidos</strong>
-                  <span style={{ color: '#64748B', fontSize: '0.74rem' }}>Fechas, totales, prendas y canal</span>
+                <div style={{ backgroundColor: 'var(--bg-surface-dark, #170E24)', border: '1px solid var(--border-color, #423262)', padding: '10px', borderRadius: '12px' }}>
+                  <strong style={{ color: '#60A5FA', display: 'block', marginBottom: '2px' }}>💰 Ventas y Pedidos</strong>
+                  <span style={{ color: 'var(--text-muted, #B3A9AF)', fontSize: '0.74rem' }}>Fechas, totales, prendas y canal</span>
                 </div>
-                <div style={{ backgroundColor: '#F8FAFC', border: '1px solid #E2E8F0', padding: '10px', borderRadius: '12px' }}>
-                  <strong style={{ color: '#1E293B', display: 'block', marginBottom: '2px' }}>👥 Directorio Clientes</strong>
-                  <span style={{ color: '#64748B', fontSize: '0.74rem' }}>Teléfonos, localidades y compras</span>
+                <div style={{ backgroundColor: 'var(--bg-surface-dark, #170E24)', border: '1px solid var(--border-color, #423262)', padding: '10px', borderRadius: '12px' }}>
+                  <strong style={{ color: '#FBBF24', display: 'block', marginBottom: '2px' }}>👥 Directorio Clientes</strong>
+                  <span style={{ color: 'var(--text-muted, #B3A9AF)', fontSize: '0.74rem' }}>Teléfonos, localidades y compras</span>
                 </div>
               </div>
             </div>
@@ -306,7 +304,7 @@ export default function BackupGuideModal({
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'space-between',
-            borderTop: '1px solid var(--border-color, #F3DCE7)',
+            borderTop: '1px solid var(--border-color, #423262)',
             paddingTop: '18px',
             marginTop: '20px'
           }}
@@ -315,13 +313,18 @@ export default function BackupGuideModal({
             <button
               type="button"
               onClick={onPrev}
-              className="btn-secondary"
               style={{
                 display: 'flex',
                 alignItems: 'center',
                 gap: '6px',
                 padding: '8px 16px',
-                fontSize: '0.85rem'
+                fontSize: '0.85rem',
+                fontWeight: 800,
+                borderRadius: '10px',
+                border: '1px solid var(--border-color, #423262)',
+                background: 'var(--bg-surface-dark, #170E24)',
+                color: 'var(--text-main, #F3EDE6)',
+                cursor: 'pointer'
               }}
             >
               <ArrowLeft size={16} /> Anterior
@@ -334,15 +337,18 @@ export default function BackupGuideModal({
             <button
               type="button"
               onClick={onNext}
-              className="btn-primary"
               style={{
                 display: 'flex',
                 alignItems: 'center',
                 gap: '6px',
                 padding: '8px 20px',
                 fontSize: '0.85rem',
-                backgroundColor: '#A8175A',
-                color: '#FFFFFF'
+                fontWeight: 800,
+                backgroundColor: 'var(--dv-accent-fill, #C2185B)',
+                color: '#FFFFFF',
+                border: 'none',
+                borderRadius: '10px',
+                cursor: 'pointer'
               }}
             >
               Siguiente <ArrowRight size={16} />
@@ -351,15 +357,19 @@ export default function BackupGuideModal({
             <button
               type="button"
               onClick={onFinish}
-              className="btn-primary"
               style={{
                 display: 'flex',
                 alignItems: 'center',
                 gap: '6px',
                 padding: '8px 22px',
                 fontSize: '0.85rem',
-                backgroundColor: '#16A34A',
-                color: '#FFFFFF'
+                fontWeight: 900,
+                backgroundColor: '#10B981',
+                color: '#FFFFFF',
+                border: 'none',
+                borderRadius: '10px',
+                cursor: 'pointer',
+                boxShadow: '0 4px 14px rgba(16, 185, 129, 0.3)'
               }}
             >
               ¡Entendido, Empezar! <CheckCircle2 size={16} />
@@ -370,4 +380,3 @@ export default function BackupGuideModal({
     </div>
   );
 }
-
