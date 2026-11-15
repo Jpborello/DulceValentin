@@ -24,6 +24,7 @@ import SuppliersTab from '@/components/admin/SuppliersTab';
 import StaffTab from '@/components/admin/StaffTab';
 import SellersTab from '@/components/admin/SellersTab';
 import PosTab from '@/components/admin/PosTab';
+import BackupsTab from '@/components/admin/BackupsTab';
 import { FEATURES } from '@/lib/features';
 
 // Pestana "WhatsApp CRM & IA" (bandeja del chat web + bot). Necesita
@@ -724,6 +725,10 @@ export default function AdminPage() {
           orders={orders}
           onRefresh={() => dataStore.initAdminFromSupabase()}
         />
+      )}
+
+      {activeTab === 'backups' && (
+        <BackupsTab />
       )}
 
       {activeTab === 'metrics' && (
