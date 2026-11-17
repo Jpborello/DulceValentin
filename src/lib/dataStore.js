@@ -1518,6 +1518,9 @@ class DataStore {
     }
 
     const wholesale_price = Number(data.wholesale_price) || 0;
+    // Precio minorista (por menor en el local). Si no viene, igual al mayorista
+    // como siempre. Antes se pisaba siempre con el mayorista.
+    const retail_price = Number(data.price) > 0 ? Number(data.price) : wholesale_price;
     const sizes = Array.isArray(data.sizes) ? data.sizes.map((s) => s.trim()).filter(Boolean) : [];
     const colors = Array.isArray(data.colors) ? data.colors.map((c) => c.trim()).filter(Boolean) : [];
     const stock = parseInt(data.stock, 10) || 0;
@@ -1555,7 +1558,7 @@ class DataStore {
       category: categoryName || 'General',
       subcategory: subcategoryName,
       description: (data.description || '').trim(),
-      price: wholesale_price,
+      price: retail_price,
       wholesale_price,
       stock,
       stock_per_size,
@@ -1563,8 +1566,8 @@ class DataStore {
       colors,
       image_url: coverImage,
       image_urls: finalImageUrls,
-      is_active: true,
-      is_new: true,
+      is_active: data.is_active !== undefined ? Boolean(data.is_active) : true,
+      is_new: data.is_new !== undefined ? Boolean(data.is_new) : true,
       is_offer: false,
       is_featured: false,
       is_top_seller: false,

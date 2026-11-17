@@ -21,6 +21,28 @@ export function getProductPrice(product, selectedSize) {
   return Number(product.wholesale_price || product.price || 0);
 }
 
+// Precio en el local segun si la venta es por mayor o por menor.
+//  - 'mayor' (o nada): el de siempre (precio por talle / mayorista).
+//  - 'menor': el precio minorista del producto (`price`). Si no tiene uno
+//    propio (vacio, 0 o igual al mayorista base, que es como se guardaba
+//    siempre), cae al precio por mayor, incluido el precio por talle: asi
+//    "por menor" nunca sale mas barato que "por mayor" por no tenerlo cargado.
+export const PRICE_TYPES = ['mayor', 'menor'];
+export function getUnitPriceForType(product, selectedSize, priceType) {
+  if (priceType === 'menor') {
+    const retail = Number(product?.price);
+    const wholesale = Number(product?.wholesale_price);
+    if (Number.isFinite(retail) && retail > 0 && retail !== wholesale) return retail;
+  }
+  return getProductPrice(product, selectedSize);
+}
+
+// true si el producto tiene un precio por menor distinto del por mayor (para
+// ese talle): solo en ese caso tiene sentido preguntar.
+export function hasDistinctRetailPrice(product, selectedSize) {
+  return getUnitPriceForType(product, selectedSize, 'menor') !== getProductPrice(product, selectedSize);
+}
+
 // Rango de precios de un producto (para mostrarlo en la card/listado ANTES
 // de que el cliente elija un talle). Si todos los talles tienen el mismo
 // precio (o no hay price_per_size), min === max y se puede mostrar como

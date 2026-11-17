@@ -225,7 +225,9 @@ export default function StockTab({ products, categories = [], searchFilter, setS
                 <td>
                   <button
                     onClick={() => onToggleActive(p.id, isActive)}
-                    title={isActive ? 'Ocultar este producto de la web' : 'Volver a mostrar este producto en la web'}
+                    title={isActive
+                      ? 'Ocultar este producto de la web (sigue con su stock, etiquetas y venta en el local)'
+                      : 'Publicar este producto en la web. Mientras está oculto conserva su stock y se puede etiquetar y vender en el local.'}
                     style={{
                       padding: '5px 12px',
                       fontSize: '0.76rem',
@@ -237,7 +239,7 @@ export default function StockTab({ products, categories = [], searchFilter, setS
                       cursor: 'pointer'
                     }}
                   >
-                    {isActive ? '● Activo' : '○ Desactivado'}
+                    {isActive ? '● Publicado en la web' : '○ Oculto en la web'}
                   </button>
                 </td>
 

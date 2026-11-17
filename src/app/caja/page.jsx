@@ -6,7 +6,7 @@ import { supabase } from '@/lib/supabaseClient';
 import { adminFetch } from '@/lib/adminFetch';
 import { dataStore } from '@/lib/dataStore';
 import { getProductColorsForSize } from '@/lib/catalogData';
-import { getProductPrice } from '@/lib/productPricing';
+import { getUnitPriceForType, hasDistinctRetailPrice } from '@/lib/productPricing';
 import { FEATURES } from '@/lib/features';
 import { printThermalSaleTicket } from '@/lib/printUtils';
 import { resolveBarcodeMatches } from '@/lib/barcode';
@@ -97,6 +97,40 @@ function LoginBox({ onLogged }) {
 }
 
 // ---------------------------------------------------------------- Nueva venta
+const PRICE_MODE_KEY = 'dv_caja_price_mode';
+const lineKey = (productId, size, color, priceType) => `${productId}::${size || ''}::${color || ''}::${priceType || 'mayor'}`;
+
+// Ventana para elegir por mayor / por menor al agregar una prenda.
+function PriceTypePicker({ pending, onPick, onCancel }) {
+  const { product, size } = pending;
+  const mayor = getUnitPriceForType(product, size, 'mayor');
+  const menor = getUnitPriceForType(product, size, 'menor');
+  useEffect(() => {
+    // Solo Esc para cancelar: sin atajos de numeros ni foco en un boton, para
+    // que un escaneo siguiente (digitos + Enter del lector) no elija un precio solo.
+    const onKey = (e) => { if (e.key === 'Escape') onCancel(); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onCancel]);
+  const btn = (bg) => ({ padding: '14px 10px', borderRadius: '12px', border: 'none', cursor: 'pointer', backgroundColor: bg, color: '#fff', fontWeight: 900, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px' });
+  return (
+    <div className="modal-backdrop active" onClick={onCancel}>
+      <div className="modal-box" style={{ maxWidth: '380px' }} onClick={(e) => e.stopPropagation()} role="dialog" aria-label="Elegir precio">
+        <h3 style={{ fontSize: '1.05rem', fontWeight: 800, marginBottom: '2px' }}>¿Por mayor o por menor?</h3>
+        <p style={{ fontSize: '0.84rem', color: 'var(--text-muted)', marginBottom: '14px' }}>{product.name}{size ? ` · Talle ${size}` : ''}</p>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+          <button type="button" onClick={() => onPick('mayor')} style={btn('#2563EB')}>
+            <span style={{ fontSize: '0.8rem' }}>Por mayor</span><span style={{ fontSize: '1.2rem' }}>{money(mayor)}</span>
+          </button>
+          <button type="button" onClick={() => onPick('menor')} style={btn('#16A34A')}>
+            <span style={{ fontSize: '0.8rem' }}>Por menor</span><span style={{ fontSize: '1.2rem' }}>{money(menor)}</span>
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function NewSale({ me, sellers, products, offline, onCreated }) {
   const [lines, setLines] = useState([]);
   const [scan, setScan] = useState('');
@@ -111,27 +145,59 @@ function NewSale({ me, sellers, products, offline, onCreated }) {
 
   const productById = useMemo(() => new Map(products.map((p) => [p.id, p])), [products]);
 
-  const addLine = useCallback((product, size = null, color = null) => {
+  // Precio por mayor o por menor. 'ask' = pregunta al agregar cada prenda
+  // (solo si esa prenda tiene un precio por menor distinto); se recuerda en este equipo.
+  const [pricingMode, setPricingModeState] = useState('ask');
+  const [pendingAdd, setPendingAdd] = useState(null); // { product, size, color }
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem(PRICE_MODE_KEY);
+      if (['ask', 'mayor', 'menor'].includes(saved)) setPricingModeState(saved);
+    } catch {}
+  }, []);
+  const setPricingMode = (mode) => {
+    setPricingModeState(mode);
+    try { localStorage.setItem(PRICE_MODE_KEY, mode); } catch {}
+  };
+
+  const addLine = useCallback((product, size = null, color = null, priceType = 'mayor') => {
     setLines((prev) => {
-      const key = `${product.id}::${size || ''}::${color || ''}`;
+      const key = lineKey(product.id, size, color, priceType);
       const existing = prev.find((l) => l.key === key);
       if (existing) return prev.map((l) => (l.key === key ? { ...l, quantity: l.quantity + 1 } : l));
-      return [...prev, { key, productId: product.id, size, color, quantity: 1 }];
+      return [...prev, { key, productId: product.id, size, color, priceType, quantity: 1 }];
     });
     setMessage(null);
   }, []);
+
+  // Agregar una prenda respetando el modo de precio.
+  const requestAdd = (product, size = null, color = null) => {
+    if (pricingMode !== 'ask') return addLine(product, size, color, pricingMode);
+    if (!hasDistinctRetailPrice(product, size)) return addLine(product, size, color, 'mayor'); // mismo precio: no hace falta preguntar
+    setPendingAdd({ product, size, color });
+  };
+  const confirmPendingAdd = (priceType) => {
+    if (!pendingAdd) return;
+    addLine(pendingAdd.product, pendingAdd.size, pendingAdd.color, priceType);
+    setPendingAdd(null);
+    setTimeout(() => scanRef.current?.focus(), 0);
+  };
 
   const handleScan = async (e) => {
     e.preventDefault();
     const code = scan.trim();
     setScan('');
     if (!code) return;
+    if (pendingAdd) {
+      setMessage({ ok: false, text: `Primero elegí si "${pendingAdd.product.name}" va por mayor o por menor.` });
+      return;
+    }
     // Primero se busca en el catalogo cargado (codigos de barra por variante
     // del producto o codigo de articulo): anda con y sin internet.
     const local = resolveBarcodeMatches(products, code);
     if (local.length > 0) {
       const m = local[0];
-      addLine(productById.get(m.product.id) || m.product, m.size, m.color);
+      requestAdd(productById.get(m.product.id) || m.product, m.size, m.color);
       if (local.length > 1) setMessage({ ok: false, text: `Ese código coincide con ${local.length} prendas: se agregó "${m.product.name}". Revisá que sea la correcta.` });
       scanRef.current?.focus();
       return;
@@ -145,7 +211,7 @@ function NewSale({ me, sellers, products, offline, onCreated }) {
       const data = await api(`/api/pos/lookup?barcode=${encodeURIComponent(code)}`);
       const product = productById.get(data.productId);
       if (!product) throw new Error('El producto de ese código ya no está en el catálogo.');
-      addLine(product, data.size, data.color);
+      requestAdd(product, data.size, data.color);
     } catch (err) {
       setMessage({ ok: false, text: isNetworkError(err) ? 'Sin conexión y el código no está en la copia guardada.' : err.message });
     }
@@ -158,16 +224,28 @@ function NewSale({ me, sellers, products, offline, onCreated }) {
     return products.filter((p) => norm(p.name).includes(q) || norm(p.code) === q || norm(p.code).startsWith(q)).slice(0, 8);
   }, [search, products]);
 
-  const setLine = (key, patch) => setLines((prev) => prev.map((l) => {
-    if (l.key !== key) return l;
-    const next = { ...l, ...patch };
-    next.key = `${next.productId}::${next.size || ''}::${next.color || ''}`;
-    return next;
-  }));
+  // Si el cambio deja dos renglones iguales (misma prenda, talle, color y
+  // tipo de precio), se juntan en uno sumando las cantidades.
+  const setLine = (key, patch) => setLines((prev) => {
+    const updated = prev.map((l) => {
+      if (l.key !== key) return l;
+      const next = { ...l, ...patch };
+      next.key = lineKey(next.productId, next.size, next.color, next.priceType);
+      return next;
+    });
+    const merged = [];
+    for (const l of updated) {
+      const same = merged.find((m) => m.key === l.key);
+      if (same) same.quantity += l.quantity;
+      else merged.push({ ...l });
+    }
+    return merged;
+  });
 
+  const linePrice = (p, l) => getUnitPriceForType(p, l.size, l.priceType);
   const total = lines.reduce((s, l) => {
     const p = productById.get(l.productId);
-    return s + (p ? getProductPrice(p, l.size) * l.quantity : 0);
+    return s + (p ? linePrice(p, l) * l.quantity : 0);
   }, 0);
 
   const missingVariant = lines.find((l) => {
@@ -208,7 +286,7 @@ function NewSale({ me, sellers, products, offline, onCreated }) {
       const { sale } = await api('/api/pos/sales', {
         method: 'POST',
         body: JSON.stringify({
-          items: lines.map((l) => ({ id: l.productId, quantity: l.quantity, size: l.size, color: l.color })),
+          items: lines.map((l) => ({ id: l.productId, quantity: l.quantity, size: l.size, color: l.color, priceType: l.priceType || 'mayor' })),
           sellerId,
           clientName,
           clientPhone,
@@ -239,7 +317,22 @@ function NewSale({ me, sellers, products, offline, onCreated }) {
 
   return (
     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '18px', alignItems: 'start' }}>
+      {pendingAdd && (
+        <PriceTypePicker pending={pendingAdd} onPick={confirmPendingAdd} onCancel={() => { setPendingAdd(null); scanRef.current?.focus(); }} />
+      )}
       <div style={{ backgroundColor: 'var(--bg-card)', borderRadius: '14px', padding: '18px', border: '1px solid var(--border-color)' }}>
+        <div style={{ marginBottom: '12px' }}>
+          <span style={{ fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-muted)' }}>Precio</span>
+          <div role="group" aria-label="Precio por mayor o por menor" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '6px', marginTop: '4px' }}>
+            {[['ask', 'Preguntar'], ['mayor', 'Por mayor'], ['menor', 'Por menor']].map(([id, label]) => (
+              <button key={id} type="button" onClick={() => setPricingMode(id)} aria-pressed={pricingMode === id}
+                style={{ padding: '7px 6px', borderRadius: '9px', fontWeight: 800, fontSize: '0.8rem', cursor: 'pointer', border: pricingMode === id ? '2px solid var(--text-main)' : '1px solid var(--border-color)', backgroundColor: pricingMode === id ? 'var(--text-main)' : 'var(--bg-card)', color: pricingMode === id ? 'var(--bg-page)' : 'var(--text-main)' }}>
+                {label}
+              </button>
+            ))}
+          </div>
+        </div>
+
         <form onSubmit={handleScan} style={{ marginBottom: '12px' }}>
           <label style={{ fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-muted)' }}>Escaneá el código de la etiqueta</label>
           <div style={{ position: 'relative', marginTop: '4px' }}>
@@ -256,10 +349,14 @@ function NewSale({ me, sellers, products, offline, onCreated }) {
         {results.length > 0 && (
           <div style={{ border: '1px solid var(--border-color)', borderRadius: '10px', marginTop: '6px', overflow: 'hidden' }}>
             {results.map((p) => (
-              <button key={p.id} type="button" onClick={() => { addLine(p); setSearch(''); }}
+              <button key={p.id} type="button" onClick={() => { requestAdd(p); setSearch(''); }}
                 style={{ display: 'flex', width: '100%', justifyContent: 'space-between', gap: '8px', padding: '8px 10px', border: 'none', borderBottom: '1px solid var(--border-color)', background: 'var(--bg-card)', cursor: 'pointer', textAlign: 'left', color: 'var(--text-main)' }}>
                 <span style={{ fontSize: '0.86rem', fontWeight: 700 }}>{p.code ? `#${p.code} · ` : ''}{p.name}</span>
-                <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>{money(getProductPrice(p, null))} · {p.stock} u.</span>
+                <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                  {hasDistinctRetailPrice(p, null)
+                    ? `May. ${money(getUnitPriceForType(p, null, 'mayor'))} · Men. ${money(getUnitPriceForType(p, null, 'menor'))}`
+                    : money(getUnitPriceForType(p, null, 'mayor'))} · {p.stock} u.
+                </span>
               </button>
             ))}
           </div>
@@ -294,9 +391,18 @@ function NewSale({ me, sellers, products, offline, onCreated }) {
             <div key={l.key} style={{ borderBottom: '1px solid var(--border-color)', padding: '8px 0' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', gap: '8px' }}>
                 <strong style={{ fontSize: '0.88rem' }}>{p.name}</strong>
-                <strong style={{ fontSize: '0.9rem' }}>{money(getProductPrice(p, l.size) * l.quantity)}</strong>
+                <strong style={{ fontSize: '0.9rem' }}>{money(linePrice(p, l) * l.quantity)}</strong>
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '6px', flexWrap: 'wrap' }}>
+                {hasDistinctRetailPrice(p, l.size) ? (
+                  <button type="button" onClick={() => setLine(l.key, { priceType: l.priceType === 'menor' ? 'mayor' : 'menor' })}
+                    title="Cambiar entre precio por mayor y por menor"
+                    style={{ padding: '3px 8px', borderRadius: '20px', fontSize: '0.74rem', fontWeight: 800, cursor: 'pointer', border: 'none', backgroundColor: l.priceType === 'menor' ? '#DCFCE7' : '#DBEAFE', color: l.priceType === 'menor' ? '#166534' : '#1E40AF' }}>
+                    {l.priceType === 'menor' ? 'Por menor' : 'Por mayor'} · {money(linePrice(p, l))} ⇄
+                  </button>
+                ) : (
+                  <span style={{ fontSize: '0.74rem', color: 'var(--text-muted)' }}>{money(linePrice(p, l))} c/u</span>
+                )}
                 {sizes.length > 0 && (
                   <select value={l.size || ''} onChange={(e) => setLine(l.key, { size: e.target.value || null, color: null })} className="form-input" style={{ padding: '3px 6px', fontSize: '0.8rem', borderColor: l.size ? undefined : '#F59E0B' }}>
                     <option value="">Talle…</option>
@@ -473,7 +579,7 @@ function SalesList({ sales, me, onCharge, onCancel, emptyText }) {
             </div>
           </div>
           <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: '4px' }}>
-            {(s.items || []).map((it) => `${it.quantity}× ${it.product?.name}${it.product?.selectedSize ? ` T.${it.product.selectedSize}` : ''}${it.product?.selectedColor ? ` ${it.product.selectedColor}` : ''}`).join(' · ')}
+            {(s.items || []).map((it) => `${it.quantity}× ${it.product?.name}${it.product?.selectedSize ? ` T.${it.product.selectedSize}` : ''}${it.product?.selectedColor ? ` ${it.product.selectedColor}` : ''}${(it.price_type || it.product?.price_type) === 'menor' ? ' (por menor)' : ''}`).join(' · ')}
           </div>
           {s.customer_notes && <div style={{ fontSize: '0.78rem', marginTop: '4px' }}>📝 {s.customer_notes}</div>}
           {s.syncError && <div style={{ fontSize: '0.78rem', marginTop: '4px', color: '#B91C1C', fontWeight: 600 }}>{s.syncError}</div>}

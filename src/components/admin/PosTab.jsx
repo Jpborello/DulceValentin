@@ -44,8 +44,8 @@ import {
 import { COMPANY_INFO } from '@/lib/companyInfo';
 import { adminFetch } from '@/lib/adminFetch';
 import { printThermalSaleTicket, printThermalZTicket, printIsolatedContent, printSaleDocument } from '@/lib/printUtils';
-import { getProductPrice } from '@/lib/productPricing';
-import { getProductStockForSizeColor } from '@/lib/catalogData';
+import { getProductPrice, getUnitPriceForType } from '@/lib/productPricing';
+import { getVariantStock } from '@/lib/catalogData';
 
 const PAYMENT_METHODS = [
   { id: 'efectivo', label: 'Efectivo' },
@@ -66,6 +66,8 @@ export default function PosTab({ products = [], orders = [], onRefresh }) {
   const [manualSearch, setManualSearch] = useState('');
   const [variantPickerProduct, setVariantPickerProduct] = useState(null);
   const [productPickerMatches, setProductPickerMatches] = useState(null);
+  const [posPricingMode, setPosPricingMode] = useState('ask'); // 'ask' | 'mayor' | 'menor'
+  const [pendingScanItem, setPendingScanItem] = useState(null);
 
   // Datos del cobro
   const [clientName, setClientName] = useState('');
@@ -190,22 +192,32 @@ export default function PosTab({ products = [], orders = [], onRefresh }) {
   };
 
   // -------------------------------------------------------------
-  // CARRITO & ESCANEO
+  // CARRITO & ESCANEO CON SOPORTE DE PRECIO X MAYOR Y X MENOR
   // -------------------------------------------------------------
-  const addToCart = (product, variantKey, quantity = 1) => {
+  const getMayorPrice = (product, size) => {
+    return getProductPrice(product, size);
+  };
+
+  // Misma regla que la caja de vendedoras: sin minorista propio (o igual al
+  // mayorista base) sigue al precio por mayor, incluido el precio por talle.
+  const getMenorPrice = (product, size) => getUnitPriceForType(product, size, 'menor');
+
+  const addToCart = (product, variantKey, quantity = 1, priceType = null) => {
     setScanError('');
     setUnresolvedCode('');
     const { size, color } = parseVariantKey(variantKey);
     const key = `${product.id}::${variantKey || 'DEFAULT'}`;
 
-    const unitPrice = getProductPrice(product, size);
-    const stockAvailable = getProductStockForSizeColor(product, size, color);
+    const effectiveType = priceType || (posPricingMode === 'menor' ? 'menor' : 'mayor');
+    const unitPrice = effectiveType === 'menor' ? getMenorPrice(product, size) : getMayorPrice(product, size);
+    // Stock fisico: en mostrador se pueden vender prendas no publicadas en la web.
+    const stockAvailable = getVariantStock(product, size, color);
 
     setCart((prev) => {
       const idx = prev.findIndex((it) => it.key === key);
       if (idx >= 0) {
         const next = [...prev];
-        next[idx] = { ...next[idx], quantity: next[idx].quantity + quantity };
+        next[idx] = { ...next[idx], quantity: next[idx].quantity + quantity, unitPrice, pricingType: effectiveType };
         return next;
       }
       return [
@@ -220,6 +232,7 @@ export default function PosTab({ products = [], orders = [], onRefresh }) {
           size,
           color,
           unitPrice,
+          pricingType: effectiveType,
           quantity,
           stockAvailable
         }
@@ -229,6 +242,44 @@ export default function PosTab({ products = [], orders = [], onRefresh }) {
     playBeep(980, 'sine', 0.09);
     refocusScan();
   };
+
+  const handleToggleItemPricingType = (itemKey) => {
+    setCart((prev) => prev.map((it) => {
+      if (it.key !== itemKey) return it;
+      const nextType = it.pricingType === 'menor' ? 'mayor' : 'menor';
+      const nextPrice = nextType === 'menor' ? getMenorPrice(it.product, it.size) : getMayorPrice(it.product, it.size);
+      return {
+        ...it,
+        pricingType: nextType,
+        unitPrice: nextPrice
+      };
+    }));
+  };
+
+  // Atajos de teclado para el selector de precio X Mayor / X Menor
+  useEffect(() => {
+    if (!pendingScanItem) return;
+    const handleKeyDown = (e) => {
+      if (e.key === '1' || e.key === 'm' || e.key === 'M') {
+        e.preventDefault();
+        e.stopPropagation();
+        addToCart(pendingScanItem.product, pendingScanItem.variantKey, pendingScanItem.quantity, 'mayor');
+        setPendingScanItem(null);
+      } else if (e.key === '2' || e.key === 'Enter') {
+        e.preventDefault();
+        e.stopPropagation();
+        addToCart(pendingScanItem.product, pendingScanItem.variantKey, pendingScanItem.quantity, 'menor');
+        setPendingScanItem(null);
+      } else if (e.key === 'Escape') {
+        e.preventDefault();
+        e.stopPropagation();
+        setPendingScanItem(null);
+        refocusScan();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown, true);
+    return () => window.removeEventListener('keydown', handleKeyDown, true);
+  }, [pendingScanItem]);
 
   const handleScan = async (rawCode) => {
     const code = rawCode.trim();
@@ -265,7 +316,8 @@ export default function PosTab({ products = [], orders = [], onRefresh }) {
             variantKey,
             size,
             color,
-            unitPrice: Number(it.unit_price || it.price || prod.price || 0),
+            // El precio con el que se armo la preventa (caja y web lo guardan en product.unit_price)
+            unitPrice: Number(it.unit_price ?? prod.unit_price ?? it.price ?? getMayorPrice(prod, size === 'SIN_TALLE' ? null : size) ?? 0),
             quantity: Math.max(1, Number(it.quantity) || 1),
             stockAvailable: 99
           };
@@ -317,7 +369,13 @@ export default function PosTab({ products = [], orders = [], onRefresh }) {
       return;
     }
 
-    addToCart(match.product, match.variantKey, 1);
+    if (posPricingMode === 'ask') {
+      setPendingScanItem({ product: match.product, variantKey: match.variantKey, quantity: 1 });
+      playBeep(880, 'sine', 0.08);
+      return;
+    }
+
+    addToCart(match.product, match.variantKey, 1, posPricingMode);
   };
 
   const onScanKeyDown = (e) => {
@@ -341,7 +399,12 @@ export default function PosTab({ products = [], orders = [], onRefresh }) {
     setManualSearch('');
     const variants = getProductVariants(product);
     if (variants.length === 1) {
-      addToCart(product, variants[0].key, 1);
+      if (posPricingMode === 'ask') {
+        setPendingScanItem({ product, variantKey: variants[0].key, quantity: 1 });
+        playBeep(880, 'sine', 0.08);
+      } else {
+        addToCart(product, variants[0].key, 1, posPricingMode);
+      }
     } else {
       setVariantPickerProduct(product);
     }
@@ -953,14 +1016,67 @@ export default function PosTab({ products = [], orders = [], onRefresh }) {
               padding: '16px',
               boxShadow: '0 4px 14px rgba(0,0,0,0.06)'
             }}>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px', flexWrap: 'wrap', gap: '8px' }}>
                 <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 900, fontSize: '0.95rem', color: 'var(--text-main)' }}>
                   <ScanLine size={18} style={{ color: 'var(--accent-gold-hover)' }} />
                   Lector de Código de Barras
                 </label>
-                <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontWeight: 700 }}>
-                  Pistola USB / Bluetooth lista (Enter automático)
-                </span>
+
+                {/* SELECTOR DE TARIFA LOCAL: PREGUNTAR / X MAYOR / X MENOR */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '4px', background: 'var(--bg-surface-elevated)', padding: '2px 4px', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
+                  <span style={{ fontSize: '0.72rem', fontWeight: 800, color: 'var(--text-muted)', marginRight: '2px', marginLeft: '4px' }}>Tarifa:</span>
+                  <button
+                    type="button"
+                    onClick={() => { setPosPricingMode('ask'); refocusScan(); }}
+                    style={{
+                      padding: '3px 8px',
+                      fontSize: '0.72rem',
+                      borderRadius: '6px',
+                      border: 'none',
+                      fontWeight: 800,
+                      cursor: 'pointer',
+                      background: posPricingMode === 'ask' ? 'var(--accent-gold)' : 'transparent',
+                      color: posPricingMode === 'ask' ? '#000' : 'var(--text-muted)'
+                    }}
+                    title="Preguntar X Mayor o X Menor cada vez que se escanea"
+                  >
+                    ❓ Preguntar
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { setPosPricingMode('mayor'); refocusScan(); }}
+                    style={{
+                      padding: '3px 8px',
+                      fontSize: '0.72rem',
+                      borderRadius: '6px',
+                      border: 'none',
+                      fontWeight: 800,
+                      cursor: 'pointer',
+                      background: posPricingMode === 'mayor' ? '#2563EB' : 'transparent',
+                      color: posPricingMode === 'mayor' ? '#fff' : 'var(--text-muted)'
+                    }}
+                    title="Cobrar todo por Mayor automáticamente"
+                  >
+                    X Mayor
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { setPosPricingMode('menor'); refocusScan(); }}
+                    style={{
+                      padding: '3px 8px',
+                      fontSize: '0.72rem',
+                      borderRadius: '6px',
+                      border: 'none',
+                      fontWeight: 800,
+                      cursor: 'pointer',
+                      background: posPricingMode === 'menor' ? '#16A34A' : 'transparent',
+                      color: posPricingMode === 'menor' ? '#fff' : 'var(--text-muted)'
+                    }}
+                    title="Cobrar todo por Menor automáticamente"
+                  >
+                    X Menor
+                  </button>
+                </div>
               </div>
 
               <div style={{ display: 'flex', gap: '8px' }}>
@@ -1163,7 +1279,29 @@ export default function PosTab({ products = [], orders = [], onRefresh }) {
                             </div>
                           </td>
                           <td style={{ padding: '8px 4px', textAlign: 'right', fontWeight: 700 }}>
-                            ${it.unitPrice.toLocaleString('es-AR')}
+                            <div>${it.unitPrice.toLocaleString('es-AR')}</div>
+                            {it.pricingType && (
+                              <button
+                                type="button"
+                                onClick={() => handleToggleItemPricingType(it.key)}
+                                style={{
+                                  display: 'inline-block',
+                                  fontSize: '0.67rem',
+                                  padding: '2px 5px',
+                                  borderRadius: '4px',
+                                  border: 'none',
+                                  background: it.pricingType === 'menor' ? '#FEF3C7' : '#DBEAFE',
+                                  color: it.pricingType === 'menor' ? '#92400E' : '#1E40AF',
+                                  fontWeight: 800,
+                                  cursor: 'pointer',
+                                  marginTop: '3px',
+                                  letterSpacing: '0.3px'
+                                }}
+                                title="Hacé clic para cambiar entre Por Mayor y Por Menor"
+                              >
+                                {it.pricingType === 'menor' ? 'X MENOR ⇄' : 'X MAYOR ⇄'}
+                              </button>
+                            )}
                           </td>
                           <td style={{ padding: '8px 4px', textAlign: 'right', fontWeight: 900 }}>
                             ${(it.unitPrice * it.quantity).toLocaleString('es-AR')}
@@ -2128,8 +2266,15 @@ export default function PosTab({ products = [], orders = [], onRefresh }) {
                   key={v.key}
                   type="button"
                   onClick={() => {
-                    addToCart(variantPickerProduct, v.key, 1);
+                    const prod = variantPickerProduct;
+                    const vk = v.key;
                     setVariantPickerProduct(null);
+                    if (posPricingMode === 'ask') {
+                      setPendingScanItem({ product: prod, variantKey: vk, quantity: 1 });
+                      playBeep(880, 'sine', 0.08);
+                    } else {
+                      addToCart(prod, vk, 1, posPricingMode);
+                    }
                   }}
                   style={{
                     padding: '10px 14px',
@@ -2160,6 +2305,115 @@ export default function PosTab({ products = [], orders = [], onRefresh }) {
             >
               Cancelar
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================= */}
+      {/* MODAL: SELECCIÓN DE PRECIO (X MAYOR O X MENOR)           */}
+      {/* ========================================================= */}
+      {pendingScanItem && (
+        <div className="modal-backdrop active" onClick={() => { setPendingScanItem(null); refocusScan(); }}>
+          <div className="modal-box" style={{ maxWidth: '440px', textAlign: 'center', padding: '24px' }} onClick={(e) => e.stopPropagation()}>
+            <div style={{
+              width: '48px',
+              height: '48px',
+              borderRadius: '50%',
+              background: 'var(--accent-gold-light)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              margin: '0 auto 12px auto'
+            }}>
+              <Tag size={24} style={{ color: 'var(--accent-gold)' }} />
+            </div>
+
+            <h3 style={{ fontSize: '1.2rem', fontWeight: 900, marginBottom: '6px' }}>
+              ¿Cobrar por Mayor o por Menor?
+            </h3>
+            <div style={{ fontSize: '0.9rem', color: 'var(--text-muted)', marginBottom: '20px' }}>
+              <strong style={{ color: 'var(--text-main)', display: 'block', fontSize: '1rem' }}>
+                {pendingScanItem.product.name}
+              </strong>
+              {(() => {
+                const { size, color } = parseVariantKey(pendingScanItem.variantKey);
+                return (
+                  <div style={{ display: 'flex', justifyContent: 'center', gap: '8px', marginTop: '4px', fontSize: '0.8rem' }}>
+                    {size && <span style={{ background: 'var(--bg-surface-elevated)', padding: '2px 8px', borderRadius: '4px' }}>Talle: {size}</span>}
+                    {color && <span style={{ background: 'var(--bg-surface-elevated)', padding: '2px 8px', borderRadius: '4px' }}>Color: {color}</span>}
+                  </div>
+                );
+              })()}
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '16px' }}>
+              {/* OPCION 1: POR MAYOR */}
+              <button
+                type="button"
+                autoFocus
+                onClick={() => {
+                  addToCart(pendingScanItem.product, pendingScanItem.variantKey, pendingScanItem.quantity, 'mayor');
+                  setPendingScanItem(null);
+                }}
+                style={{
+                  padding: '16px 12px',
+                  borderRadius: '12px',
+                  border: '2px solid #2563EB',
+                  background: '#EFF6FF',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  gap: '4px',
+                  transition: 'all 0.15s ease'
+                }}
+              >
+                <span style={{ fontSize: '0.75rem', fontWeight: 800, color: '#1E40AF', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                  [1] Por Mayor
+                </span>
+                <span style={{ fontSize: '1.35rem', fontWeight: 900, color: '#1E3A8A' }}>
+                  ${getMayorPrice(pendingScanItem.product, parseVariantKey(pendingScanItem.variantKey).size).toLocaleString('es-AR')}
+                </span>
+                <span style={{ fontSize: '0.7rem', color: '#3B82F6' }}>
+                  Precio mayorista
+                </span>
+              </button>
+
+              {/* OPCION 2: POR MENOR */}
+              <button
+                type="button"
+                onClick={() => {
+                  addToCart(pendingScanItem.product, pendingScanItem.variantKey, pendingScanItem.quantity, 'menor');
+                  setPendingScanItem(null);
+                }}
+                style={{
+                  padding: '16px 12px',
+                  borderRadius: '12px',
+                  border: '2px solid #16A34A',
+                  background: '#F0FDF4',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  gap: '4px',
+                  transition: 'all 0.15s ease'
+                }}
+              >
+                <span style={{ fontSize: '0.75rem', fontWeight: 800, color: '#166534', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                  [2 / Enter] Por Menor
+                </span>
+                <span style={{ fontSize: '1.35rem', fontWeight: 900, color: '#14532D' }}>
+                  ${getMenorPrice(pendingScanItem.product, parseVariantKey(pendingScanItem.variantKey).size).toLocaleString('es-AR')}
+                </span>
+                <span style={{ fontSize: '0.7rem', color: '#22C55E' }}>
+                  Precio local al público
+                </span>
+              </button>
+            </div>
+
+            <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', margin: 0 }}>
+              💡 Atajo de teclado: presioná <strong>1</strong> para Mayor o <strong>2 / Enter</strong> para Menor (o <strong>Esc</strong> para cancelar).
+            </p>
           </div>
         </div>
       )}

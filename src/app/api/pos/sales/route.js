@@ -1,11 +1,12 @@
 import { NextResponse } from 'next/server';
 import { getStaff, supabaseAdmin, deny, argentinaDayRange, parseOfflineDate } from '@/lib/staffAuth';
-import { getProductPrice } from '@/lib/productPricing';
-import { getProductStockForSizeColor } from '@/lib/catalogData';
+import { getUnitPriceForType } from '@/lib/productPricing';
+import { getVariantStock } from '@/lib/catalogData';
 
 // Ventas del local (2026-10). Circuito: la vendedora arma la venta y queda
-// "pendiente_cobro" a su nombre; la cajera la cobra (ver ./charge). Precio
-// mayorista sin minimo (en persona no aplica la regla x3). El stock se
+// "pendiente_cobro" a su nombre; la cajera la cobra (ver ./charge). Cada
+// renglon va por mayor (sin minimo: en persona no aplica la regla x3) o por
+// menor (precio minorista), segun eligio la vendedora. El stock se
 // descuenta al crear la venta (la prenda ya esta separada) y vuelve si se
 // cancela (ver ./cancel). Se guardan en la misma tabla orders, con
 // channel = 'local'.
@@ -100,8 +101,11 @@ export async function POST(req) {
   if (productsErr) return deny(500, 'No se pudieron verificar los productos.');
   const productById = new Map((products || []).map((p) => [p.id, p]));
 
-  // Agrupa renglones repetidos (mismo producto/talle/color).
+  // Agrupa renglones repetidos (mismo producto/talle/color y mismo tipo de
+  // precio). priceType: 'mayor' (por defecto) o 'menor' (precio minorista);
+  // el precio lo calcula siempre el servidor, nunca se confia en el del navegador.
   const byVariant = new Map();
+  const qtyByStockKey = new Map(); // el stock es el mismo para mayor y menor
   for (const raw of rawItems) {
     const product = productById.get(String(raw?.id || ''));
     if (!product) return deny(409, 'Uno de los productos ya no existe.');
@@ -109,22 +113,30 @@ export async function POST(req) {
     if (!Number.isFinite(quantity) || quantity < 1 || quantity > 999) return deny(400, `Revisá la cantidad de "${product.name}".`);
     const size = raw.size ? String(raw.size) : null;
     const color = raw.color ? String(raw.color) : null;
-    const key = `${product.id}::${size || ''}::${color || ''}`;
+    const priceType = raw.priceType === 'menor' ? 'menor' : 'mayor';
+    const stockKey = `${product.id}::${size || ''}::${color || ''}`;
+    const key = `${stockKey}::${priceType}`;
     const prev = byVariant.get(key);
-    byVariant.set(key, { product, size, color, quantity: (prev?.quantity || 0) + quantity, key });
+    byVariant.set(key, { product, size, color, priceType, quantity: (prev?.quantity || 0) + quantity, key: stockKey });
+    qtyByStockKey.set(stockKey, (qtyByStockKey.get(stockKey) || 0) + quantity);
+  }
+
+  for (const v of byVariant.values()) {
+    const available = getVariantStock(v.product, v.size, v.color); // stock fisico (vale aunque no este publicado en la web)
+    const wanted = qtyByStockKey.get(v.key);
+    if (wanted > available) {
+      return deny(409, `"${v.product.name}"${v.size ? ` talle ${v.size}` : ''}${v.color ? ` ${v.color}` : ''}: hay ${available} en stock y se cargaron ${wanted}.`);
+    }
   }
 
   const lines = [];
   for (const v of byVariant.values()) {
-    const available = getProductStockForSizeColor({ ...v.product, is_active: true }, v.size, v.color);
-    if (v.quantity > available) {
-      return deny(409, `"${v.product.name}"${v.size ? ` talle ${v.size}` : ''}${v.color ? ` ${v.color}` : ''}: hay ${available} en stock y se cargaron ${v.quantity}.`);
-    }
-    const unitPrice = getProductPrice(v.product, v.size);
+    const unitPrice = getUnitPriceForType(v.product, v.size, v.priceType);
     lines.push({
-      product: { ...v.product, selectedSize: v.size, selectedColor: v.color, unit_price: unitPrice },
+      product: { ...v.product, selectedSize: v.size, selectedColor: v.color, unit_price: unitPrice, price_type: v.priceType },
       quantity: v.quantity,
-      variantKey: v.key
+      variantKey: v.key,
+      price_type: v.priceType
     });
   }
 
@@ -163,7 +175,7 @@ export async function POST(req) {
     customer_notes: [clean(body.notes, 500), offlineNote].filter(Boolean).join(' ') || null,
     items: lines,
     total_amount: total,
-    is_wholesale: true,
+    is_wholesale: lines.every((l) => l.price_type !== 'menor'),
     discount_applied: 0,
     stock_issue: false,
     seller_id: seller.id,

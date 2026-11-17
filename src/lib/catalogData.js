@@ -322,10 +322,23 @@ export const getProductColorsForSize = (product, size) => {
 };
 
 /**
- * Devuelve el stock disponible para una combinación específica de talle y color.
+ * Stock disponible para VENDER POR LA WEB en una combinación de talle y color.
+ * Un producto no publicado (is_active = false) da 0: no se puede comprar online.
+ * Para el stock físico (etiquetas, caja del local, planillas) usar getVariantStock.
  */
 export const getProductStockForSizeColor = (product, size, color) => {
   if (!product || product.is_active === false) return 0;
+  return getVariantStock(product, size, color);
+};
+
+/**
+ * Stock FÍSICO de una combinación de talle y color, esté o no publicado en la
+ * web. Lo usan las etiquetas de código de barras y la caja del local: una
+ * prenda en borrador (sin publicar) igual existe en el local y se puede
+ * etiquetar y vender en mostrador.
+ */
+export const getVariantStock = (product, size, color) => {
+  if (!product) return 0;
   const totalStock = Number(product.stock);
   if (isNaN(totalStock) || totalStock <= 0) return 0;
 

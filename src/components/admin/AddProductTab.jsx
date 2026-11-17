@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useMemo, useEffect } from 'react';
-import { PlusCircle, X, UploadCloud, Loader2, CheckCircle2, AlertCircle, Tag, Star, Trash2, ArrowLeft, ArrowRight, Image as ImageIcon, Layers, Palette, Plus, Barcode, Printer } from 'lucide-react';
+import { PlusCircle, X, UploadCloud, Loader2, CheckCircle2, AlertCircle, Tag, Star, Trash2, ArrowLeft, ArrowRight, Image as ImageIcon, Layers, Palette, Plus, Barcode, Printer, Globe, Clock } from 'lucide-react';
 import { supabase } from '@/lib/supabaseClient';
 import { compressImageWithThumb } from '@/lib/compressImage';
 import { getProductColors, POPULAR_COLORS } from '@/lib/catalogData';
@@ -16,6 +16,7 @@ const EMPTY_FORM = {
   customSubcategory: '',
   description: '',
   wholesale_price: '',
+  retail_price: '',
   stock: '0'
 };
 
@@ -45,6 +46,7 @@ export default function AddProductTab({ categories, onCreateProduct }) {
   const [errorMsg, setErrorMsg] = useState('');
   const [successInfo, setSuccessInfo] = useState(null);
   const [showLabelsForProduct, setShowLabelsForProduct] = useState(null);
+  const [publishImmediately, setPublishImmediately] = useState(true);
 
   // Auto-activar excepcion x3 si el nombre o la categoría son de una promo/pack
   useEffect(() => {
@@ -304,6 +306,7 @@ export default function AddProductTab({ categories, onCreateProduct }) {
     setSingleColorInput('');
     setExemptFromMin3(false);
     setManualExemptToggled(false);
+    setPublishImmediately(true);
   };
 
   const handleSubmit = async (e) => {
@@ -317,6 +320,13 @@ export default function AddProductTab({ categories, onCreateProduct }) {
     if (!form.name.trim()) return setErrorMsg('Falta el nombre del producto.');
     if (!finalCategory) return setErrorMsg('Elegí (o escribí) una categoría.');
     if (!form.wholesale_price || Number(form.wholesale_price) <= 0) return setErrorMsg('Falta el precio mayorista.');
+    // Precio minorista (venta por menor en el local). Vacio = igual al mayorista.
+    const retailPrice = String(form.retail_price ?? '').trim() === '' ? null : Number(form.retail_price);
+    if (retailPrice !== null && (!Number.isFinite(retailPrice) || retailPrice <= 0)) return setErrorMsg('El precio minorista no es válido (dejalo vacío para usar el mayorista).');
+    if (retailPrice !== null && retailPrice < Number(form.wholesale_price)
+      && !window.confirm(`El precio minorista ($${retailPrice.toLocaleString('es-AR')}) es MENOR que el mayorista ($${Number(form.wholesale_price).toLocaleString('es-AR')}). ¿Es correcto?`)) {
+      return;
+    }
 
     const cleanStockPerSize = {};
     const allUniqueColors = new Set();
@@ -366,13 +376,16 @@ export default function AddProductTab({ categories, onCreateProduct }) {
         subcategory: finalSubcategory,
         description: form.description,
         wholesale_price: form.wholesale_price,
+        price: retailPrice ?? undefined,
         stock: finalCalculatedStock,
         stock_per_size: cleanStockPerSize,
         sizes,
         colors: finalColorsList,
         image_url: imageUrls[0] || '',
         image_urls: imageUrls,
-        exempt_from_min3: exemptFromMin3
+        exempt_from_min3: exemptFromMin3,
+        is_active: publishImmediately,
+        is_new: true
       });
       setSuccessInfo(created);
       resetForNext();
@@ -402,9 +415,9 @@ export default function AddProductTab({ categories, onCreateProduct }) {
 
       {successInfo && (
         <div style={{
-          backgroundColor: '#D1FAE5',
-          color: '#065F46',
-          border: '1px solid #6EE7B7',
+          backgroundColor: successInfo.is_active === false ? '#FEF3C7' : '#D1FAE5',
+          color: successInfo.is_active === false ? '#92400E' : '#065F46',
+          border: successInfo.is_active === false ? '1px solid #FCD34D' : '1px solid #6EE7B7',
           padding: '16px 20px',
           borderRadius: '12px',
           marginBottom: '20px',
@@ -413,16 +426,24 @@ export default function AddProductTab({ categories, onCreateProduct }) {
           justifyContent: 'space-between',
           flexWrap: 'wrap',
           gap: '12px',
-          boxShadow: '0 2px 10px rgba(5,150,105,0.08)'
+          boxShadow: '0 2px 10px rgba(0,0,0,0.05)'
         }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-            <CheckCircle2 size={24} style={{ color: '#059669', flexShrink: 0 }} />
+            {successInfo.is_active === false ? (
+              <Clock size={24} style={{ color: '#D97706', flexShrink: 0 }} />
+            ) : (
+              <CheckCircle2 size={24} style={{ color: '#059669', flexShrink: 0 }} />
+            )}
             <div>
               <div style={{ fontSize: '0.98rem', fontWeight: 800 }}>
-                ¡Prenda &quot;{successInfo.name}&quot; creada con éxito! (Art. {successInfo.code})
+                {successInfo.is_active === false
+                  ? `Prenda "${successInfo.name}" guardada como borrador (Art. ${successInfo.code})`
+                  : `¡Prenda "${successInfo.name}" creada y publicada! (Art. ${successInfo.code})`}
               </div>
-              <div style={{ fontSize: '0.82rem', color: '#047857', marginTop: '3px' }}>
-                ✓ Códigos de barra POS generados automáticamente para cada talle y color. Ya está activa en la web y lista para cobrar en caja.
+              <div style={{ fontSize: '0.82rem', color: successInfo.is_active === false ? '#B45309' : '#047857', marginTop: '3px' }}>
+                {successInfo.is_active === false
+                  ? '⏳ Esperando autorización: NO se muestra en la web todavía. Podés activarla en cualquier momento desde la pestaña Stock.'
+                  : '✓ Códigos de barra POS generados automáticamente para cada talle y color. Ya está activa en la web y lista para cobrar en caja.'}
               </div>
             </div>
           </div>
@@ -474,6 +495,14 @@ export default function AddProductTab({ categories, onCreateProduct }) {
         <div className="form-group">
           <label className="form-label">Precio mayorista *</label>
           <input type="number" className="form-input" value={form.wholesale_price} onChange={update('wholesale_price')} placeholder="Ej: 12000" />
+        </div>
+
+        <div className="form-group">
+          <label className="form-label">Precio minorista (venta por menor en el local)</label>
+          <input type="number" min="0" className="form-input" value={form.retail_price} onChange={update('retail_price')} placeholder={form.wholesale_price ? `Vacío = igual al mayorista ($${Number(form.wholesale_price).toLocaleString('es-AR')})` : 'Ej: 15000'} />
+          <span style={{ fontSize: '0.74rem', color: 'var(--text-muted)' }}>
+            Es el que se cobra en la Caja Principal al elegir &quot;Por menor&quot;. La web sigue mostrando el mayorista.
+          </span>
         </div>
 
         <div className="form-group">
@@ -1216,10 +1245,68 @@ export default function AddProductTab({ categories, onCreateProduct }) {
           </div>
         </div>
 
+        {/* ESTADO DE PUBLICACIÓN EN LA WEB */}
+        <div style={{
+          gridColumn: '1 / -1',
+          background: 'var(--bg-surface-elevated)',
+          border: '1px solid var(--border-color)',
+          borderRadius: '12px',
+          padding: '16px 20px'
+        }}>
+          <label style={{ fontSize: '0.9rem', fontWeight: 800, color: 'var(--text-main)', display: 'block', marginBottom: '10px' }}>
+            Visibilidad / Estado de Publicación en la Web
+          </label>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '12px' }}>
+            <button
+              type="button"
+              onClick={() => setPublishImmediately(true)}
+              style={{
+                textAlign: 'left',
+                padding: '14px 16px',
+                borderRadius: '10px',
+                border: publishImmediately ? '2px solid #16A34A' : '1px solid var(--border-color)',
+                backgroundColor: publishImmediately ? 'rgba(22, 163, 74, 0.08)' : 'var(--bg-card)',
+                cursor: 'pointer',
+                transition: 'all 0.15s ease'
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 700, fontSize: '0.92rem', color: publishImmediately ? '#15803D' : 'var(--text-main)', marginBottom: '4px' }}>
+                <Globe size={18} style={{ color: publishImmediately ? '#16A34A' : 'var(--text-muted)' }} />
+                Publicar inmediatamente
+              </div>
+              <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', lineHeight: 1.4 }}>
+                Visible al instante en la tienda online y catálogo para todos los clientes (Activo).
+              </div>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setPublishImmediately(false)}
+              style={{
+                textAlign: 'left',
+                padding: '14px 16px',
+                borderRadius: '10px',
+                border: !publishImmediately ? '2px solid #F59E0B' : '1px solid var(--border-color)',
+                backgroundColor: !publishImmediately ? 'rgba(245, 158, 11, 0.08)' : 'var(--bg-card)',
+                cursor: 'pointer',
+                transition: 'all 0.15s ease'
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 700, fontSize: '0.92rem', color: !publishImmediately ? '#B45309' : 'var(--text-main)', marginBottom: '4px' }}>
+                <Clock size={18} style={{ color: !publishImmediately ? '#D97706' : 'var(--text-muted)' }} />
+                Esperar autorización (Borrador)
+              </div>
+              <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', lineHeight: 1.4 }}>
+                No se publica en la web de forma automática. Queda guardado en el sistema hasta que sea autorizado desde la pestaña Stock.
+              </div>
+            </button>
+          </div>
+        </div>
+
         <div style={{ gridColumn: '1 / -1' }}>
           <button type="submit" disabled={isSaving} className="btn-primary" style={{ padding: '11px 24px', fontSize: '0.9rem', fontWeight: 800, opacity: isSaving ? 0.7 : 1, display: 'inline-flex', alignItems: 'center', gap: '8px' }}>
             {isSaving ? <Loader2 size={16} className="spin" /> : <Tag size={16} />}
-            {isSaving ? 'Creando...' : 'Crear Producto'}
+            {isSaving ? 'Creando...' : (publishImmediately ? 'Crear y Publicar en la Web' : 'Guardar Producto (Esperar Autorización)')}
           </button>
         </div>
       </form>

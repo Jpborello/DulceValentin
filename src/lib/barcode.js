@@ -16,7 +16,7 @@
 // - SIN_COLOR: para productos sin variantes de color.
 // - CUALQUIER_TALLE: para códigos heredados que no distinguen talle/color (al escanear se pregunta al vendedor).
 
-import { getProductColorsForSize, getProductStockForSizeColor } from './catalogData';
+import { getProductColorsForSize, getVariantStock } from './catalogData';
 import { getProductPrice } from './productPricing';
 
 export const SIN_TALLE_KEY = 'SIN_TALLE';
@@ -84,7 +84,8 @@ export function getProductVariants(product) {
     const colorList = Array.isArray(colors) && colors.length > 0 ? colors : [null];
     colorList.forEach((color) => {
       const key = makeVariantKey(size, color);
-      const stock = getProductStockForSizeColor(product, size, color);
+      // Stock fisico: una prenda sin publicar en la web igual se etiqueta y se vende en el local.
+      const stock = getVariantStock(product, size, color);
       const price = getProductPrice(product, size);
       variants.push({
         key,
@@ -137,11 +138,30 @@ export function generateBarcodeValue(product, sizeOrKey, maybeColor) {
     ? size.toString().trim().toUpperCase().replace(/[^A-Z0-9]/g, '')
     : 'U';
 
-  const colorToken = color
-    ? color.toString().trim().toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 4)
-    : 'GEN';
+  return `DV${code}-${sizeToken}-${colorTokenFor(color)}`;
+}
 
-  return `DV${code}-${sizeToken}-${colorToken}`;
+// (misma limpieza que siempre, para que los codigos de colores de una palabra no cambien)
+const cleanToken = (s) => s.toUpperCase().replace(/[^A-Z0-9]/g, '');
+
+// Abreviatura del color para el codigo. Un color de una palabra queda igual
+// que siempre (4 letras: "Rosa" -> ROSA). Si tiene mas palabras se agrega la
+// inicial de cada una, para que "Rosa fluo" (ROSAF) o "Negro con blanco"
+// (NEGRCB) no queden con el mismo codigo que "Rosa" o "Negro con rosa".
+function colorTokenFor(color) {
+  if (!color) return 'GEN';
+  const words = String(color).trim().split(/\s+/).map(cleanToken).filter(Boolean);
+  if (words.length === 0) return 'GEN';
+  return words[0].slice(0, 4) + words.slice(1).map((w) => w[0]).join('');
+}
+
+// Devuelve `base` o, si ya esta usado, base + 2, 3, ... hasta que sea unico.
+function uniqueValue(base, used) {
+  if (!used.has(base.toUpperCase())) return base;
+  for (let n = 2; ; n++) {
+    const candidate = `${base}${n}`;
+    if (!used.has(candidate.toUpperCase())) return candidate;
+  }
 }
 
 /**
@@ -165,14 +185,59 @@ export function ensureBarcodesForProduct(product) {
   const existing = product?.barcodes && typeof product.barcodes === 'object' ? product.barcodes : {};
   const result = { ...existing };
   const variants = getProductVariants(product);
+  // Nunca se genera un codigo que ya tenga otra variante del producto: si dos
+  // variantes compartieran codigo, al escanear no se sabria cual se vende.
+  const used = new Set(Object.values(result).filter(Boolean).map((v) => String(v).trim().toUpperCase()));
 
   variants.forEach((v) => {
     if (!result[v.key]) {
-      result[v.key] = generateBarcodeValue(product, v.size, v.color);
+      const value = uniqueValue(generateBarcodeValue(product, v.size, v.color), used);
+      result[v.key] = value;
+      used.add(value.toUpperCase());
     }
   });
 
   return result;
+}
+
+/**
+ * Codigos repetidos dentro de un producto: [{ barcode, keys: [variantKey, ...] }].
+ */
+export function findDuplicateBarcodes(product) {
+  const map = product?.barcodes && typeof product.barcodes === 'object' ? product.barcodes : {};
+  const byValue = new Map();
+  Object.entries(map).forEach(([key, val]) => {
+    if (!val) return;
+    const k = String(val).trim().toUpperCase();
+    byValue.set(k, [...(byValue.get(k) || []), key]);
+  });
+  return [...byValue.entries()].filter(([, keys]) => keys.length > 1).map(([barcode, keys]) => ({ barcode, keys }));
+}
+
+/**
+ * Corrige los codigos repetidos de un producto. En cada grupo, el codigo lo
+ * conserva la variante a la que "le corresponde" (la que el generador nuevo
+ * armaria igual, ej. "Rosa" se queda DV0224-4-ROSA) o, si ninguna, la primera
+ * en orden alfabetico; las demas reciben un codigo nuevo unico.
+ * Devuelve { barcodes, changes: [{ key, from, to }] }. Las etiquetas ya
+ * impresas de las variantes cambiadas hay que reimprimirlas.
+ */
+export function fixDuplicateBarcodes(product) {
+  const barcodes = { ...(product?.barcodes || {}) };
+  const changes = [];
+  const used = new Set(Object.values(barcodes).filter(Boolean).map((v) => String(v).trim().toUpperCase()));
+  for (const { barcode, keys } of findDuplicateBarcodes(product)) {
+    const sorted = [...keys].sort();
+    const owner = sorted.find((k) => generateBarcodeValue(product, k).toUpperCase() === barcode) || sorted[0];
+    for (const key of sorted) {
+      if (key === owner) continue;
+      const to = uniqueValue(generateBarcodeValue(product, key), used);
+      used.add(to.toUpperCase());
+      changes.push({ key, from: barcodes[key], to });
+      barcodes[key] = to;
+    }
+  }
+  return { barcodes, changes };
 }
 
 /**

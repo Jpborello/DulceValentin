@@ -1,4 +1,25 @@
 import JsBarcode from 'jsbarcode';
+import { getProductPrice } from './productPricing';
+
+// Los tickets se arman como HTML y se escriben en un iframe del mismo sitio:
+// cualquier texto que venga de un pedido (nombre del cliente, notas) se
+// escapa para que no se interprete como HTML (un nombre cargado desde la web
+// con etiquetas podria ejecutar codigo en el panel al imprimir).
+const esc = (v) => String(v ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+
+// Precio unitario de un renglon: el que se cobro. Las ventas guardan
+// product.unit_price (caja) o unit_price; si no, el mismo calculo que el
+// total (precio por talle / mayorista). Antes se usaba product.price
+// (minorista) y el renglon podia no coincidir con el total cobrado.
+function lineUnitPrice(it) {
+  const candidates = [it?.unit_price, it?.product?.unit_price, it?.price];
+  for (const c of candidates) {
+    const n = Number(c);
+    if (c !== undefined && c !== null && c !== '' && Number.isFinite(n)) return n;
+  }
+  const size = it?.size || it?.product?.selectedSize || it?.selectedSize || null;
+  return getProductPrice(it?.product, size);
+}
 
 /**
  * Utilidad universal de impresión aislada mediante iframe oculto para Dulce Valentín.
@@ -651,7 +672,7 @@ export function generateThermalSaleTicketHtml({
         <div class="th-sub">INDUMENTARIA & CALZADO</div>
         <div class="th-thanks-top">¡Gracias por elegirnos!</div>
         <div class="th-doc-type">${docTitle}</div>
-        ${sectionName ? `<div style="font-size: 9.5px; font-weight: 800; margin-top: 1px;">${sectionName.toUpperCase()}</div>` : ''}
+        ${sectionName ? `<div style="font-size: 9.5px; font-weight: 800; margin-top: 1px;">${esc(sectionName.toUpperCase())}</div>` : ''}
         ${isPreventa ? `<div style="font-size: 8.5px; font-weight: 700; margin-top: 1px; color: #111;">(Presentar en Caja Principal para abonar)</div>` : ''}
       </div>
 
@@ -661,7 +682,7 @@ export function generateThermalSaleTicketHtml({
       <div class="th-meta">
         <div class="th-row-between">
           <span class="th-bold">${isPreventa ? 'Preventa N°:' : 'Comprobante N°:'}</span>
-          <span class="th-bold">#${order.id || 'LOCAL'}</span>
+          <span class="th-bold">#${esc(order.id || 'LOCAL')}</span>
         </div>
         <div class="th-row-between">
           <span>Fecha y hora:</span>
@@ -670,19 +691,19 @@ export function generateThermalSaleTicketHtml({
         ${cajaName || cashier ? `
           <div class="th-row-between">
             <span>Terminal / Cajera:</span>
-            <span>${[cajaName, cashier].filter(Boolean).join(' • ')}</span>
+            <span>${esc([cajaName, cashier].filter(Boolean).join(' • '))}</span>
           </div>
         ` : ''}
         ${order.seller_name ? `
           <div class="th-row-between">
             <span>Vendedora:</span>
-            <span>${order.seller_name}</span>
+            <span>${esc(order.seller_name)}</span>
           </div>
         ` : ''}
         ${order.client_name && order.client_name !== 'Consumidor Final' ? `
           <div class="th-row-between">
             <span>Cliente:</span>
-            <span class="th-bold">${order.client_name}</span>
+            <span class="th-bold">${esc(order.client_name)}</span>
           </div>
         ` : ''}
         ${!isPreventa ? `
@@ -712,15 +733,15 @@ export function generateThermalSaleTicketHtml({
       <div class="th-items">
         ${items.map((it) => {
           const qty = it.quantity || 1;
-          const unit = Number(it.unit_price || it.price || it.product?.price || 0);
+          const unit = lineUnitPrice(it);
           const itemTotal = unit * qty;
-          const name = it.product?.name || it.name || 'Prenda';
+          const name = esc(it.product?.name || it.name || 'Prenda');
           const size = it.size || it.product?.selectedSize || it.selectedSize;
           const color = it.color || it.product?.selectedColor || it.selectedColor;
-          
+
           const variantParts = [];
-          if (size && size !== 'SIN_TALLE') variantParts.push(`Talle ${size}`);
-          if (color && color !== 'SIN_COLOR') variantParts.push(color);
+          if (size && size !== 'SIN_TALLE') variantParts.push(`Talle ${esc(size)}`);
+          if (color && color !== 'SIN_COLOR') variantParts.push(esc(color));
           const variantText = variantParts.length > 0 ? ` (${variantParts.join(' · ')})` : '';
 
           return `
@@ -879,12 +900,12 @@ export function generateSheetSaleTicketHtml({
       <!-- FRANJA DE DATOS DEL CLIENTE Y OPERACIÓN -->
       <div class="sheet-info-strip">
         <div>
-          <div><strong>Cliente:</strong> ${order.client_name || 'Consumidor Final'}</div>
-          ${order.client_dni ? `<div><strong>DNI / CUIT:</strong> ${order.client_dni}</div>` : ''}
-          ${order.client_phone ? `<div><strong>Teléfono:</strong> ${order.client_phone}</div>` : ''}
+          <div><strong>Cliente:</strong> ${esc(order.client_name || 'Consumidor Final')}</div>
+          ${order.client_dni ? `<div><strong>DNI / CUIT:</strong> ${esc(order.client_dni)}</div>` : ''}
+          ${order.client_phone ? `<div><strong>Teléfono:</strong> ${esc(order.client_phone)}</div>` : ''}
         </div>
         <div style="text-align: right;">
-          <div><strong>Terminal:</strong> ${[cajaName, cashier].filter(Boolean).join(' • ') || 'Caja Principal'}</div>
+          <div><strong>Terminal:</strong> ${esc([cajaName, cashier].filter(Boolean).join(' • ') || 'Caja Principal')}</div>
           <div><strong>Medio de Pago:</strong> ${isPreventa ? 'A abonar en Caja' : payLabel}</div>
           ${isPreventa ? `<div style="color: #b45309; font-weight: 800;">Presentar en Caja Principal</div>` : ''}
         </div>
@@ -907,12 +928,12 @@ export function generateSheetSaleTicketHtml({
         <tbody>
           ${items.map((it, idx) => {
             const qty = it.quantity || 1;
-            const unit = Number(it.unit_price || it.price || it.product?.price || 0);
+            const unit = lineUnitPrice(it);
             const itemTotal = unit * qty;
-            const name = it.product?.name || it.name || 'Prenda';
-            const code = it.product?.code || it.code || '-';
-            const size = it.size || it.product?.selectedSize || it.selectedSize || 'Único';
-            const color = it.color || it.product?.selectedColor || it.selectedColor || 'Surtido';
+            const name = esc(it.product?.name || it.name || 'Prenda');
+            const code = esc(it.product?.code || it.code || '-');
+            const size = esc(it.size || it.product?.selectedSize || it.selectedSize || 'Único');
+            const color = esc(it.color || it.product?.selectedColor || it.selectedColor || 'Surtido');
 
             return `
               <tr>
@@ -1094,7 +1115,7 @@ export function generateThermalZTicketHtml(summary) {
         </div>
         <div class="th-row-between">
           <span>Cajera:</span>
-          <span>${summary.cashier_name || 'Cajera'} (${summary.cashier_code || ''})</span>
+          <span>${esc(summary.cashier_name || 'Cajera')} (${esc(summary.cashier_code || '')})</span>
         </div>
         <div class="th-row-between">
           <span>Apertura:</span>
@@ -1178,7 +1199,7 @@ export function generateThermalZTicketHtml(summary) {
       ${summary.closing_notes ? `
         <div class="th-divider-thin"></div>
         <div style="font-size: 10px; margin-top: 4px;">
-          <span class="th-bold">Nota de cierre:</span> ${summary.closing_notes}
+          <span class="th-bold">Nota de cierre:</span> ${esc(summary.closing_notes)}
         </div>
       ` : ''}
 

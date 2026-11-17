@@ -12,8 +12,8 @@
 //    venta queda en la cola marcada con el error para que la revise la caja.
 
 import { idbGet, idbSet, loadLocalSnapshot } from '@/lib/localDatabase';
-import { getProductPrice } from '@/lib/productPricing';
-import { getProductStockForSizeColor } from '@/lib/catalogData';
+import { getUnitPriceForType } from '@/lib/productPricing';
+import { getVariantStock } from '@/lib/catalogData';
 
 const CATALOG_KEY = 'pos_catalog';
 const QUEUE_KEY = 'pos_offline_queue';
@@ -131,16 +131,18 @@ export function queueOfflineSale({ lines, productById, seller, me, clientName, c
       const p = productById.get(l.productId);
       if (!p) throw new Error('Uno de los productos no está en el catálogo guardado.');
       const key = `${p.id}::${l.size || ''}::${l.color || ''}`;
-      const available = getProductStockForSizeColor({ ...p, is_active: true }, l.size, l.color) - (reserved.get(key) || 0);
+      const available = getVariantStock(p, l.size, l.color) - (reserved.get(key) || 0);
       if (l.quantity > available) {
         throw new Error(`"${p.name}"${l.size ? ` talle ${l.size}` : ''}${l.color ? ` ${l.color}` : ''}: según la última copia quedan ${Math.max(0, available)} y se cargaron ${l.quantity}.`);
       }
       reserved.set(key, (reserved.get(key) || 0) + l.quantity);
-      const unitPrice = getProductPrice(p, l.size);
-      items.push({ id: p.id, quantity: l.quantity, size: l.size, color: l.color });
+      const priceType = l.priceType === 'menor' ? 'menor' : 'mayor';
+      const unitPrice = getUnitPriceForType(p, l.size, priceType);
+      items.push({ id: p.id, quantity: l.quantity, size: l.size, color: l.color, priceType });
       saleLines.push({
-        product: { id: p.id, name: p.name, code: p.code, selectedSize: l.size, selectedColor: l.color, unit_price: unitPrice },
-        quantity: l.quantity
+        product: { id: p.id, name: p.name, code: p.code, selectedSize: l.size, selectedColor: l.color, unit_price: unitPrice, price_type: priceType },
+        quantity: l.quantity,
+        price_type: priceType
       });
     }
 

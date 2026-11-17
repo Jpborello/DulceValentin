@@ -6,6 +6,7 @@ import JsBarcode from 'jsbarcode';
 import { getProductVariants, ensureBarcodesForProduct, generateBarcodeValue } from '@/lib/barcode';
 import { getProductPrice } from '@/lib/productPricing';
 import { printIsolatedContent } from '@/lib/printUtils';
+import { adminFetch } from '@/lib/adminFetch';
 
 // Formatos de etiqueta: etiquetadora termica (rollo) u hoja A4 comun.
 const FORMATS = {
@@ -32,19 +33,25 @@ export default function BarcodeLabelsModal({ product, onClose }) {
 
     try {
       // Aseguramos que el producto tenga el mapa de barcodes
+      const before = JSON.stringify(product.barcodes || {});
       const barcodesMap = ensureBarcodesForProduct(product);
       product.barcodes = barcodesMap;
 
-      // Guardar códigos en Supabase en segundo plano
-      fetch('/api/admin/pos', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          action: 'saveProductBarcodes',
-          productId: product.id,
-          barcodes: barcodesMap
-        })
-      }).catch(() => {});
+      // Si se generaron codigos nuevos, se guardan ANTES de imprimir: una
+      // etiqueta con un codigo que no esta en la base no se puede cobrar.
+      // (adminFetch manda la sesion; con fetch pelado el servidor lo rechazaba
+      // en silencio y los codigos nunca se guardaban.)
+      if (JSON.stringify(barcodesMap) !== before) {
+        const res = await adminFetch('/api/admin/pos', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'saveProductBarcodes', productId: product.id, barcodes: barcodesMap })
+        });
+        if (!res.ok) {
+          const data = await res.json().catch(() => ({}));
+          throw new Error(data.error || 'No se pudieron guardar los códigos de barra.');
+        }
+      }
 
       const labels = [];
       for (const v of variants) {
@@ -137,7 +144,7 @@ export default function BarcodeLabelsModal({ product, onClose }) {
       if (onClose) onClose();
     } catch (err) {
       console.warn('Error imprimiendo etiquetas:', err);
-      setError('No se pudieron generar las etiquetas. Verificá los datos.');
+      setError(err?.message ? `No se imprimió: ${err.message}` : 'No se pudieron generar las etiquetas. Verificá los datos.');
     } finally {
       setIsWorking(false);
     }

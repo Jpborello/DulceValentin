@@ -397,8 +397,8 @@ export default function PricesTab({
               className="form-input"
               style={{ fontSize: '0.85rem', padding: '7px 10px', fontWeight: 600 }}
             >
-              <option value="both">Ambos (Lista y Mayorista)</option>
-              <option value="list">Solo Precio Lista</option>
+              <option value="both">Ambos (Minorista y Mayorista)</option>
+              <option value="list">Solo Precio Minorista</option>
               <option value="wholesale">Solo Precio Mayorista</option>
             </select>
           </div>
@@ -485,8 +485,8 @@ export default function PricesTab({
         <thead>
           <tr>
             <th>Prenda</th>
-            <th>Precio de Lista ($)</th>
-            <th>Precio Mayorista ($)</th>
+            <th title="Se cobra en la Caja Principal al elegir 'Por menor'">Precio Minorista ($)<div style={{ fontSize: '0.68rem', fontWeight: 500, opacity: 0.8 }}>por menor en el local</div></th>
+            <th title="Es el precio de la web y de la caja por mayor">Precio Mayorista ($)<div style={{ fontSize: '0.68rem', fontWeight: 500, opacity: 0.8 }}>web y por mayor</div></th>
             <th>Calculadora de Aumento %</th>
             <th>Oferta / Nuevo</th>
             <th>Acción</th>
