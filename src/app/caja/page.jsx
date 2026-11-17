@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ScanLine, Search, Trash2, Minus, Plus, Send, Wallet, Receipt, LogOut, Loader2, X, Printer, RefreshCw, Store } from 'lucide-react';
+import { ScanLine, Search, Trash2, Minus, Plus, Send, Wallet, Receipt, LogOut, Loader2, X, Printer, RefreshCw, Store, WifiOff, CloudUpload, AlertTriangle } from 'lucide-react';
 import { supabase } from '@/lib/supabaseClient';
 import { adminFetch } from '@/lib/adminFetch';
 import { dataStore } from '@/lib/dataStore';
@@ -9,10 +9,32 @@ import { getProductColorsForSize } from '@/lib/catalogData';
 import { getProductPrice } from '@/lib/productPricing';
 import { FEATURES } from '@/lib/features';
 import { printThermalSaleTicket } from '@/lib/printUtils';
+import { resolveBarcodeMatches } from '@/lib/barcode';
+import {
+  isOffline,
+  isNetworkError,
+  cacheMe,
+  readCachedMe,
+  clearCachedMe,
+  savePosCatalog,
+  loadPosCatalog,
+  getQueue,
+  queueOfflineSale,
+  chargeOfflineSale,
+  queueOfflineCharge,
+  removeFromQueue,
+  clearQueueFlags,
+  syncOfflineQueue,
+  reservedByVariant,
+  QUEUE_EVENT
+} from '@/lib/posOffline';
 
 // Caja del local (2026-10). Vendedoras arman ventas a su nombre (quedan
 // "pendientes de cobro"); la cajera las cobra en efectivo o transferencia.
 // Toda la logica de stock/precios/permisos esta en /api/pos/* (servidor).
+// Sin internet (2026-11) la caja sigue vendiendo con la ultima copia del
+// catalogo y guarda las ventas en una cola que se sube sola al volver la
+// conexion (ver src/lib/posOffline.js).
 
 const money = (n) => `$${Number(n || 0).toLocaleString('es-AR')}`;
 const norm = (s) => String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().trim();
@@ -75,7 +97,7 @@ function LoginBox({ onLogged }) {
 }
 
 // ---------------------------------------------------------------- Nueva venta
-function NewSale({ me, sellers, products, onCreated }) {
+function NewSale({ me, sellers, products, offline, onCreated }) {
   const [lines, setLines] = useState([]);
   const [scan, setScan] = useState('');
   const [search, setSearch] = useState('');
@@ -104,13 +126,28 @@ function NewSale({ me, sellers, products, onCreated }) {
     const code = scan.trim();
     setScan('');
     if (!code) return;
+    // Primero se busca en el catalogo cargado (codigos de barra por variante
+    // del producto o codigo de articulo): anda con y sin internet.
+    const local = resolveBarcodeMatches(products, code);
+    if (local.length > 0) {
+      const m = local[0];
+      addLine(productById.get(m.product.id) || m.product, m.size, m.color);
+      if (local.length > 1) setMessage({ ok: false, text: `Ese código coincide con ${local.length} prendas: se agregó "${m.product.name}". Revisá que sea la correcta.` });
+      scanRef.current?.focus();
+      return;
+    }
+    if (offline) {
+      setMessage({ ok: false, text: `No hay ninguna prenda con el código ${code} en la copia guardada.` });
+      scanRef.current?.focus();
+      return;
+    }
     try {
       const data = await api(`/api/pos/lookup?barcode=${encodeURIComponent(code)}`);
       const product = productById.get(data.productId);
       if (!product) throw new Error('El producto de ese código ya no está en el catálogo.');
       addLine(product, data.size, data.color);
     } catch (err) {
-      setMessage({ ok: false, text: err.message });
+      setMessage({ ok: false, text: isNetworkError(err) ? 'Sin conexión y el código no está en la copia guardada.' : err.message });
     }
     scanRef.current?.focus();
   };
@@ -149,7 +186,25 @@ function NewSale({ me, sellers, products, onCreated }) {
     }
     setBusy(true);
     setMessage(null);
+    const resetForm = () => {
+      setLines([]);
+      setClientName('');
+      setClientPhone('');
+      setNotes('');
+    };
+    // Sin internet: la venta queda en la cola de este dispositivo.
+    const saveOffline = async () => {
+      const seller = sellers.find((s) => s.id === sellerId) || me;
+      const sale = await queueOfflineSale({ lines, productById, seller, me, clientName, clientPhone, notes });
+      resetForm();
+      setMessage({ ok: true, text: `Sin conexión: venta ${sale.id} por ${money(sale.total_amount)} guardada en este equipo. Se sube sola cuando vuelva internet.${chargeNow ? ' Cobrala abajo.' : ''}` });
+      onCreated(sale, chargeNow);
+    };
     try {
+      if (offline) {
+        await saveOffline();
+        return;
+      }
       const { sale } = await api('/api/pos/sales', {
         method: 'POST',
         body: JSON.stringify({
@@ -160,14 +215,22 @@ function NewSale({ me, sellers, products, onCreated }) {
           notes
         })
       });
-      setLines([]);
-      setClientName('');
-      setClientPhone('');
-      setNotes('');
+      resetForm();
       setMessage({ ok: true, text: `Venta ${sale.id} por ${money(sale.total_amount)} ${chargeNow ? 'creada: cobrala abajo.' : 'enviada a caja.'}` });
       onCreated(sale, chargeNow);
     } catch (err) {
-      setMessage({ ok: false, text: err.message });
+      if (!offline && isNetworkError(err)) {
+        // Se corto justo al enviar: se guarda en la cola. Caso raro: si el
+        // pedido llego al servidor y lo que se perdio fue la respuesta, la
+        // venta queda dos veces (la LOC- y la OFF-) y hay que cancelar una.
+        try {
+          await saveOffline();
+        } catch (offErr) {
+          setMessage({ ok: false, text: offErr.message });
+        }
+      } else {
+        setMessage({ ok: false, text: err.message });
+      }
     } finally {
       setBusy(false);
       scanRef.current?.focus();
@@ -283,7 +346,7 @@ function NewSale({ me, sellers, products, onCreated }) {
 }
 
 // ---------------------------------------------------------------- Cobro
-function ChargePanel({ sale, onDone, onClose }) {
+function ChargePanel({ sale, me, offline, onDone, onClose }) {
   const [method, setMethod] = useState('efectivo');
   const [received, setReceived] = useState('');
   const [busy, setBusy] = useState(false);
@@ -295,15 +358,32 @@ function ChargePanel({ sale, onDone, onClose }) {
   const confirm = async () => {
     setBusy(true);
     setError('');
+    const cashReceived = method === 'efectivo' && received !== '' ? Number(received) : null;
+    const offlineArgs = { paymentMethod: method, cashReceived, cashierName: me.name, me };
+    // Sin internet: venta de la cola -> se cobra en la cola; venta ya subida
+    // -> se encola solo el cobro.
+    const chargeOffline = () => (sale.offline ? chargeOfflineSale(sale.id, offlineArgs) : queueOfflineCharge(sale, offlineArgs));
     try {
-      const data = await api('/api/pos/sales/charge', {
-        method: 'POST',
-        body: JSON.stringify({ orderId: sale.id, paymentMethod: method, cashReceived: method === 'efectivo' && received !== '' ? Number(received) : null })
-      });
-      setResult({ ...data, method, cashReceived: method === 'efectivo' && received !== '' ? Number(received) : null });
+      const data = sale.offline || offline
+        ? await chargeOffline()
+        : await api('/api/pos/sales/charge', {
+          method: 'POST',
+          body: JSON.stringify({ orderId: sale.id, paymentMethod: method, cashReceived })
+        });
+      setResult({ ...data, method, cashReceived, offline: Boolean(sale.offline || offline) });
       onDone();
     } catch (err) {
-      setError(err.message);
+      if (!offline && !sale.offline && isNetworkError(err)) {
+        try {
+          const data = await chargeOffline();
+          setResult({ ...data, method, cashReceived, offline: true });
+          onDone();
+        } catch (offErr) {
+          setError(offErr.message);
+        }
+      } else {
+        setError(err.message);
+      }
     } finally {
       setBusy(false);
     }
@@ -324,6 +404,11 @@ function ChargePanel({ sale, onDone, onClose }) {
             <div style={{ padding: '12px', borderRadius: '10px', backgroundColor: '#ECFDF5', color: '#047857', fontWeight: 800, textAlign: 'center', marginBottom: '12px' }}>
               ✓ Cobrado{result.change !== null ? ` · Vuelto: ${money(result.change)}` : ''}
             </div>
+            {result.offline && (
+              <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', textAlign: 'center', marginTop: '-4px', marginBottom: '12px' }}>
+                Sin conexión: el cobro quedó guardado en este equipo y se sube solo cuando vuelva internet.
+              </p>
+            )}
             <div style={{ display: 'flex', gap: '8px' }}>
               <button type="button" onClick={() => printTicket({ ...sale, paid_at: result.paid_at }, { method: result.method, cashReceived: result.cashReceived, change: result.change })} className="btn-secondary" style={{ flex: 1, justifyContent: 'center', display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
                 <Printer size={16} /> Ticket
@@ -373,6 +458,11 @@ function SalesList({ sales, me, onCharge, onCancel, emptyText }) {
           <div style={{ display: 'flex', justifyContent: 'space-between', gap: '10px', flexWrap: 'wrap', alignItems: 'center' }}>
             <div>
               <strong>{s.id}</strong>
+              {s.offline && (
+                <span style={{ marginLeft: '6px', fontSize: '0.72rem', fontWeight: 800, color: s.syncError ? '#B91C1C' : '#92400E', backgroundColor: s.syncError ? '#FEF2F2' : '#FEF3C7', padding: '2px 7px', borderRadius: '20px' }}>
+                  {s.syncError ? '⚠ No se pudo subir' : '☁ Sin subir'}
+                </span>
+              )}
               <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}> · {new Date(s.created_at).toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })}{s.seller_name ? ` · ${s.seller_name}` : ''}{s.client_name && s.client_name !== 'Venta en el local' ? ` · ${s.client_name}` : ''}</span>
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -386,6 +476,7 @@ function SalesList({ sales, me, onCharge, onCancel, emptyText }) {
             {(s.items || []).map((it) => `${it.quantity}× ${it.product?.name}${it.product?.selectedSize ? ` T.${it.product.selectedSize}` : ''}${it.product?.selectedColor ? ` ${it.product.selectedColor}` : ''}`).join(' · ')}
           </div>
           {s.customer_notes && <div style={{ fontSize: '0.78rem', marginTop: '4px' }}>📝 {s.customer_notes}</div>}
+          {s.syncError && <div style={{ fontSize: '0.78rem', marginTop: '4px', color: '#B91C1C', fontWeight: 600 }}>{s.syncError}</div>}
           {s.status === 'pendiente_cobro' && (
             <div style={{ display: 'flex', gap: '8px', marginTop: '8px' }}>
               {me.role !== 'vendedora' && (
@@ -393,7 +484,9 @@ function SalesList({ sales, me, onCharge, onCancel, emptyText }) {
                   <Wallet size={15} /> Cobrar
                 </button>
               )}
-              <button type="button" onClick={() => onCancel(s)} className="btn-secondary" style={{ padding: '6px 12px', fontSize: '0.8rem' }}>Cancelar venta</button>
+              {!s.offlineChargeOnly && (
+                <button type="button" onClick={() => onCancel(s)} className="btn-secondary" style={{ padding: '6px 12px', fontSize: '0.8rem' }}>Cancelar venta</button>
+              )}
             </div>
           )}
         </div>
@@ -413,7 +506,9 @@ function Report({ me }) {
     try {
       setData(await api(`/api/pos/report?from=${from}&to=${to}`));
     } catch (err) {
-      setError(err.message);
+      setError(isNetworkError(err)
+        ? 'Sin conexión: el cierre se ve cuando vuelva internet. Las ventas guardadas en este equipo se suman al subirse.'
+        : err.message);
     }
   }, [from, to]);
 
@@ -486,10 +581,27 @@ function CajaPage() {
   const [sellers, setSellers] = useState([]);
   const [authError, setAuthError] = useState('');
   const [tab, setTab] = useState('new');
-  const [products, setProducts] = useState([]);
   const [pending, setPending] = useState([]);
   const [today, setToday] = useState([]);
   const [charging, setCharging] = useState(null);
+  const [offline, setOffline] = useState(false);
+  const [onlineProducts, setOnlineProducts] = useState([]);
+  const [offlineCatalog, setOfflineCatalog] = useState(null); // { products, savedAt, source }
+  const [queue, setQueue] = useState([]);
+  const [syncing, setSyncing] = useState(false);
+  const [syncNotice, setSyncNotice] = useState(null); // { ok, text }
+
+  // ---- conexion: navigator.onLine + eventos del navegador
+  useEffect(() => {
+    const update = () => setOffline(isOffline());
+    update();
+    window.addEventListener('online', update);
+    window.addEventListener('offline', update);
+    return () => {
+      window.removeEventListener('online', update);
+      window.removeEventListener('offline', update);
+    };
+  }, []);
 
   const loadMe = useCallback(async () => {
     setAuthError('');
@@ -503,51 +615,156 @@ function CajaPage() {
       const data = await api('/api/pos/me');
       setMe(data.staff);
       setSellers(data.sellers || []);
+      cacheMe(session.user.id, data.staff, data.sellers || []);
     } catch (err) {
-      setMe(null);
-      setAuthError(err.message);
+      // Sin internet: se entra con el ultimo usuario verificado en este equipo.
+      const cached = isNetworkError(err) ? readCachedMe(session.user.id) : null;
+      if (cached) {
+        setMe(cached.staff);
+        setSellers(cached.sellers || []);
+      } else {
+        setMe(null);
+        setAuthError(isNetworkError(err)
+          ? 'Sin conexión y este usuario nunca entró a la caja en este equipo: hace falta internet para el primer ingreso.'
+          : err.message);
+      }
     }
     setChecking(false);
   }, []);
 
   useEffect(() => { loadMe(); }, [loadMe]);
 
+  // ---- catalogo: el de la base cuando hay internet (y se guarda copia), la copia cuando no
   useEffect(() => {
-    const update = () => setProducts(dataStore.getProducts().filter((p) => Number(p.stock) > 0));
+    const update = () => {
+      const list = dataStore.getProducts();
+      setOnlineProducts(list.filter((p) => Number(p.stock) > 0));
+      if (dataStore.productsSyncedAt) savePosCatalog(list);
+    };
     update();
     const unsub = dataStore.subscribe(update);
     const unsubRt = dataStore.subscribeProductsRealtime();
     return () => { unsub(); unsubRt(); };
   }, []);
 
+  useEffect(() => {
+    if (offline) loadPosCatalog().then(setOfflineCatalog);
+  }, [offline]);
+
+  // Sin internet se descuenta lo vendido en la cola, para no ofrecer prendas que ya se fueron.
+  const products = useMemo(() => {
+    if (!offline) return onlineProducts;
+    const list = offlineCatalog?.products || [];
+    const reserved = reservedByVariant(queue);
+    const reservedByProduct = new Map();
+    reserved.forEach((qty, key) => {
+      const id = key.split('::')[0];
+      reservedByProduct.set(id, (reservedByProduct.get(id) || 0) + qty);
+    });
+    // (no se modifica el objeto: el control fino por talle/color lo hace la cola al guardar)
+    return list.filter((p) => Number(p.stock) - (reservedByProduct.get(p.id) || 0) > 0);
+  }, [offline, onlineProducts, offlineCatalog, queue]);
+
+  // ---- cola de ventas sin conexion
+  const loadQueue = useCallback(() => getQueue().then(setQueue).catch(() => {}), []);
+  useEffect(() => {
+    loadQueue();
+    window.addEventListener(QUEUE_EVENT, loadQueue);
+    return () => window.removeEventListener(QUEUE_EVENT, loadQueue);
+  }, [loadQueue]);
+
   const refreshLists = useCallback(async () => {
-    if (!me) return;
+    if (!me || isOffline()) return;
     try {
       const [p, t] = await Promise.all([api('/api/pos/sales?scope=pending'), api('/api/pos/sales?scope=today')]);
       setPending(p.sales || []);
       setToday(t.sales || []);
-    } catch {}
+      setOffline(false); // wifi conectado pero sin internet: se recupera cuando el servidor vuelve a responder
+    } catch (err) {
+      if (isNetworkError(err)) setOffline(true);
+    }
   }, [me]);
+
+  const runSync = useCallback(async () => {
+    if (!me || isOffline()) return;
+    const current = await getQueue();
+    if (!current.some((e) => !e.error)) return;
+    setSyncing(true);
+    try {
+      const r = await syncOfflineQueue(api);
+      if (r.synced > 0 || r.failed > 0) {
+        const parts = [];
+        if (r.synced > 0) parts.push(`${r.synced} venta${r.synced > 1 ? 's' : ''} sin conexión subida${r.synced > 1 ? 's' : ''}`);
+        if (r.failed > 0) parts.push(`${r.failed} con error (revisalas en la lista)`);
+        setSyncNotice({ ok: r.failed === 0 && r.warnings.length === 0, text: [parts.join(' · '), ...r.warnings].join(' — ') });
+      }
+      refreshLists();
+    } finally {
+      setSyncing(false);
+    }
+  }, [me, refreshLists]);
 
   useEffect(() => {
     if (!me) return;
     refreshLists();
-    const id = setInterval(refreshLists, 8000);
+    runSync();
+    const id = setInterval(() => { refreshLists(); runSync(); }, 8000);
     return () => clearInterval(id);
-  }, [me, refreshLists]);
+  }, [me, refreshLists, runSync]);
+
+  // Al volver internet: subir la cola enseguida.
+  useEffect(() => {
+    if (!offline && me) runSync();
+  }, [offline, me, runSync]);
+
+  // Listas: lo que vino del servidor + lo que esta en la cola de este equipo.
+  const queueSales = useMemo(
+    () => queue.map((e) => ({ ...e.sale, offline: true, syncError: e.error, offlineChargeOnly: !e.request })),
+    [queue]
+  );
+  const queuedIds = useMemo(() => new Set(queue.map((e) => e.offlineId)), [queue]);
+  const pendingAll = useMemo(
+    () => [...queueSales.filter((s) => s.status === 'pendiente_cobro'), ...pending.filter((s) => !queuedIds.has(s.id))],
+    [queueSales, pending, queuedIds]
+  );
+  const todayAll = useMemo(
+    () => [...queueSales, ...today.filter((s) => !queuedIds.has(s.id))],
+    [queueSales, today, queuedIds]
+  );
+  const queueErrors = queue.filter((e) => e.error);
 
   const handleCancel = async (sale) => {
+    if (sale.offline) {
+      if (!window.confirm(`¿Cancelar la venta ${sale.id}? Todavía no se subió: se borra de este equipo.`)) return;
+      await removeFromQueue(sale.id);
+      return;
+    }
     if (!window.confirm(`¿Cancelar la venta ${sale.id}? Las prendas vuelven al stock.`)) return;
     try {
       await api('/api/pos/sales/cancel', { method: 'POST', body: JSON.stringify({ orderId: sale.id }) });
       refreshLists();
     } catch (err) {
-      window.alert(err.message);
+      window.alert(isNetworkError(err) ? 'Sin conexión: esta venta ya está subida y se puede cancelar cuando vuelva internet.' : err.message);
     }
   };
 
+  const retryQueueEntry = async (offlineId) => {
+    await clearQueueFlags(offlineId);
+    runSync();
+  };
+
+  const discardQueueEntry = async (entry) => {
+    const msg = entry.request
+      ? `¿Descartar la venta ${entry.offlineId}? No va a quedar registrada en el sistema (ni descuenta stock). Hacelo solo si la vas a cargar a mano.`
+      : `¿Descartar el cobro sin conexión de ${entry.offlineId}? La venta vuelve a quedar "por cobrar".`;
+    if (!window.confirm(msg)) return;
+    await removeFromQueue(entry.offlineId);
+  };
+
   const logout = async () => {
+    if (queue.length > 0 && !window.confirm(`Hay ${queue.length} venta(s) sin subir en este equipo. Quedan guardadas, pero para subirlas hay que volver a entrar con internet. ¿Salir igual?`)) return;
     await supabase.auth.signOut();
+    clearCachedMe();
     setMe(null);
   };
 
@@ -563,7 +780,7 @@ function CajaPage() {
 
   const tabs = [
     { id: 'new', label: 'Nueva venta', icon: ScanLine },
-    { id: 'pending', label: `Por cobrar (${pending.length})`, icon: Wallet },
+    { id: 'pending', label: `Por cobrar (${pendingAll.length})`, icon: Wallet },
     { id: 'today', label: 'Ventas de hoy', icon: Receipt },
     { id: 'report', label: me.role === 'vendedora' ? 'Mis comisiones' : 'Cierre y comisiones', icon: Receipt }
   ];
@@ -579,6 +796,52 @@ function CajaPage() {
           </div>
         </header>
 
+        {offline && (
+          <div role="status" style={{ display: 'flex', gap: '10px', alignItems: 'flex-start', padding: '10px 14px', borderRadius: '12px', marginBottom: '12px', backgroundColor: '#FEF3C7', color: '#92400E', border: '1px solid #F59E0B' }}>
+            <WifiOff size={18} style={{ flexShrink: 0, marginTop: '2px' }} />
+            <div style={{ fontSize: '0.86rem', fontWeight: 600 }}>
+              <strong>Sin conexión.</strong> Podés seguir vendiendo: las ventas se guardan en este equipo y se suben solas cuando vuelva internet.
+              {offlineCatalog?.savedAt
+                ? ` Precios y stock de la copia del ${new Date(offlineCatalog.savedAt).toLocaleString('es-AR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}${offlineCatalog.source === 'respaldo' ? ' (respaldo del panel)' : ''}.`
+                : ' No hay copia del catálogo guardada en este equipo: entrá a la caja una vez con internet para que se guarde.'}
+            </div>
+          </div>
+        )}
+
+        {queue.length > 0 && (
+          <div style={{ padding: '10px 14px', borderRadius: '12px', marginBottom: '12px', backgroundColor: 'var(--bg-card)', border: `1px solid ${queueErrors.length ? '#DC2626' : 'var(--border-color)'}` }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', justifyContent: 'space-between', flexWrap: 'wrap' }}>
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '0.88rem', fontWeight: 800 }}>
+                <CloudUpload size={17} /> {queue.length} venta{queue.length > 1 ? 's' : ''} sin subir en este equipo
+                {syncing && <Loader2 size={15} className="animate-spin" />}
+              </span>
+              {!offline && (
+                <button type="button" onClick={runSync} disabled={syncing} className="btn-secondary" style={{ padding: '5px 10px', fontSize: '0.8rem', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                  <RefreshCw size={13} /> Subir ahora
+                </button>
+              )}
+            </div>
+            {queueErrors.map((e) => (
+              <div key={e.offlineId} style={{ marginTop: '8px', padding: '8px 10px', borderRadius: '8px', backgroundColor: '#FEF2F2', color: '#991B1B', fontSize: '0.82rem' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontWeight: 700 }}>
+                  <AlertTriangle size={14} /> {e.offlineId} · {money(e.sale?.total_amount)}: {e.error}
+                </div>
+                <div style={{ display: 'flex', gap: '6px', marginTop: '6px' }}>
+                  <button type="button" onClick={() => retryQueueEntry(e.offlineId)} disabled={offline} className="btn-secondary" style={{ padding: '4px 10px', fontSize: '0.78rem' }}>Reintentar</button>
+                  <button type="button" onClick={() => discardQueueEntry(e)} className="btn-secondary" style={{ padding: '4px 10px', fontSize: '0.78rem', color: '#B91C1C' }}>Descartar</button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {syncNotice && (
+          <div role="status" style={{ display: 'flex', justifyContent: 'space-between', gap: '8px', padding: '8px 12px', borderRadius: '10px', marginBottom: '12px', fontSize: '0.84rem', fontWeight: 600, backgroundColor: syncNotice.ok ? '#ECFDF5' : '#FEF3C7', color: syncNotice.ok ? '#047857' : '#92400E' }}>
+            <span>{syncNotice.text}</span>
+            <button type="button" onClick={() => setSyncNotice(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'inherit' }} aria-label="Cerrar"><X size={15} /></button>
+          </div>
+        )}
+
         <nav style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginBottom: '16px' }}>
           {tabs.map((t) => (
             <button key={t.id} type="button" onClick={() => setTab(t.id)} className={`admin-tab-btn ${tab === t.id ? 'active' : ''}`}>
@@ -592,19 +855,22 @@ function CajaPage() {
             me={me}
             sellers={sellers}
             products={products}
+            offline={offline}
             onCreated={(sale, chargeNow) => {
               refreshLists();
               if (chargeNow) setCharging(sale);
             }}
           />
         )}
-        {tab === 'pending' && <SalesList sales={pending} me={me} onCharge={setCharging} onCancel={handleCancel} emptyText="No hay ventas pendientes de cobro." />}
-        {tab === 'today' && <SalesList sales={today} me={me} onCharge={setCharging} onCancel={handleCancel} emptyText="Todavía no hay ventas hoy." />}
+        {tab === 'pending' && <SalesList sales={pendingAll} me={me} onCharge={setCharging} onCancel={handleCancel} emptyText="No hay ventas pendientes de cobro." />}
+        {tab === 'today' && <SalesList sales={todayAll} me={me} onCharge={setCharging} onCancel={handleCancel} emptyText="Todavía no hay ventas hoy." />}
         {tab === 'report' && <Report me={me} />}
 
         {charging && (
           <ChargePanel
             sale={charging}
+            me={me}
+            offline={offline}
             onDone={refreshLists}
             onClose={() => setCharging(null)}
           />

@@ -4,7 +4,8 @@
   "description": "",
   "main": "agent.js",
   "scripts": {
-    "start": "node agent.js"
+    "start": "node agent.js",
+    "backup": "node backup.js"
   },
   "keywords": [],
   "author": "",

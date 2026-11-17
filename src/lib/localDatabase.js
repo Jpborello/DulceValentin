@@ -8,7 +8,6 @@ const DB_NAME = 'dulce_valentin_local_db';
 const DB_VERSION = 1;
 const STORE_NAME = 'snapshots';
 const KEY_CURRENT = 'current_database_snapshot';
-const LS_MODE_KEY = 'dv_operation_mode'; // 'online' | 'local'
 const LS_META_KEY = 'dv_local_snapshot_meta';
 
 /**
@@ -51,6 +50,30 @@ function openIndexedDB() {
 
     request.onsuccess = () => resolve(request.result);
     request.onerror = () => reject(request.error);
+  });
+}
+
+/**
+ * Lectura/escritura genérica de una clave en el mismo store de IndexedDB.
+ * La usa la caja sin conexión (catálogo cacheado y cola de ventas).
+ */
+export async function idbGet(key) {
+  const db = await openIndexedDB();
+  return new Promise((resolve, reject) => {
+    const req = db.transaction(STORE_NAME, 'readonly').objectStore(STORE_NAME).get(key);
+    req.onsuccess = () => resolve(req.result ?? null);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+export async function idbSet(key, value) {
+  const db = await openIndexedDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(STORE_NAME, 'readwrite');
+    tx.objectStore(STORE_NAME).put(value, key);
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+    tx.onabort = () => reject(tx.error);
   });
 }
 
@@ -132,24 +155,6 @@ export function getLocalSnapshotMeta() {
   } catch {
     return null;
   }
-}
-
-/**
- * Consulta si el modo de operación actual es "local" (contingencia sin internet).
- */
-export function isLocalOperationMode() {
-  if (typeof window === 'undefined') return false;
-  return localStorage.getItem(LS_MODE_KEY) === 'local';
-}
-
-/**
- * Cambia el modo de operación entre 'online' y 'local'.
- */
-export function setLocalOperationMode(isLocal) {
-  if (typeof window === 'undefined') return;
-  localStorage.setItem(LS_MODE_KEY, isLocal ? 'local' : 'online');
-  // Disparar evento para que la interfaz se entere inmediatamente
-  window.dispatchEvent(new CustomEvent('dv:mode-change', { detail: { isLocal } }));
 }
 
 /**

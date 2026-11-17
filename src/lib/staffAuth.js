@@ -39,6 +39,23 @@ export async function getStaff(req, roles = ['admin', 'cajera', 'vendedora']) {
   return { staff };
 }
 
+// Fecha real de una venta/cobro hecho sin internet (ver src/lib/posOffline.js),
+// para que caiga en el dia correcto del cierre. Solo se acepta si es del
+// pasado (con 5 min de tolerancia de reloj) y de las ultimas 2 semanas.
+const OFFLINE_MAX_AGE_MS = 14 * 24 * 60 * 60 * 1000;
+export function parseOfflineDate(value) {
+  if (!value) return null;
+  const d = new Date(value);
+  const now = Date.now();
+  if (Number.isNaN(d.getTime()) || d.getTime() > now + 5 * 60 * 1000 || now - d.getTime() > OFFLINE_MAX_AGE_MS) return null;
+  return d.toISOString();
+}
+
+// Dia 'YYYY-MM-DD' en hora de Argentina de una fecha ISO.
+export function argentinaDay(iso) {
+  return new Date(iso).toLocaleString('sv-SE', { timeZone: 'America/Argentina/Buenos_Aires' }).slice(0, 10);
+}
+
 // Rango de un dia completo en hora de Argentina (UTC-3), para "ventas de
 // hoy" y el cierre de caja. date: 'YYYY-MM-DD' (por defecto, hoy).
 export function argentinaDayRange(date) {

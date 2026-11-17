@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { getStaff, supabaseAdmin, deny, argentinaDayRange } from '@/lib/staffAuth';
+import { getStaff, supabaseAdmin, deny, argentinaDayRange, parseOfflineDate } from '@/lib/staffAuth';
 import { getProductPrice } from '@/lib/productPricing';
 import { getProductStockForSizeColor } from '@/lib/catalogData';
 
@@ -50,7 +50,13 @@ export async function GET(req) {
   });
 }
 
-// POST { items: [{ id, quantity, size, color }], sellerId?, clientName?, clientPhone?, notes? }
+// Ventas hechas sin internet (ver src/lib/posOffline.js): llegan con su
+// propio numero OFF-XXXXXXXX, que se usa como id. Si el mismo envio llega dos
+// veces (se corto la conexion justo despues de guardarla), la segunda vez se
+// devuelve la venta ya guardada sin descontar stock de nuevo.
+const OFFLINE_ID_RE = /^OFF-[A-Z0-9]{8}$/;
+
+// POST { items: [{ id, quantity, size, color }], sellerId?, clientName?, clientPhone?, notes?, offlineId?, offlineCreatedAt? }
 export async function POST(req) {
   const { staff, response } = await getStaff(req);
   if (response) return response;
@@ -60,6 +66,16 @@ export async function POST(req) {
     body = await req.json();
   } catch {
     return deny(400, 'Venta inválida.');
+  }
+
+  const offlineId = body.offlineId ? String(body.offlineId).trim().toUpperCase() : null;
+  if (offlineId && !OFFLINE_ID_RE.test(offlineId)) return deny(400, 'Número de venta sin conexión inválido.');
+  const offlineCreatedAt = offlineId ? parseOfflineDate(body.offlineCreatedAt) : null;
+  if (offlineId && !offlineCreatedAt) return deny(400, 'La fecha de la venta sin conexión no es válida (más de 14 días o en el futuro).');
+
+  if (offlineId) {
+    const { data: existing } = await supabaseAdmin.from('orders').select(SALE_COLUMNS).eq('id', offlineId).maybeSingle();
+    if (existing) return NextResponse.json({ sale: existing, duplicate: true });
   }
 
   // La vendedora siempre vende a su nombre; caja/admin eligen a quien se le
@@ -131,17 +147,20 @@ export async function POST(req) {
   }
 
   const total = lines.reduce((s, l) => s + l.product.unit_price * l.quantity, 0);
+  const offlineNote = offlineId
+    ? `[Venta sin conexión, cargada el ${new Date(offlineCreatedAt).toLocaleString('es-AR', { timeZone: 'America/Argentina/Buenos_Aires', hour12: false })}, subida por ${staff.name}]`
+    : '';
   const sale = {
-    id: randomSaleId(),
+    id: offlineId || randomSaleId(),
     channel: 'local',
     status: 'pendiente_cobro',
-    created_at: new Date().toISOString(),
+    created_at: offlineCreatedAt || new Date().toISOString(),
     client_name: clean(body.clientName, 120) || 'Venta en el local',
     client_phone: clean(body.clientPhone, 30).replace(/\D/g, '').slice(-10) || '',
     client_dni: '',
     client_locality: 'Rosario',
     delivery_method: 'Venta en el local',
-    customer_notes: clean(body.notes, 500) || null,
+    customer_notes: [clean(body.notes, 500), offlineNote].filter(Boolean).join(' ') || null,
     items: lines,
     total_amount: total,
     is_wholesale: true,
@@ -152,6 +171,16 @@ export async function POST(req) {
   };
 
   let { error: insertErr } = await supabaseAdmin.from('orders').insert(sale);
+  if (insertErr?.code === '23505' && offlineId) {
+    // Dos envios simultaneos de la misma venta sin conexion: gano el otro.
+    // Se devuelve el stock de este y la venta que ya quedo guardada.
+    await Promise.all(deducted.map((l) => supabaseAdmin.rpc('restore_variant_stock', {
+      p_product_id: l.product.id, p_size: l.product.selectedSize, p_color: l.product.selectedColor, p_qty: l.quantity
+    })));
+    const { data: existing } = await supabaseAdmin.from('orders').select(SALE_COLUMNS).eq('id', offlineId).maybeSingle();
+    if (existing) return NextResponse.json({ sale: existing, duplicate: true });
+    return deny(500, 'No se pudo guardar la venta. Probá de nuevo.');
+  }
   if (insertErr?.code === '23505') {
     sale.id = randomSaleId();
     ({ error: insertErr } = await supabaseAdmin.from('orders').insert(sale));

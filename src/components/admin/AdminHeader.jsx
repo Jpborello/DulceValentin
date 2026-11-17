@@ -38,7 +38,7 @@ export default function AdminHeader({ onLogout, visitCount, notifPermission, onR
               boxShadow: isBackupsActive ? '0 4px 14px rgba(194, 24, 91, 0.35)' : 'none',
               transition: 'all 0.2s ease'
             }}
-            title="Respaldo físico en 1 clic en Windows, planillas para Excel y modo offline"
+            title="Respaldo en 1 clic, planillas para Excel y consulta sin internet"
           >
             <ShieldCheck size={16} /> Respaldo & Modo Local
           </button>

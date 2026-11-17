@@ -1,122 +1,90 @@
 # Documento de Especificaciones Técnicas y Operativas
-## Sistema de Blindaje Local-First, Backup en 1 Clic y Modo de Contingencia Offline
+## Respaldo Local + Nube y Funcionamiento sin Internet
 
 **Proyecto:** Dulce Valentín — Sistema Web y Punto de Venta  
-**Fecha de Implementación:** Noviembre 2026  
-**Versión:** 1.0.0-local-first  
-**Estado:** Producción Verificado  
+**Versión:** 2.0.0 (17/11/2026). Reemplaza a la 1.0.0-local-first.
 
 ---
 
-### 1. Resumen Ejecutivo
-El **Plan de Blindaje Local-First y Backup en 1 Clic** de Dulce Valentín dota a la empresa de una infraestructura de resiliencia total frente a cortes de internet, caídas de servicios de nube o fallas de conectividad en el local comercial.
+### 1. Resumen
 
-Permite:
-1. **Respaldar el 100% de la base de datos física y comercial en 1 solo clic**, detectando la carpeta del usuario en Windows (`C:\Users\<Usuario>\Backups_DulceValentin`) y generando tanto un volcado maestro JSON como 4 planillas listas para Microsoft Excel.
-2. **Doble respaldo en navegador:** Descarga simultánea de archivos Blob al explorador para redundancia inmediata.
-3. **Modo Local / Contingencia Offline (IndexedDB):** Acceso instantáneo a catálogo, búsqueda por nombre, código de artículo y código de barras, precios por menor/mayor y stock físico desglosado por talle y color sin requerir internet.
-4. **Diseño Adaptativo de Alta Gama (Bento Grid):** Interfaz armónica en Dark Mode y Light Mode, con métricas en tiempo real y sin sobrecargar la barra principal de navegación.
+El sistema tiene **tres copias de los datos** y la caja **sigue vendiendo sin internet**:
 
----
+| Copia | Dónde | Cuándo se actualiza |
+| :--- | :--- | :--- |
+| **Nube** (fuente de verdad) | Supabase | En tiempo real |
+| **Punto local** | Disco de la PC del local: `C:\Users\<usuario>\Backups_DulceValentin` | Automático, cada 6 h y al prender la PC (print-agent) |
+| **Navegador** | IndexedDB de cada equipo + archivo en Descargas | Al tocar "Respaldar en 1 clic" (panel) y cada vez que la caja carga productos |
 
-### 2. Arquitectura de Datos y Tablas Auditadas
-
-| Entidad / Tabla | Cantidad Auditada | Descripción y Campos Principales |
-| :--- | :---: | :--- |
-| `products` | **324** | Catálogo general de prendas, precios minoristas y mayoristas, categorías, subcategorías, talles, colores, stock total y matriz de códigos de barra (`barcodes` JSONB). |
-| `wholesale_clients` | **225** | Directorio de clientes mayoristas y registrados con nombres, teléfonos (normalizados), DNI, localidad y roles. |
-| `orders` | **21** | Historial de pedidos y ventas web y de local, detalle de prendas (`items` JSONB), medios de pago, vendedoras/cajeras asignadas y montos. |
-| `stock_movements` | **349** | Auditoría histórica de ingresos, egresos y ventas de mercadería. |
-| `categories` | **82** | Árbol de categorías y subcategorías del negocio. |
-| `pos_cashiers` | **2** | Personal de caja habilitado para cobro en mostrador. |
-| `pos_shifts` | **—** | Registro de turnos de caja, aperturas, cobros y cierres Z. |
-| `raffle_tickets` | **7** | Cupones emitidos para el sorteo en vivo del local. |
+> Corrección respecto de la versión 1.0: el botón del panel **no** escribe en el disco de la PC del local. El sitio corre en Vercel (en la nube) y desde ahí no se puede escribir en la PC. La copia física en el local la hace el **print-agent**.
 
 ---
 
-### 3. Componentes Implementados
+### 2. Qué se respalda
 
-#### 3.1. API Route de Exportación Física
-- **Ruta:** `/api/admin/backups/export` (`POST`)
-- **Archivo:** `src/app/api/admin/backups/export/route.js`
-- **Mecanismo:**
-  1. Valida permisos de administrador mediante token Bearer (`requireAdmin`).
-  2. Extrae en paralelo todas las tablas de Supabase.
-  3. Detecta la carpeta del sistema operativo:
-     ```javascript
-     const homeDir = process.env.USERPROFILE || process.env.HOME || os.homedir();
-     const backupDir = path.join(homeDir, 'Backups_DulceValentin');
-     ```
-  4. Crea la carpeta en caso de no existir.
-  5. Escribe en disco:
-     - `backup_dulce_valentin_<timestamp>.json` (Snapshot maestro completo)
-     - `base_completa_reciente.json` (Snapshot de acceso directo)
-     - `catalogo_productos_<fecha>.csv`
-     - `stock_por_talle_y_color_<fecha>.csv`
-     - `ventas_y_pedidos_<fecha>.csv`
-     - `clientes_y_contactos_<fecha>.csv`
-  6. Devuelve la carga útil al cliente para hidratar IndexedDB y disparar descargas de navegador.
+20 tablas completas, leídas **de a 1000 filas** (paginado) y verificadas contra el total de cada tabla. Si alguna tabla obligatoria falla o vuelve incompleta, **el respaldo se cancela** y no pisa la copia buena anterior.
 
-#### 3.2. Formato de Planillas para Microsoft Excel
-Para evitar que los caracteres con tildes (á, é, í, ó, ú, ñ) se corrompan o que Excel desplace las columnas, todas las planillas CSV se generan bajo las siguientes reglas estrictas:
-- **BOM UTF-8 (`\uFEFF`):** Permite a Microsoft Excel en Windows reconocer de inmediato la codificación en español.
-- **Delimitador de punto y coma (`;`):** Estándar de Excel en Argentina y países hispanohablantes donde la coma es separador decimal.
-- **Escape de comillas dobles y salto de línea:** Los campos de texto se encierran entre `"..."` con reemplazo de caracteres de retorno de carro por espacios.
+`products`, `wholesale_clients`, `orders`, `categories` (obligatorias) · `pos_shifts`, `pos_cashiers`, `pos_config`, `raffle_tickets`, `stock_movements`, `product_suppliers`, `product_barcodes`, `staff`, `seller_sales`, `seller_advances`, `seller_payouts`, `seller_commission_rates`, `cash_counts`, `cash_expenses`, `vouchers`, `payment_aliases` (opcionales: si una no existe en la base se omite y se avisa).
 
-#### 3.3. Gestor Local-First e IndexedDB
-- **Archivo:** `src/lib/localDatabase.js`
-- **Base IndexedDB:** `dulce_valentin_local_db` (Versión 1)
-- **Object Store:** `snapshots` (Clave: `current_database_snapshot`)
-- **Metadatos en localStorage:** `dv_local_snapshot_meta` (permite lectura síncrona sin latencia al montar la pantalla).
-- **Modo de contingencia:** Evento `dv:mode-change` que conmuta la interfaz entre consulta en línea y búsqueda a 0ms en memoria local.
+El JSON incluye datos personales de clientes (DNI, teléfonos y la columna `password` de `wholesale_clients`). Los archivos de respaldo se guardan con cuidado y no se comparten.
 
-#### 3.4. Interfaz de Usuario y Navegación (Bento Grid)
-- **Archivo:** `src/components/admin/BackupsTab.jsx`
-- **Ubicación del Acceso:** Botón `[ 🛡️ Respaldo & Modo Local ]` en `AdminHeader.jsx`. Al estar en la cabecera superior:
-  - No consume espacio en la barra horizontal de pestañas (`AdminTabsNav.jsx`).
-  - Mantiene 100% visible la pestaña `🎰 Sorteo en Vivo` y el resto de las 17 secciones operativas.
-  - Es accesible desde cualquier vista a 1 solo clic.
-- **Bento Cards de Métricas Vivas:**
-  - 🏷️ **Prendas en Catálogo:** Cantidad en tiempo real + badge `● Variantes activas`.
-  - 📦 **Stock Físico Total:** Suma real de unidades físicas (`u.`) en local y depósito.
-  - 💳 **Ventas y Pedidos:** Historial de tickets emitidos por caja y tienda online.
-  - 👥 **Directorio de Clientes:** Cantidad unificada de clientes mayoristas y compradores.
-- **Visor de Contingencia Offline:** Buscador instantáneo con filtro por nombre, código de artículo (ej. `0314`) o código de barras, con visualización de precio minorista, mayorista y chips de stock por talle y color.
-- **Inspección de Archivos:** Permite arrastrar o cargar cualquier `.json` histórico para verificar datos o montarlo en la memoria local.
-
-#### 3.5. Guía Interactiva Paso a Paso
-- **Archivo:** `src/components/admin/BackupGuideModal.jsx`
-- Modal interactivo de 4 pasos para operadoras y administradoras:
-  1. *¿Para qué sirve esta pantalla?*
-  2. *El botón de Respaldo en 1 Clic*
-  3. *Modo Local si se corta Internet*
-  4. *Planillas Excel listas para contabilidad*
-- Botón permanente `¿Cómo funciona esta pantalla?` para volver a abrir la guía en cualquier momento.
+Archivos generados (mismo formato en el panel y en el print-agent):
+- `backup_dulce_valentin_<AAAA-MM-DD_HH-MM-SS>.json`: copia completa fechada (hora de Argentina).
+- `base_completa_reciente.json`: siempre la última copia buena.
+- `catalogo_productos_<fecha>.csv`, `stock_por_talle_y_color_<fecha>.csv`, `ventas_y_pedidos_<fecha>.csv`, `clientes_y_contactos_<fecha>.csv`: para Excel (UTF-8 con BOM, separador `;`).
+- `estado_respaldo.json` (solo en el print-agent): resultado del último intento.
 
 ---
 
-### 4. Pruebas de Funcionamiento en Vivo
+### 3. Componentes
 
-En la prueba de ejecución directa en la máquina host Windows (`C:\Users\jpbor`), el sistema verificó con éxito:
-1. Conexión y extracción a Supabase de 324 prendas, 225 clientes y 21 ventas.
-2. Cálculo síncrono de stock físico: **12.469 unidades**.
-3. Creación automática del directorio `C:\Users\jpbor\Backups_DulceValentin`.
-4. Escritura física de:
-   - `backup_dulce_valentin_2026-11-15_03-46-41.json` (**1.41 MB**)
-   - `base_completa_reciente.json` (**1.41 MB**)
-   - `catalogo_productos_2026-11-15.csv` (**44.8 KB**, 324 filas)
-   - `stock_por_talle_y_color_2026-11-15.csv` (**188.5 KB**, 2.122 filas de variantes)
-   - `ventas_y_pedidos_2026-11-15.csv` (**4.2 KB**, 21 filas)
-   - `clientes_y_contactos_2026-11-15.csv` (**17.3 KB**, 225 filas)
-5. Compilación general de Next.js (`npm run build`) completada con **Código 0** sin errores.
+#### 3.1. Armado del respaldo — `src/lib/backupBuilder.js`
+Función `buildBackup()` compartida por las dos rutas. Requiere `SUPABASE_SERVICE_ROLE_KEY`: sin ella da un error, en vez de traer datos parciales con la clave pública.
+
+#### 3.2. Botón del panel — `POST /api/admin/backups/export`
+- Requiere sesión de administradora.
+- Devuelve el snapshot. El navegador lo guarda en IndexedDB y descarga el JSON y la planilla de stock.
+- Solo escribe en disco si el servidor corre en una PC (por ejemplo `npm run dev`). En Vercel avisa que no lo hizo.
+
+#### 3.3. Punto local — `print-agent/backup.js` + `GET /api/admin/backups/agent`
+- Corre dentro del mismo agente de impresión (`npm start`) o suelto (`npm run backup`).
+- Se autentica con el header `x-agent-secret` (`BACKUP_AGENT_SECRET` o, si no está, `PRINT_AGENT_SECRET`). Ese secreto da acceso a toda la base.
+- Se baja en dos partes (`?part=snapshot` y `?part=csv`) para no pasar el límite de tamaño de respuesta de Vercel.
+- Escribe a un `.tmp` y después renombra: un corte de luz a mitad de la escritura no daña la copia anterior.
+- Rota las copias y guarda las últimas `BACKUP_KEEP` (30). Configuración en `print-agent/.env`.
+- Sin internet, ese intento falla y la última copia buena queda intacta.
+
+#### 3.4. Panel y caja abren sin internet — `public/sw.js` (v2)
+- `/admin` y `/caja`: se guarda solo el "cascarón" HTML, que no trae datos, en un cache que no se recorta. Las respuestas de `/api` nunca se guardan.
+- La navegación espera 8 s a la red y después usa la copia guardada (caso de wifi conectado pero sin internet).
+- Condición: el panel y la caja tienen que haberse abierto **al menos una vez con internet en ese equipo**, y en producción (en `npm run dev` el service worker no se registra).
+- Sin conexión, el panel entra con el último rol de administradora verificado en ese navegador y abre directo en "Respaldo & Modo Local".
+
+#### 3.5. Caja sin internet — `src/lib/posOffline.js` + `src/app/caja/page.jsx`
+- **Detección automática** (`navigator.onLine` y fallas de red). No hay que activar ningún modo a mano.
+- **Catálogo:** copia en IndexedDB que se actualiza sola cada vez que la caja carga productos con internet. Si nunca se guardó, usa el respaldo del panel.
+- **Usuario:** se entra con el último usuario verificado en ese equipo. El primer ingreso necesita internet.
+- **Ventas:** se guardan en una cola con número `OFF-XXXXXXXX`. Se controla el stock contra la copia, descontando lo ya vendido en la cola. El ticket se imprime igual.
+- **Cobro:** de ventas de la cola o de ventas ya subidas (se encola solo el cobro).
+- **Escaneo:** primero busca en el catálogo cargado (`products.barcodes` o código de artículo), así que anda con y sin internet.
+- **Subida automática** al volver internet, cada 8 s mientras haya pendientes, o con "Subir ahora":
+  - El servidor usa el `OFF-` como id de la venta: un reenvío **no duplica** ni descuenta stock dos veces.
+  - Se respetan la fecha y hora reales de la venta y del cobro, para que caigan en el día correcto del cierre y las comisiones.
+  - Si el servidor la rechaza (por ejemplo, esa prenda se vendió por la web mientras tanto), queda marcada con el error y la caja elige **Reintentar** o **Descartar**.
+  - Si el precio cambió entre la copia y la subida, la venta queda con el precio actual y la caja recibe un aviso con la diferencia.
+- **Límites:** no se pueden ver el cierre ni las comisiones, ni cancelar ventas ya subidas, hasta que vuelva internet. Las ventas de un equipo sin conexión solo se ven en ese equipo hasta que se suben.
 
 ---
 
-### 5. Guía de Uso Rápido para el Local
+### 4. Puesta en marcha
 
-1. Entrar al panel de administración `/admin`.
-2. En la parte superior derecha hacer clic en **[ 🛡️ Respaldo & Modo Local ]**.
-3. Tocar el botón verde **"Sincronizar y Respaldar en 1 Clic"**.
-4. ¡Listo! Se crearon los archivos en tu PC y se descargaron en tu navegador.
-5. Si querés abrir una planilla específica en Excel (ej. para reponer mercadería o enviarle al contador), tocás el botón **"Descargar Excel"** correspondiente.
-6. Si se corta internet, activás el botón **"Modo Local"** y buscás cualquier prenda por código o nombre para ver su precio y stock al instante.
+1. **Vercel:** verificar `SUPABASE_SERVICE_ROLE_KEY` y `PRINT_AGENT_SECRET` (opcional: `BACKUP_AGENT_SECRET`).
+2. **PC del local:** actualizar la carpeta `print-agent`, correr `npm install` y reiniciar el agente. Probar con `npm run backup` y verificar que aparezcan los archivos en `Backups_DulceValentin`.
+3. **Cada equipo de caja:** abrir `/caja` (y `/admin` en la PC de administración) una vez con internet, después del deploy, para que quede guardado para usar sin conexión.
+
+### 5. Si se corta internet en el local
+
+1. La caja muestra el aviso amarillo **"Sin conexión"**. Se sigue vendiendo y cobrando normal.
+2. Las ventas aparecen con la etiqueta **"☁ Sin subir"**.
+3. Al volver internet se suben solas. Si alguna muestra **"⚠ No se pudo subir"**, revisarla y tocar Reintentar o Descartar.
+4. Para consultar precios y stock desde el panel: **Respaldo & Modo Local → Visor de Contingencia Offline**.

@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { getStaff, supabaseAdmin, deny, argentinaDayRange } from '@/lib/staffAuth';
+import { getStaff, supabaseAdmin, deny, argentinaDayRange, argentinaDay, parseOfflineDate } from '@/lib/staffAuth';
 
 const METHODS = ['efectivo', 'transferencia'];
 
@@ -21,23 +21,34 @@ export async function POST(req) {
   const paymentMethod = String(body.paymentMethod || '');
   if (!orderId || !METHODS.includes(paymentMethod)) return deny(400, 'Elegí el medio de pago.');
 
+  // Cobro hecho sin internet (ver src/lib/posOffline.js): trae la hora real.
+  const offlinePaidAt = body.offlinePaidAt ? parseOfflineDate(body.offlinePaidAt) : null;
+  if (body.offlinePaidAt && !offlinePaidAt) return deny(400, 'La fecha del cobro sin conexión no es válida.');
+
   const { data: sale } = await supabaseAdmin
     .from('orders')
-    .select('id, status, channel, total_amount, commission_pct, seller_id, client_name')
+    .select('id, status, channel, total_amount, commission_pct, seller_id, client_name, paid_at')
     .eq('id', orderId)
     .maybeSingle();
   if (!sale || sale.channel !== 'local') return deny(404, 'No se encontró la venta.');
+  // Reenvio del mismo cobro sin conexion (se corto la red justo despues): ya esta hecho.
+  if (offlinePaidAt && sale.status === 'cobrado') {
+    return NextResponse.json({ success: true, duplicate: true, paid_at: sale.paid_at, change: null });
+  }
   if (sale.status !== 'pendiente_cobro') return deny(409, 'Esta venta ya fue cobrada o cancelada.');
 
   const total = Number(sale.total_amount) || 0;
   let cashReceived = null;
   if (paymentMethod === 'efectivo' && body.cashReceived !== undefined && body.cashReceived !== null && body.cashReceived !== '') {
     cashReceived = Number(body.cashReceived);
-    if (!Number.isFinite(cashReceived) || cashReceived < total) return deny(400, 'El efectivo recibido es menor al total.');
+    if (!Number.isFinite(cashReceived)) return deny(400, 'El efectivo recibido no es válido.');
+    // Sin conexion el cobro ya se hizo con el precio de la copia local: si el
+    // precio cambio despues, no se rechaza (el aviso lo muestra la caja).
+    if (cashReceived < total && !offlinePaidAt) return deny(400, 'El efectivo recibido es menor al total.');
   }
 
   const commissionAmount = Math.round(total * (Number(sale.commission_pct) || 0)) / 100;
-  const paidAt = new Date().toISOString();
+  const paidAt = offlinePaidAt || new Date().toISOString();
 
   // Solo si sigue pendiente: dos cajas no pueden cobrar la misma venta.
   const { data: updated, error } = await supabaseAdmin
@@ -61,7 +72,7 @@ export async function POST(req) {
   // Si la venta tiene vendedora asignada, registramos el movimiento en el libro contable
   // para que impacte de inmediato en su comisión, el ranking y el arqueo de caja.
   if (sale.seller_id && total > 0) {
-    const saleDate = argentinaDayRange().day;
+    const saleDate = offlinePaidAt ? argentinaDay(offlinePaidAt) : argentinaDayRange().day;
     const clientRef = crypto.randomUUID();
     const note = `Venta mostrador #${orderId}${sale.client_name ? ` (${sale.client_name})` : ''}`;
     try {

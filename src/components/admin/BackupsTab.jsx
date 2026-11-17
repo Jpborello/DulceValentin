@@ -35,8 +35,6 @@ import {
   saveLocalSnapshot,
   loadLocalSnapshot,
   getLocalSnapshotMeta,
-  isLocalOperationMode,
-  setLocalOperationMode,
   searchLocalProducts,
   searchLocalOrders,
   triggerBrowserFileDownload,
@@ -48,7 +46,7 @@ export default function BackupsTab({ products = [], orders = [], clients = [] })
   const [loading, setLoading] = useState(false);
   const [snapshot, setSnapshot] = useState(null);
   const [meta, setMeta] = useState(null);
-  const [isLocalMode, setIsLocalMode] = useState(false);
+  const [isOffline, setIsOffline] = useState(false);
   const [copiedPath, setCopiedPath] = useState(false);
   const [feedbackMsg, setFeedbackMsg] = useState(null);
 
@@ -70,7 +68,10 @@ export default function BackupsTab({ products = [], orders = [], clients = [] })
 
   // Cargar estado inicial
   useEffect(() => {
-    setIsLocalMode(isLocalOperationMode());
+    const updateConnection = () => setIsOffline(typeof navigator !== 'undefined' && navigator.onLine === false);
+    updateConnection();
+    window.addEventListener('online', updateConnection);
+    window.addEventListener('offline', updateConnection);
     const m = getLocalSnapshotMeta();
     setMeta(m);
 
@@ -81,11 +82,10 @@ export default function BackupsTab({ products = [], orders = [], clients = [] })
       }
     });
 
-    const handleModeChange = (e) => {
-      setIsLocalMode(Boolean(e.detail?.isLocal));
+    return () => {
+      window.removeEventListener('online', updateConnection);
+      window.removeEventListener('offline', updateConnection);
     };
-    window.addEventListener('dv:mode-change', handleModeChange);
-    return () => window.removeEventListener('dv:mode-change', handleModeChange);
   }, []);
 
   const showToast = (text, type = 'success') => {
@@ -111,6 +111,10 @@ export default function BackupsTab({ products = [], orders = [], clients = [] })
 
   // Sincronizar y Respaldar en 1 Clic
   const handleSyncBackup = async () => {
+    if (isOffline) {
+      showToast('Sin conexión: el respaldo se genera desde la nube. Mientras tanto podés consultar la copia guardada en "Visor de Contingencia Offline".', 'warning');
+      return;
+    }
     setLoading(true);
     setFeedbackMsg({ text: 'Extrayendo base de datos y volcando en disco local...', type: 'info' });
 
@@ -148,10 +152,20 @@ export default function BackupsTab({ products = [], orders = [], clients = [] })
         );
       }
 
-      showToast(
-        `¡Respaldo exitoso! Guardado en "${data.backupDir}" y descargado en el navegador.`,
-        'success'
-      );
+      const missingNote = data.missingTables?.length
+        ? ` (Tablas inexistentes, omitidas: ${data.missingTables.join(', ')})`
+        : '';
+      if (data.savedToDisk) {
+        showToast(
+          `¡Respaldo exitoso! Guardado en "${data.backupDir}" y descargado en el navegador.${missingNote}`,
+          'success'
+        );
+      } else {
+        showToast(
+          `Respaldo descargado en el navegador (revisá tu carpeta de Descargas). NO se guardó en disco: ${data.diskError || 'error desconocido'}${missingNote}`,
+          'warning'
+        );
+      }
     } catch (err) {
       console.error('Error al realizar backup:', err);
       showToast(`Error al respaldar: ${err.message || 'No se pudo conectar con el servidor'}`, 'error');
@@ -162,7 +176,11 @@ export default function BackupsTab({ products = [], orders = [], clients = [] })
 
   // Copiar ruta al portapapeles
   const handleCopyPath = () => {
-    const path = meta?.windowsPath || snapshot?.windowsPath || 'C:\\Users\\<Usuario>\\Backups_DulceValentin';
+    const path = meta?.windowsPath || snapshot?.windowsPath;
+    if (!path) {
+      showToast('Todavía no hay una copia guardada en disco para copiar su ruta.', 'warning');
+      return;
+    }
     if (typeof navigator !== 'undefined' && navigator.clipboard) {
       navigator.clipboard.writeText(path);
       setCopiedPath(true);
@@ -170,18 +188,6 @@ export default function BackupsTab({ products = [], orders = [], clients = [] })
     }
   };
 
-  // Alternar modo contingencia local
-  const handleToggleLocalMode = () => {
-    const next = !isLocalMode;
-    setLocalOperationMode(next);
-    setIsLocalMode(next);
-    showToast(
-      next
-        ? 'Modo Local / Contingencia ACTIVADO: Las consultas operan sobre la memoria local (IndexedDB).'
-        : 'Modo Online ACTIVADO: El sistema opera conectado a la nube.',
-      next ? 'warning' : 'info'
-    );
-  };
 
   // Descargar CSV individual
   const handleDownloadCsv = (type) => {
@@ -542,7 +548,7 @@ export default function BackupsTab({ products = [], orders = [], clients = [] })
               Copias de Seguridad y Blindaje Local-First
             </h2>
             <p style={{ fontSize: '0.82rem', color: 'var(--text-muted, #B3A9AF)', margin: '2px 0 0 0' }}>
-              Respaldo en 1 clic en tu PC con Windows, planillas para Excel y modo contingencia offline (IndexedDB).
+              Respaldo en 1 clic, planillas para Excel y consulta sin internet con la copia guardada en este navegador.
             </p>
           </div>
         </div>
@@ -573,9 +579,10 @@ export default function BackupsTab({ products = [], orders = [], clients = [] })
             ¿Cómo funciona esta pantalla?
           </button>
 
-          <button
-            type="button"
-            onClick={handleToggleLocalMode}
+          {/* Estado de la conexion (automatico: ya no hace falta activar un modo a mano) */}
+          <span
+            role="status"
+            title={isOffline ? 'Sin internet: esta pantalla usa la copia guardada en este navegador.' : 'Conectado a la nube.'}
             style={{
               display: 'flex',
               alignItems: 'center',
@@ -584,23 +591,21 @@ export default function BackupsTab({ products = [], orders = [], clients = [] })
               fontSize: '0.82rem',
               fontWeight: 800,
               borderRadius: '10px',
-              border: isLocalMode ? '1px solid #F59E0B' : '1px solid rgba(52, 211, 153, 0.4)',
-              background: isLocalMode ? 'rgba(245, 158, 11, 0.15)' : 'rgba(16, 185, 129, 0.12)',
-              color: isLocalMode ? '#FBBF24' : '#34D399',
-              cursor: 'pointer',
-              transition: 'all 0.2s ease'
+              border: isOffline ? '1px solid #F59E0B' : '1px solid rgba(52, 211, 153, 0.4)',
+              background: isOffline ? 'rgba(245, 158, 11, 0.15)' : 'rgba(16, 185, 129, 0.12)',
+              color: isOffline ? '#FBBF24' : '#34D399'
             }}
           >
-            {isLocalMode ? (
+            {isOffline ? (
               <>
-                <WifiOff size={15} /> Modo Local (Contingencia)
+                <WifiOff size={15} /> Sin conexión: usando copia local
               </>
             ) : (
               <>
-                <Wifi size={15} /> Modo Online (Nube)
+                <Wifi size={15} /> Conectado (nube)
               </>
             )}
-          </button>
+          </span>
         </div>
       </div>
 
@@ -740,7 +745,7 @@ export default function BackupsTab({ products = [], orders = [], clients = [] })
                   Respaldo Completo en 1 Clic
                 </h3>
                 <p style={{ fontSize: '0.84rem', color: 'var(--text-muted, #B3A9AF)', margin: 0, lineHeight: 1.45 }}>
-                  Guarda toda la base de datos en tu Windows y descarga simultáneamente las planillas para Microsoft Excel.
+                  Descarga la base completa y la planilla de stock a tu carpeta de Descargas y la deja guardada en este navegador para usarla sin internet. La copia automática en la PC del local la hace el programa de la impresora.
                 </p>
               </div>
 
@@ -809,10 +814,10 @@ export default function BackupsTab({ products = [], orders = [], clients = [] })
                 </div>
                 <div>
                   <div style={{ fontSize: '0.72rem', fontWeight: 800, color: 'var(--text-muted, #B3A9AF)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-                    Carpeta Física en tu Windows:
+                    Copia en disco:
                   </div>
                   <div style={{ fontFamily: 'monospace', fontWeight: 800, fontSize: '0.88rem', color: 'var(--text-main, #F3EDE6)' }}>
-                    {meta?.windowsPath || snapshot?.windowsPath || 'C:\\Users\\<Usuario>\\Backups_DulceValentin'}
+                    {meta?.windowsPath || snapshot?.windowsPath || 'Sin copia en disco (solo descarga del navegador)'}
                   </div>
                 </div>
               </div>
@@ -1327,7 +1332,7 @@ export default function BackupsTab({ products = [], orders = [], clients = [] })
               <WifiOff size={22} color="#FBBF24" />
               <div>
                 <strong style={{ color: '#FBBF24', fontSize: '0.92rem', display: 'block' }}>
-                  Modo de Operación Local a 0ms (IndexedDB)
+                  Copia guardada en este navegador (funciona sin internet)
                 </strong>
                 <span style={{ color: 'var(--text-muted, #B3A9AF)', fontSize: '0.78rem' }}>
                   Consultá artículos, precios por menor/mayor, stock por talle y color sin requerir conexión a internet.
@@ -1794,7 +1799,7 @@ export default function BackupsTab({ products = [], orders = [], clients = [] })
                       boxShadow: '0 4px 12px rgba(16, 185, 129, 0.25)'
                     }}
                   >
-                    <CheckCircle2 size={16} /> Cargar en Modo Local (IndexedDB)
+                    <CheckCircle2 size={16} /> Usar como copia local de este navegador
                   </button>
                 </div>
               </div>

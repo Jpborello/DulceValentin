@@ -51,6 +51,31 @@ npm start
 pause
 ```
 
+## Respaldo automático de la base en esta PC
+
+Mientras el agente está corriendo, además de imprimir hace una **copia
+completa de la base** en el disco de esta PC: una al arrancar y después cada
+`BACKUP_INTERVAL_HOURS` horas (6 por defecto). Así hay dos respaldos: la nube
+(Supabase) y esta PC.
+
+- Carpeta: `C:\Users\<usuario>\Backups_DulceValentin` (o `BACKUP_DIR`).
+- `base_completa_reciente.json`: siempre la última copia buena. Se puede
+  cargar en el panel (Respaldo → Inspeccionar copia externa) para consultarla
+  sin internet.
+- `backup_dulce_valentin_<fecha_hora>.json`: copias fechadas; se guardan las
+  últimas `BACKUP_KEEP` (30 por defecto).
+- Planillas `.csv` para Excel del día.
+- `estado_respaldo.json`: si el último intento salió bien o qué falló.
+
+Si no hay internet, ese intento falla y la última copia buena queda intacta.
+
+Para hacer una copia en el momento, sin esperar: `npm run backup`.
+
+En el sitio (Vercel) tiene que estar cargada `SUPABASE_SERVICE_ROLE_KEY`, y el
+secreto es el mismo `PRINT_AGENT_SECRET` (o uno aparte en
+`BACKUP_AGENT_SECRET`, que entonces va igual en el `.env` del agente). Ese
+secreto da acceso a toda la base: no compartirlo.
+
 ## Notas
 
 - Si la impresora se queda sin papel/tinta o hay un error, el pedido queda

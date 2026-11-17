@@ -2,14 +2,17 @@
  *
  * Criterio: la web tiene precios y stock que cambian, asi que las paginas
  * se piden SIEMPRE primero a internet y la copia guardada solo se usa si no
- * hay conexion. Nunca se guardan respuestas de /api/ ni del panel admin.
+ * hay conexion. Nunca se guardan respuestas de /api/ (ahi viajan los datos).
+ * Del panel (/admin) y la caja (/caja) se guarda solo el "cascaron" HTML, que
+ * no trae datos (se cargan despues por /api y Supabase): asi abren sin
+ * internet y pueden usar la copia local (IndexedDB) y la cola de ventas.
  * Lo que si se guarda es lo que no cambia: los archivos de /_next/static/
  * (llevan un hash en el nombre) y las imagenes propias del sitio.
  *
  * Si se cambia este archivo, subir VERSION para que se limpien las copias
  * viejas en los celulares.
  */
-const VERSION = 'dv-v1';
+const VERSION = 'dv-v2';
 const STATIC_CACHE = `${VERSION}-static`;
 const PAGES_CACHE = `${VERSION}-pages`;
 const IMAGES_CACHE = `${VERSION}-images`;
@@ -39,12 +42,38 @@ async function trimCache(name, max) {
   for (let i = 0; i < keys.length - max; i++) await cache.delete(keys[i]);
 }
 
+// Con wifi conectado pero sin internet, fetch puede quedar colgado mucho
+// tiempo: pasado este plazo se usa la copia guardada.
+const NAV_TIMEOUT_MS = 8000;
+
+function fetchWithTimeout(request, ms) {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error('timeout')), ms);
+    fetch(request).then(
+      (res) => { clearTimeout(timer); resolve(res); },
+      (err) => { clearTimeout(timer); reject(err); }
+    );
+  });
+}
+
+// El panel y la caja van a un cache aparte que no se recorta, para que las
+// visitas al catalogo no los saquen y dejen al local sin caja offline.
+const APP_SHELL_CACHE = `${VERSION}-app`;
+const isAppShell = (pathname) => pathname.startsWith('/admin') || pathname.startsWith('/caja');
+
 async function networkFirstPage(request) {
+  const { pathname } = new URL(request.url);
   try {
-    const response = await fetch(request);
-    if (response.ok && response.type === 'basic') {
+    const response = await fetchWithTimeout(request, NAV_TIMEOUT_MS);
+    // (una respuesta que vino de un redirect no se puede servir despues a una navegacion)
+    if (response.ok && response.type === 'basic' && !response.redirected) {
       const copy = response.clone();
-      caches.open(PAGES_CACHE).then((cache) => cache.put(request, copy).then(() => trimCache(PAGES_CACHE, MAX_PAGES)));
+      if (isAppShell(pathname)) {
+        // Se guarda sin query string: /admin?tab=x y /admin son el mismo cascaron.
+        caches.open(APP_SHELL_CACHE).then((cache) => cache.put(pathname, copy));
+      } else {
+        caches.open(PAGES_CACHE).then((cache) => cache.put(request, copy).then(() => trimCache(PAGES_CACHE, MAX_PAGES)));
+      }
     }
     return response;
   } catch (err) {
@@ -87,11 +116,6 @@ self.addEventListener('fetch', (event) => {
   if (url.pathname.startsWith('/api/')) return;
 
   if (request.mode === 'navigate') {
-    if (url.pathname.startsWith('/admin')) {
-      // El panel nunca se guarda: sin conexion muestra el aviso offline.
-      event.respondWith(fetch(request).catch(() => caches.match(OFFLINE_URL)));
-      return;
-    }
     event.respondWith(networkFirstPage(request));
     return;
   }

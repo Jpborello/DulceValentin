@@ -83,6 +83,12 @@ export default function AdminPage() {
     }
   }, []);
 
+  // Si el panel abre sin internet, va directo a Respaldo & Modo Local: es lo
+  // unico que funciona sin conexion (consulta la copia guardada en IndexedDB).
+  useEffect(() => {
+    if (typeof navigator !== 'undefined' && navigator.onLine === false) setActiveTab('backups');
+  }, []);
+
   const handleRequestNotif = async () => {
     if (typeof window === 'undefined' || !('Notification' in window)) return;
     const result = await Notification.requestPermission();
@@ -203,6 +209,13 @@ export default function AdminPage() {
       return;
     }
     let cancelled = false;
+    // Sin internet no se puede consultar el rol: se usa el ultimo verificado
+    // en este navegador para este mismo usuario, asi el panel abre en modo
+    // contingencia (respaldo local) cuando se corta la conexion.
+    const roleCacheKey = `dv_staff_role_${adminUser.id}`;
+    const readCachedRole = () => {
+      try { return localStorage.getItem(roleCacheKey); } catch { return null; }
+    };
     supabase
       .from('staff')
       .select('role, active')
@@ -212,9 +225,13 @@ export default function AdminPage() {
         if (cancelled) return;
         if (error) {
           console.error('Error verificando rol de staff:', error);
-          setStaffRole('other');
+          const offline = typeof navigator !== 'undefined' && navigator.onLine === false;
+          const isNetworkError = offline || /fetch|network/i.test(String(error.message || ''));
+          setStaffRole(isNetworkError && readCachedRole() === 'admin' ? 'admin' : 'other');
         } else {
-          setStaffRole(data?.role === 'admin' && data.active ? 'admin' : 'other');
+          const role = data?.role === 'admin' && data.active ? 'admin' : 'other';
+          try { localStorage.setItem(roleCacheKey, role); } catch {}
+          setStaffRole(role);
         }
       });
     return () => { cancelled = true; };

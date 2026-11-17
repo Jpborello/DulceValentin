@@ -1,0 +1,2 @@
+# Los PDF son binarios: sin esto Git les cambia los saltos de linea y los rompe.
+*.pdf binary

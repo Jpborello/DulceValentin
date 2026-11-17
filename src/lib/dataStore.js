@@ -459,6 +459,9 @@ class DataStore {
         }));
 
       this.products = [...merged, ...extraFromDb];
+      // Marca que los productos ya vienen de la base (y no del catalogo fijo
+      // del codigo): la caja solo guarda su copia offline a partir de aca.
+      this.productsSyncedAt = new Date().toISOString();
       this.saveProductsToLocalStorage();
       this.notify();
     } catch (err) {

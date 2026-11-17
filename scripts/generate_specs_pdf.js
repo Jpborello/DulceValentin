@@ -1,247 +1,169 @@
+// Genera Especificaciones_Blindaje_Local_First_y_Backups.pdf a partir del .md
+// (el .md es la fuente: editar ese y volver a correr `node scripts/generate_specs_pdf.js`).
+// Soporta lo que usa ese documento: titulos #/##/###/####, parrafos, listas
+// (- y 1.), citas (>), tablas simples, separadores (---), **negrita** y `codigo`.
 const { jsPDF } = require('jspdf');
 const autoTableImport = require('jspdf-autotable');
 const autoTable = autoTableImport.default || autoTableImport;
 const fs = require('fs');
+const path = require('path');
 
-async function createSpecsPdf() {
-  const doc = new jsPDF({
-    orientation: 'portrait',
-    unit: 'mm',
-    format: 'a4'
-  });
+const ROOT = path.join(__dirname, '..');
+const SRC = path.join(ROOT, 'Especificaciones_Blindaje_Local_First_y_Backups.md');
+const OUT = path.join(ROOT, 'Especificaciones_Blindaje_Local_First_y_Backups.pdf');
 
-  const primaryColor = [168, 23, 90]; // #A8175A Dulce Valentin Magenta
-  const darkTextColor = [36, 30, 40];
-  const mutedTextColor = [110, 101, 110];
-  const emeraldColor = [22, 163, 74];
-  const bgSoft = [252, 237, 243];
+const MAGENTA = [168, 23, 90];
+const TEXT = [36, 30, 40];
+const MUTED = [110, 101, 110];
+const SOFT = [252, 237, 243];
+const LEFT = 16;
+const WIDTH = 178;
+const BOTTOM = 282;
 
-  let y = 18;
+// jsPDF con fuentes estandar no tiene emojis ni algunos simbolos.
+const clean = (s) =>
+  s
+    .replace(/[☁]/g, '')
+    .replace(/[⚠]/g, '(!)')
+    .replace(/[→]/g, '->')
+    .replace(/[^\u0000-ÿ–—‘’“”•…]/g, '')
+    .replace(/\s{2,}$/, '');
+const plain = (s) => clean(s.replace(/\*\*(.+?)\*\*/g, '$1').replace(/`(.+?)`/g, '$1'));
 
-  // Header Banner
-  doc.setFillColor(...bgSoft);
-  doc.roundedRect(14, y, 182, 28, 4, 4, 'F');
+const doc = new jsPDF({ unit: 'mm', format: 'a4' });
+let y = 18;
 
-  doc.setDrawColor(...primaryColor);
-  doc.setLineWidth(0.8);
-  doc.line(14, y, 14, y + 28);
-
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(16);
-  doc.setTextColor(...primaryColor);
-  doc.text('DULCE VALENTÍN — ESPECIFICACIONES TÉCNICAS', 20, y + 10);
-
-  doc.setFont('helvetica', 'normal');
-  doc.setFontSize(10);
-  doc.setTextColor(...darkTextColor);
-  doc.text('Sistema de Blindaje Local-First, Backup en 1 Clic y Modo de Contingencia Offline', 20, y + 17);
-
-  doc.setFontSize(8.5);
-  doc.setTextColor(...mutedTextColor);
-  doc.text('Fecha: Noviembre 2026   |   Versión: 1.0.0-local-first   |   Estado: Producción Verificado', 20, y + 23);
-
-  y += 36;
-
-  // 1. Resumen Ejecutivo
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(12);
-  doc.setTextColor(...primaryColor);
-  doc.text('1. Resumen Ejecutivo', 14, y);
-  y += 6;
-
-  doc.setFont('helvetica', 'normal');
-  doc.setFontSize(9.5);
-  doc.setTextColor(...darkTextColor);
-  const resumenText = 'El Sistema de Blindaje Local-First y Backup en 1 Clic dota a Dulce Valentin de una infraestructura de resiliencia total frente a cortes de internet, caidas de servidores de nube o fallas de red en el local comercial. Permite exportar y sincronizar la base de datos completa de prendas, stock, precios, codigos de barra, ventas y clientes en un solo clic, tanto en la computadora fisica (C:\\Users\\<Usuario>\\Backups_DulceValentin) como en el navegador web.';
-  const splitResumen = doc.splitTextToSize(resumenText, 182);
-  doc.text(splitResumen, 14, y);
-  y += splitResumen.length * 5 + 4;
-
-  // 2. Tablas y Datos Auditados
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(12);
-  doc.setTextColor(...primaryColor);
-  doc.text('2. Entidades y Volumen de Datos Auditado', 14, y);
-  y += 4;
-
-  const tableData = [
-    ['products', '324 prendas', 'Catalogo completo, precios minoristas/mayoristas, variantes talle/color y barcodes.'],
-    ['wholesale_clients', '225 clientes', 'Directorio de clientes mayoristas, telefonos normalizados, DNI y localidad.'],
-    ['orders', '21 pedidos', 'Historial de tickets web, local y caja, medios de pago y vendedoras.'],
-    ['stock_movements', '349 movimientos', 'Auditoria historica de ingresos, egresos y ventas de stock fisico.'],
-    ['categories', '82 categorias', 'Arbol de categorias y subcategorias para ordenamiento de prendas.'],
-    ['pos_cashiers / pos_shifts', '2 cajeras', 'Configuracion de puestos de cobro, turnos y PIN de seguridad.']
-  ];
-
-  autoTable(doc, {
-    startY: y,
-    head: [['Entidad / Tabla', 'Registros', 'Descripcion Operativa']],
-    body: tableData,
-    theme: 'grid',
-    headStyles: {
-      fillColor: primaryColor,
-      textColor: [255, 255, 255],
-      fontStyle: 'bold',
-      fontSize: 9
-    },
-    styles: {
-      font: 'helvetica',
-      fontSize: 8.5,
-      textColor: darkTextColor,
-      cellPadding: 2.5
-    },
-    columnStyles: {
-      0: { cellWidth: 42, fontStyle: 'bold' },
-      1: { cellWidth: 32, fontStyle: 'bold', textColor: emeraldColor },
-      2: { cellWidth: 108 }
-    },
-    margin: { left: 14, right: 14 }
-  });
-
-  y = (doc.lastAutoTable?.finalY || 130) + 10;
-
-  // 3. Modulos Principales
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(12);
-  doc.setTextColor(...primaryColor);
-  doc.text('3. Módulos y Arquitectura de la Solución', 14, y);
-  y += 6;
-
-  const modulos = [
-    {
-      title: 'A. Deteccion de Carpeta en Windows y Respaldo Fisico en 1 Clic',
-      desc: 'Ruta API /api/admin/backups/export: Detecta dinamicamente la carpeta C:\\Users\\<Usuario>\\Backups_DulceValentin y crea los archivos fisicos: el JSON maestro y 4 planillas CSV (Catalogo, Stock por Variante, Ventas y Clientes).'
-    },
-    {
-      title: 'B. Compatibilidad Estricta con Microsoft Excel (Espanol)',
-      desc: 'Los CSV se formatean con BOM UTF-8 (\\uFEFF) y punto y coma (;). Esto permite que el personal abra las planillas con doble clic en Windows sin caracteres con tildes rotos ni columnas corridas.'
-    },
-    {
-      title: 'C. Modo Local y Contingencia Offline a 0ms (IndexedDB)',
-      desc: 'Base de datos dulce_valentin_local_db: En caso de corte de internet en el local, el personal activa el Modo Local y busca prendas por nombre, codigo de articulo o codigo de barras con stock y precios en tiempo real.'
-    },
-    {
-      title: 'D. Diseno Adaptativo Bento Grid y Optimizacion de Navegacion',
-      desc: 'El acceso se ubico en la cabecera superior (AdminHeader), dejando la barra de pestanas 100% despejada para que la seccion "Sorteo en Vivo" y las 17 pestanas originales permanezcan siempre visibles.'
-    }
-  ];
-
-  modulos.forEach(m => {
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(9.5);
-    doc.setTextColor(...darkTextColor);
-    doc.text(`• ${m.title}`, 14, y);
-    y += 4.5;
-
-    doc.setFont('helvetica', 'normal');
-    doc.setFontSize(8.5);
-    doc.setTextColor(...mutedTextColor);
-    const splitDesc = doc.splitTextToSize(m.desc, 178);
-    doc.text(splitDesc, 18, y);
-    y += splitDesc.length * 4 + 3.5;
-  });
-
-  // Salto de Página para Pruebas y Certificación
-  doc.addPage();
-  y = 18;
-
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(12);
-  doc.setTextColor(...primaryColor);
-  doc.text('4. Certificación de Pruebas en Vivo (Entorno Windows)', 14, y);
-  y += 6;
-
-  doc.setFont('helvetica', 'normal');
-  doc.setFontSize(9);
-  doc.setTextColor(...darkTextColor);
-  doc.text('Se ejecuto el ciclo completo de validacion en la maquina local con los siguientes resultados verificados:', 14, y);
-  y += 6;
-
-  const pruebasData = [
-    ['Deteccion de Carpeta', 'EXITOSO', 'C:\\Users\\jpbor\\Backups_DulceValentin creada automaticamente.'],
-    ['Snapshot JSON Maestro', 'EXITOSO', 'backup_dulce_valentin_*.json (1.41 MB) escrito en disco.'],
-    ['Planilla Catalogo CSV', 'EXITOSO', 'catalogo_productos_*.csv (44.8 KB, 324 prendas).'],
-    ['Planilla Stock Variantes CSV', 'EXITOSO', 'stock_por_talle_y_color_*.csv (188.5 KB, 2.122 variantes con codigos de barra).'],
-    ['Planilla Ventas CSV', 'EXITOSO', 'ventas_y_pedidos_*.csv (4.2 KB, 21 pedidos registrados).'],
-    ['Planilla Clientes CSV', 'EXITOSO', 'clientes_y_contactos_*.csv (17.3 KB, 225 clientes mayoristas).'],
-    ['Compilacion Next.js (Build)', 'EXITOSO', 'npm run build completo con Codigo 0 en todas las rutas estaticas y dinamicas.']
-  ];
-
-  autoTable(doc, {
-    startY: y,
-    head: [['Prueba de Integración', 'Resultado', 'Detalle de Verificación']],
-    body: pruebasData,
-    theme: 'grid',
-    headStyles: {
-      fillColor: emeraldColor,
-      textColor: [255, 255, 255],
-      fontStyle: 'bold',
-      fontSize: 9
-    },
-    styles: {
-      font: 'helvetica',
-      fontSize: 8.5,
-      textColor: darkTextColor,
-      cellPadding: 2.8
-    },
-    columnStyles: {
-      0: { cellWidth: 55, fontStyle: 'bold' },
-      1: { cellWidth: 28, fontStyle: 'bold', textColor: emeraldColor },
-      2: { cellWidth: 99 }
-    },
-    margin: { left: 14, right: 14 }
-  });
-
-  y = (doc.lastAutoTable?.finalY || 110) + 12;
-
-  // 5. Guía Operativa para el Local
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(12);
-  doc.setTextColor(...primaryColor);
-  doc.text('5. Guía de Operación Rápida para el Administrador', 14, y);
-  y += 6;
-
-  const pasos = [
-    '1. Ingresar al panel /admin con credenciales de administracion.',
-    '2. En la barra superior derecha, pulsar el boton [ Respaldo & Modo Local ].',
-    '3. Hacer clic en el boton verde "Sincronizar y Respaldar en 1 Clic".',
-    '4. El sistema guardara los archivos en tu PC y descargara una copia en tu navegador.',
-    '5. Para auditorias o enviar al contador, descargar la planilla correspondiente con 1 clic.',
-    '6. Ante cortes de conexion, activar el "Modo Local" para consultar precios y stock a 0ms.'
-  ];
-
-  pasos.forEach(p => {
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(9);
-    doc.setTextColor(...darkTextColor);
-    doc.text(p, 14, y);
-    y += 5.5;
-  });
-
-  y += 10;
-
-  // Pie de Página / Firma de Entrega
-  doc.setDrawColor(...primaryColor);
-  doc.setLineWidth(0.4);
-  doc.line(14, y, 196, y);
-  y += 7;
-
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(9);
-  doc.setTextColor(...primaryColor);
-  doc.text('DULCE VALENTÍN — TECNOLOGÍA Y BLINDAJE OPERATIVO', 14, y);
-
-  doc.setFont('helvetica', 'normal');
-  doc.setFontSize(8);
-  doc.setTextColor(...mutedTextColor);
-  doc.text('Documento oficial de entrega y especificaciones tecnicas.', 14, y + 5);
-
-  const pdfOutput = doc.output('arraybuffer');
-  fs.writeFileSync('Especificaciones_Blindaje_Local_First_y_Backups.pdf', Buffer.from(pdfOutput));
-  console.log('✅ Archivo PDF generado exitosamente: Especificaciones_Blindaje_Local_First_y_Backups.pdf');
+function ensure(h) {
+  if (y + h > BOTTOM) {
+    doc.addPage();
+    y = 18;
+  }
 }
 
-createSpecsPdf().catch(err => {
-  console.error('Error generando PDF:', err);
-  process.exit(1);
-});
+// Texto con **negrita** y `codigo` dentro de la linea, con salto automatico.
+function richText(text, { x = LEFT, width = WIDTH, size = 9.5, lineH = 4.6, color = TEXT } = {}) {
+  const tokens = [];
+  clean(text).split(/(\*\*.+?\*\*|`.+?`)/g).filter(Boolean).forEach((part) => {
+    let style = 'normal';
+    let value = part;
+    if (part.startsWith('**')) { style = 'bold'; value = part.slice(2, -2); }
+    else if (part.startsWith('`')) { style = 'code'; value = part.slice(1, -1); }
+    value.split(/(\s+)/).filter((w) => w.length).forEach((w) => tokens.push({ w, style }));
+  });
+
+  doc.setFontSize(size);
+  let cx = x;
+  ensure(lineH);
+  for (const t of tokens) {
+    doc.setFont(t.style === 'code' ? 'courier' : 'helvetica', t.style === 'bold' ? 'bold' : 'normal');
+    doc.setTextColor(...(t.style === 'code' ? MAGENTA : color));
+    const isSpace = /^\s+$/.test(t.w);
+    const tw = doc.getTextWidth(t.w);
+    if (!isSpace && cx + tw > x + width && cx > x) {
+      y += lineH;
+      ensure(lineH);
+      cx = x;
+    }
+    if (isSpace && cx === x) continue;
+    doc.text(t.w, cx, y);
+    cx += tw;
+  }
+  y += lineH;
+}
+
+const lines = fs.readFileSync(SRC, 'utf8').split(/\r?\n/);
+for (let i = 0; i < lines.length; i++) {
+  const line = lines[i];
+  const trimmed = line.trim();
+  if (!trimmed) { y += 1.6; continue; }
+
+  if (trimmed === '---') {
+    ensure(6);
+    doc.setDrawColor(230, 210, 220);
+    doc.setLineWidth(0.3);
+    doc.line(LEFT, y, LEFT + WIDTH, y);
+    y += 5;
+    continue;
+  }
+
+  const h = trimmed.match(/^(#{1,4})\s+(.*)$/);
+  if (h) {
+    const level = h[1].length;
+    const sizes = { 1: 16, 2: 12.5, 3: 11.5, 4: 10.2 };
+    if (level === 1) {
+      ensure(18);
+      doc.setFillColor(...SOFT);
+      doc.roundedRect(LEFT - 2, y - 7, WIDTH + 4, 12, 3, 3, 'F');
+    } else {
+      y += level === 2 ? 2 : 2.5;
+      ensure(10);
+    }
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(sizes[level]);
+    doc.setTextColor(...(level <= 3 ? MAGENTA : TEXT));
+    doc.splitTextToSize(plain(h[2]), WIDTH).forEach((l) => { ensure(6); doc.text(l, LEFT, y); y += sizes[level] * 0.48; });
+    y += level === 1 ? 4 : 1.5;
+    continue;
+  }
+
+  if (trimmed.startsWith('|')) {
+    const rows = [];
+    while (i < lines.length && lines[i].trim().startsWith('|')) {
+      const cells = lines[i].trim().replace(/^\||\|$/g, '').split('|').map((c) => plain(c.trim()));
+      if (!cells.every((c) => /^:?-+:?$/.test(c))) rows.push(cells);
+      i++;
+    }
+    i--;
+    autoTable(doc, {
+      startY: y,
+      head: [rows[0]],
+      body: rows.slice(1),
+      margin: { left: LEFT, right: 16 },
+      styles: { font: 'helvetica', fontSize: 8.4, cellPadding: 2, textColor: TEXT },
+      headStyles: { fillColor: MAGENTA, textColor: 255 },
+      alternateRowStyles: { fillColor: [250, 245, 248] }
+    });
+    y = doc.lastAutoTable.finalY + 4;
+    continue;
+  }
+
+  if (trimmed.startsWith('>')) {
+    const text = trimmed.replace(/^>\s?/, '');
+    ensure(10);
+    const startY = y;
+    richText(text, { x: LEFT + 5, width: WIDTH - 7, size: 9, color: [120, 53, 15] });
+    doc.setDrawColor(245, 158, 11);
+    doc.setLineWidth(0.9);
+    doc.line(LEFT + 1.5, startY - 3.5, LEFT + 1.5, y - 3);
+    y += 1;
+    continue;
+  }
+
+  const bullet = line.match(/^(\s*)(-|\d+\.)\s+(.*)$/);
+  if (bullet) {
+    const indent = Math.min(2, Math.floor(bullet[1].length / 2));
+    const x = LEFT + 3 + indent * 5;
+    const marker = bullet[2] === '-' ? '•' : bullet[2];
+    ensure(5);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(9.5);
+    doc.setTextColor(...MAGENTA);
+    doc.text(marker, x, y);
+    richText(bullet[3], { x: x + (marker === '•' ? 4 : 5.5), width: WIDTH - (x - LEFT) - 6 });
+    continue;
+  }
+
+  richText(trimmed, { color: trimmed.startsWith('**') ? TEXT : TEXT });
+}
+
+const pages = doc.getNumberOfPages();
+for (let p = 1; p <= pages; p++) {
+  doc.setPage(p);
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(7.5);
+  doc.setTextColor(...MUTED);
+  doc.text(`Dulce Valentín — Respaldo local + nube y funcionamiento sin internet · Página ${p} de ${pages}`, LEFT, 290);
+}
+
+fs.writeFileSync(OUT, Buffer.from(doc.output('arraybuffer')));
+console.log(`PDF generado: ${OUT} (${pages} páginas)`);

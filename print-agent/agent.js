@@ -14,6 +14,7 @@ const os = require('os');
 const path = require('path');
 const PDFDocument = require('pdfkit');
 const { print: printPdf, getDefaultPrinter } = require('pdf-to-printer');
+const { startBackupSchedule } = require('./backup');
 
 const SITE_URL = (process.env.SITE_URL || 'http://localhost:3000').replace(/\/$/, '');
 const AGENT_SECRET = process.env.AGENT_SECRET;
@@ -211,4 +212,5 @@ async function pollLoop() {
   }
   console.log(`Consultando cola cada ${POLL_INTERVAL_MS / 1000}s. Ctrl+C para salir.\n`);
   pollLoop();
+  startBackupSchedule();
 })();

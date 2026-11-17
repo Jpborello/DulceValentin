@@ -146,7 +146,7 @@ export default function BackupGuideModal({
                   Tranquilidad y Blindaje Total:
                 </p>
                 <p style={{ color: 'var(--text-muted, #B3A9AF)', margin: 0, lineHeight: 1.45 }}>
-                  Si alguna vez se corta internet en el local o hay inconvenientes con la nube, la información de Dulce Valentín nunca se pierde porque tenés una copia física exacta guardada en tu equipo.
+                  Si alguna vez se corta internet en el local o hay inconvenientes con la nube, la información de Dulce Valentín no se pierde: hay copia en la nube, en la PC del local (automática) y en los archivos que descargás acá.
                 </p>
               </div>
             </div>
@@ -192,9 +192,9 @@ export default function BackupGuideModal({
                   El sistema hace todo en automático:
                 </p>
                 <ul style={{ margin: 0, paddingLeft: '18px', color: 'var(--text-muted, #B3A9AF)', lineHeight: 1.5, fontSize: '0.82rem' }}>
-                  <li>Crea la carpeta <code style={{ backgroundColor: 'rgba(255,255,255,0.08)', padding: '2px 6px', borderRadius: '4px', fontFamily: 'monospace', fontWeight: 800, color: 'var(--text-main, #F3EDE6)' }}>Backups_DulceValentin</code> en tu usuario de Windows.</li>
-                  <li>Guarda allí la base completa en formato JSON y 4 planillas listas para Excel.</li>
-                  <li>Descarga en simultáneo una copia al navegador como doble respaldo seguro.</li>
+                  <li>Descarga la base completa en formato JSON a tu carpeta de Descargas, más la planilla de stock para Excel.</li>
+                  <li>La guarda también en este navegador, para consultarla si se corta internet.</li>
+                  <li>Aparte, el programa del local (el mismo de la impresora) guarda solo una copia cada 6 horas en la carpeta <code style={{ backgroundColor: 'rgba(255,255,255,0.08)', padding: '2px 6px', borderRadius: '4px', fontFamily: 'monospace', fontWeight: 800, color: 'var(--text-main, #F3EDE6)' }}>Backups_DulceValentin</code> de la PC del local.</li>
                 </ul>
               </div>
             </div>
@@ -218,7 +218,7 @@ export default function BackupGuideModal({
                 <WifiOff size={30} />
               </div>
               <h3 style={{ fontSize: '1.35rem', fontWeight: 900, color: 'var(--text-main, #F3EDE6)', margin: 0, letterSpacing: '-0.02em' }}>
-                Modo Local (si se corta Internet)
+                Si se corta Internet
               </h3>
               <p style={{ fontSize: '0.9rem', color: 'var(--text-muted, #B3A9AF)', lineHeight: 1.55, margin: 0 }}>
                 ¿Se cayó la conexión o Fibertel/proveedor no responde en pleno horario de venta en el local?
@@ -240,7 +240,7 @@ export default function BackupGuideModal({
                   El local sigue funcionando:
                 </p>
                 <p style={{ color: 'var(--text-muted, #B3A9AF)', margin: 0, lineHeight: 1.45 }}>
-                  Al activar el <strong>Modo Local / Contingencia</strong>, podés buscar cualquier prenda por nombre, código de artículo (ej. 0314) o código de barras, ver su precio por menor/mayor y verificar cuántas unidades quedan por talle y color a 0ms sin internet.
+                  La <strong>Caja</strong> sigue vendiendo sola: guarda las ventas en el equipo y las sube cuando vuelve la conexión. Y acá, en el <strong>Visor sin conexión</strong>, podés buscar cualquier prenda por nombre, código de artículo (ej. 0314) o código de barras y ver precio y stock por talle y color de la última copia guardada. Para que funcione, el panel y la caja tienen que haberse abierto al menos una vez con internet en ese equipo.
                 </p>
               </div>
             </div>
