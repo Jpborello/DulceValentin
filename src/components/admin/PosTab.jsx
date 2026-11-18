@@ -46,6 +46,7 @@ import { adminFetch } from '@/lib/adminFetch';
 import { printThermalSaleTicket, printThermalZTicket, printIsolatedContent, printSaleDocument } from '@/lib/printUtils';
 import { getProductPrice, getUnitPriceForType } from '@/lib/productPricing';
 import { getVariantStock } from '@/lib/catalogData';
+import SectionsConfig from '@/components/admin/SectionsConfig';
 
 // Caja de sección (arriba). Por ahora es la del sector de niños.
 const SECTION_LABEL = 'Sección Niños';
@@ -87,7 +88,7 @@ export default function PosTab({ products = [], orders = [], onRefresh }) {
   const [lastOrder, setLastOrder] = useState(null);
   const [lastSaleReceiptData, setLastSaleReceiptData] = useState(null);
   const [printFormat, setPrintFormat] = useState('thermal'); // 'thermal' (58mm/80mm) | 'a5' (Media Hoja) | 'a4' (Hoja Completa)
-  const [posSection, setPosSection] = useState('jeans_infantil'); // 'jeans_infantil' | 'caja_principal'
+  const [posSection, setPosSection] = useState('caja_principal'); // 'caja_principal' (Caja General) | 'jeans_infantil' (venta de sección desde el panel)
   // Tickets de sección cargados en este cobro (se pueden juntar varios):
   // [{ id, sellerName, total, count }]. Sus renglones van en el carrito con
   // fromTicket = id y no se editan (el precio y el stock ya quedaron fijos).
@@ -99,6 +100,12 @@ export default function PosTab({ products = [], orders = [], onRefresh }) {
   const [selectedSellerId, setSelectedSellerId] = useState(() => {
     try { return localStorage.getItem('dv_pos_seller') || ''; } catch { return ''; }
   });
+  // Cajas de sección (configuración) y ventas pendientes de cobro (lista en vivo).
+  const [sections, setSections] = useState([]);
+  const [sellersWithCode, setSellersWithCode] = useState([]);
+  const [pendingTickets, setPendingTickets] = useState([]);
+  const [pendingError, setPendingError] = useState('');
+
   const selectSeller = (id) => {
     setSelectedSellerId(id);
     try { localStorage.setItem('dv_pos_seller', id); } catch {}
@@ -159,6 +166,8 @@ export default function PosTab({ products = [], orders = [], onRefresh }) {
       if (data.success) {
         if (data.supervisorPin) setSupervisorPin(data.supervisorPin);
         if (Array.isArray(data.cashiers)) setCashiers(data.cashiers);
+        if (Array.isArray(data.sections)) setSections(data.sections);
+        if (Array.isArray(data.sellersWithCode)) setSellersWithCode(data.sellersWithCode);
         if (Array.isArray(data.shifts)) {
           setShiftsHistory(data.shifts);
           const currentOpen = data.shifts.find((s) => s.status === 'open');
@@ -192,6 +201,27 @@ export default function PosTab({ products = [], orders = [], onRefresh }) {
     fetchPosAdminData();
     fetchSellers();
   }, []);
+
+  // Ventas pendientes de las cajas de sección: se actualizan solas cada 15 s
+  // mientras está abierta la Caja General.
+  const fetchPendingTickets = async () => {
+    try {
+      const res = await adminFetch('/api/pos?action=pending_tickets');
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'No se pudieron cargar las ventas pendientes.');
+      setPendingTickets(data.tickets || []);
+      setPendingError('');
+    } catch (err) {
+      setPendingError(err.message);
+    }
+  };
+
+  useEffect(() => {
+    if (subTab !== 'terminal' || posSection !== 'caja_principal') return undefined;
+    fetchPendingTickets();
+    const id = setInterval(fetchPendingTickets, 15000);
+    return () => clearInterval(id);
+  }, [subTab, posSection]);
 
   useEffect(() => {
     if (subTab === 'terminal') {
@@ -547,6 +577,7 @@ export default function PosTab({ products = [], orders = [], onRefresh }) {
 
       if (onRefresh) onRefresh();
       fetchPosAdminData();
+      fetchPendingTickets();
     } catch (err) {
       setCheckoutError(err.message);
     } finally {
@@ -1298,6 +1329,42 @@ export default function PosTab({ products = [], orders = [], onRefresh }) {
               )}
             </div>
 
+            {/* VENTAS PENDIENTES DE LAS SECCIONES (solo en la Caja General) */}
+            {posSection === 'caja_principal' && (
+              <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: '14px', padding: '14px 16px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', marginBottom: '8px' }}>
+                  <h3 style={{ fontSize: '0.98rem', fontWeight: 900, margin: 0, display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <Layers size={16} /> Ventas pendientes de cobro ({pendingTickets.filter((t) => !loadedTickets.some((l) => l.id === t.id)).length})
+                  </h3>
+                  <button type="button" onClick={fetchPendingTickets} title="Actualizar" style={{ border: 'none', background: 'none', cursor: 'pointer', color: 'var(--text-muted)' }}>
+                    <RefreshCw size={15} />
+                  </button>
+                </div>
+                {pendingError && <div style={{ color: '#DC2626', fontSize: '0.8rem', fontWeight: 700 }}>{pendingError}</div>}
+                {pendingTickets.filter((t) => !loadedTickets.some((l) => l.id === t.id)).length === 0 ? (
+                  <div style={{ fontSize: '0.82rem', color: 'var(--text-muted)' }}>No hay ventas esperando cobro. Las de las secciones aparecen acá solas.</div>
+                ) : (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', maxHeight: '220px', overflowY: 'auto' }}>
+                    {pendingTickets.filter((t) => !loadedTickets.some((l) => l.id === t.id)).map((t) => (
+                      <div key={t.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px', padding: '8px 10px', border: '1px solid var(--border-color)', borderRadius: '10px', fontSize: '0.84rem' }}>
+                        <div style={{ minWidth: 0 }}>
+                          <div style={{ fontWeight: 800 }}>
+                            {t.seller_name || 'Sin vendedora'} · ${t.total.toLocaleString('es-AR')}
+                          </div>
+                          <div style={{ fontSize: '0.74rem', color: 'var(--text-muted)' }}>
+                            {t.origin} · #{t.id} · {t.units} prenda{t.units === 1 ? '' : 's'} · {new Date(t.created_at).toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })}
+                          </div>
+                        </div>
+                        <button type="button" onClick={() => handleScan(t.id)} className="btn-primary" style={{ padding: '6px 12px', fontSize: '0.78rem', whiteSpace: 'nowrap' }}>
+                          Sumar al cobro
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
             {/* TABLA DEL CARRITO DE PRENDAS */}
             <div style={{
               background: 'var(--bg-card)',
@@ -2000,6 +2067,15 @@ export default function PosTab({ products = [], orders = [], onRefresh }) {
       {/* ========================================================= */}
       {/* SUB-PESTAÑA 3: CAJERAS & TURNOS                          */}
       {/* ========================================================= */}
+      {subTab === 'cajeros' && (
+        <SectionsConfig
+          key={sections.map((s) => s.id).join(',')}
+          sections={sections}
+          sellers={sellers}
+          sellersWithCode={sellersWithCode}
+          onChanged={fetchPosAdminData}
+        />
+      )}
       {subTab === 'cajeros' && (
         <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1.2fr) minmax(0, 1.8fr)', gap: '16px' }}>
           {/* CAJERAS REGISTRADAS */}

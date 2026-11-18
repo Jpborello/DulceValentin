@@ -1,6 +1,16 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { requireAdmin } from '@/lib/adminAuth';
+import {
+  getSections,
+  saveSections,
+  getSellerCodes,
+  saveSellerCodes,
+  sectionLabel,
+  hashSecret,
+  isValidSellerCode,
+  newSectionToken
+} from '@/lib/posSections';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://revrbrrzlnweuxwhpgei.supabase.co';
 const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -50,12 +60,22 @@ export async function GET(req) {
       if (Array.isArray(shiftRows)) shifts = shiftRows;
     } catch (_) {}
 
+    // 4. Cajas de sección y qué vendedoras tienen código (nunca el código en sí)
+    let sections = [];
+    let sellersWithCode = [];
+    try {
+      sections = (await getSections(supabaseAdmin)).map(({ tokenHash, ...s }) => ({ ...s, linked: !!tokenHash, label: sectionLabel(s) }));
+      sellersWithCode = Object.keys(await getSellerCodes(supabaseAdmin));
+    } catch (_) {}
+
     return NextResponse.json({
       success: true,
       supervisorPin,
       hasCustomPin,
       cashiers,
-      shifts
+      shifts,
+      sections,
+      sellersWithCode
     });
   } catch (err) {
     console.error('API Admin POS GET Error:', err);
@@ -172,6 +192,65 @@ export async function POST(req) {
       }
 
       return NextResponse.json({ success: true, count: updatedCount });
+    }
+
+    // F. CAJAS DE SECCIÓN: crear / editar (nombre, activa, vendedoras)
+    if (action === 'saveSection') {
+      const name = String(body.name || '').trim().slice(0, 40);
+      if (!name) return NextResponse.json({ error: 'Poné el nombre de la sección.' }, { status: 400 });
+      const sellerIds = [...new Set((Array.isArray(body.sellerIds) ? body.sellerIds : []).map(String))];
+      if (sellerIds.length > 0) {
+        const { data: valid } = await supabaseAdmin.from('staff').select('id').in('id', sellerIds);
+        if ((valid || []).length !== sellerIds.length) return NextResponse.json({ error: 'Alguna vendedora no existe.' }, { status: 400 });
+      }
+
+      const list = await getSections(supabaseAdmin);
+      let section = body.id ? list.find((s) => s.id === body.id) : null;
+      if (body.id && !section) return NextResponse.json({ error: 'No existe esa sección.' }, { status: 404 });
+      if (!section) {
+        const number = list.reduce((m, s) => Math.max(m, Number(s.number) || 0), 0) + 1;
+        section = { id: `s${Date.now().toString(36)}`, number, tokenHash: null };
+        list.push(section);
+      }
+      section.name = name;
+      section.active = body.active !== false;
+      section.sellerIds = sellerIds;
+      await saveSections(supabaseAdmin, list);
+      const { tokenHash, ...publicSection } = section;
+      return NextResponse.json({ success: true, section: { ...publicSection, linked: !!tokenHash, label: sectionLabel(section) } });
+    }
+
+    // G. LINK PARA VINCULAR LA PC DE UNA SECCIÓN (el anterior deja de andar)
+    if (action === 'sectionLink') {
+      const list = await getSections(supabaseAdmin);
+      const section = list.find((s) => s.id === body.id);
+      if (!section) return NextResponse.json({ error: 'No existe esa sección.' }, { status: 404 });
+      const token = newSectionToken();
+      section.tokenHash = hashSecret(`section:${token}`);
+      await saveSections(supabaseAdmin, list);
+      return NextResponse.json({ success: true, token });
+    }
+
+    // H. CÓDIGO DE 4 NÚMEROS DE UNA VENDEDORA (code vacío = quitarlo)
+    if (action === 'setSellerCode') {
+      const staffId = String(body.staffId || '');
+      const { data: person } = await supabaseAdmin.from('staff').select('id').eq('id', staffId).maybeSingle();
+      if (!person) return NextResponse.json({ error: 'No existe esa vendedora.' }, { status: 404 });
+
+      const codes = await getSellerCodes(supabaseAdmin);
+      const code = String(body.code ?? '').trim();
+      if (!code) {
+        delete codes[staffId];
+      } else {
+        if (!isValidSellerCode(code)) return NextResponse.json({ error: 'El código tiene que ser de 4 números.' }, { status: 400 });
+        const hash = hashSecret(`seller:${code}`);
+        if (Object.entries(codes).some(([id, h]) => id !== staffId && h === hash)) {
+          return NextResponse.json({ error: 'Ese código ya lo tiene otra vendedora. Elegí otro.' }, { status: 409 });
+        }
+        codes[staffId] = hash;
+      }
+      await saveSellerCodes(supabaseAdmin, codes);
+      return NextResponse.json({ success: true });
     }
 
     // E. ANULAR VENTA DESDE EL POS

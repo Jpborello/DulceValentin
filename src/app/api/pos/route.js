@@ -190,6 +190,38 @@ export async function GET(req) {
       return NextResponse.json({ success: true, active_shift: activeShift });
     }
 
+    // Ventas pendientes de cobro (de las cajas de sección y de la caja de
+    // vendedoras), para la lista en vivo de la Caja General.
+    if (action === 'pending_tickets') {
+      const { data: pending, error } = await supabaseAdmin
+        .from('orders')
+        .select('id, created_at, total_amount, items, seller_id, customer_notes, client_name')
+        .eq('channel', 'local')
+        .eq('status', 'pendiente_cobro')
+        .order('created_at', { ascending: true })
+        .limit(100);
+      if (error) return NextResponse.json({ error: 'No se pudieron cargar las ventas pendientes.' }, { status: 500 });
+
+      const sellerIds = [...new Set((pending || []).map((o) => o.seller_id).filter(Boolean))];
+      let nameById = {};
+      if (sellerIds.length > 0) {
+        const { data: people } = await supabaseAdmin.from('staff').select('id, name').in('id', sellerIds);
+        nameById = Object.fromEntries((people || []).map((p) => [p.id, p.name]));
+      }
+      return NextResponse.json({
+        success: true,
+        tickets: (pending || []).map((o) => ({
+          id: o.id,
+          created_at: o.created_at,
+          total: Number(o.total_amount) || 0,
+          units: (o.items || []).reduce((s, it) => s + (Number(it.quantity) || 0), 0),
+          seller_name: nameById[o.seller_id] || null,
+          origin: o.customer_notes && /^Caja \d+ · /.test(o.customer_notes) ? o.customer_notes : 'Caja de vendedoras',
+          client_name: o.client_name
+        }))
+      });
+    }
+
     // Búsqueda de orden de preventa para cargar en Caja Principal
     if (action === 'lookup_order') {
       const orderId = searchParams.get('order_id');
