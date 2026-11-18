@@ -2,8 +2,8 @@
 
 import { useMemo, useState } from 'react';
 import { X, Barcode, Printer, Loader2 } from 'lucide-react';
-import JsBarcode from 'jsbarcode';
-import { getProductVariants, ensureBarcodesForProduct, generateBarcodeValue } from '@/lib/barcode';
+import { getProductVariants, ensureBarcodesForProduct } from '@/lib/barcode';
+import { renderBarcodeSvg } from '@/lib/barcodeRender';
 import { getProductPrice } from '@/lib/productPricing';
 import { printIsolatedContent } from '@/lib/printUtils';
 import { adminFetch } from '@/lib/adminFetch';
@@ -58,24 +58,10 @@ export default function BarcodeLabelsModal({ product, onClose }) {
         const n = parseInt(qty[v.key], 10) || 0;
         if (n <= 0) continue;
 
-        let code = barcodesMap[v.key];
-        if (!code) {
-          code = generateBarcodeValue(product, v.size, v.color);
-          barcodesMap[v.key] = code;
-        }
-
-        const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-        try {
-          JsBarcode(svg, code, {
-            format: 'CODE128',
-            width: format === 'thermal' ? 1.3 : 1.5,
-            height: format === 'thermal' ? 32 : 36,
-            fontSize: 10,
-            margin: 1,
-            displayValue: true
-          });
-        } catch (_) {}
-        const svgMarkup = new XMLSerializer().serializeToString(svg);
+        const code = barcodesMap[v.key];
+        // Barras a ancho exacto (3 puntos de 203 dpi), sin estirar: ver barcodeRender.js
+        const svgMarkup = renderBarcodeSvg(code, { maxWidthMm: format === 'thermal' ? 46 : 60 });
+        if (!svgMarkup) throw new Error(`No se pudo generar el código de barras de ${v.label}.`);
         const price = getProductPrice(product, v.size);
         for (let i = 0; i < n; i++) labels.push({ v, svgMarkup, price });
       }
@@ -129,9 +115,10 @@ export default function BarcodeLabelsModal({ product, onClose }) {
         .brand { font-size: 7pt; font-weight: 900; letter-spacing: 0.3px; }
         .price { font-size: 8.5pt; font-weight: 900; }
         .prod-name { font-size: 7.5pt; font-weight: 800; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 0.5mm; }
-        .meta-row { font-size: 6.8pt; font-weight: 700; color: #222; }
-        .barcode-box { text-align: center; margin-top: 0.5mm; }
-        .barcode-box svg { width: 100%; max-height: 12.5mm; display: block; }
+        .meta-row { font-size: 6.8pt; font-weight: 700; color: #222; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .barcode-box { display: flex; justify-content: center; margin-top: 0.3mm; }
+        /* tamaño real en mm desde el SVG: NO escalar (las barras tienen que caer en puntos enteros) */
+        .barcode-box svg { display: block; flex: none; }
       `;
 
       // Imprimir mediante iframe aislado sin bloqueador de popups

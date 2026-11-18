@@ -28,7 +28,7 @@ import {
   MapPin,
   Building
 } from 'lucide-react';
-import JsBarcode from 'jsbarcode';
+import { renderBarcodeSvg } from '@/lib/barcodeRender';
 import {
   resolveBarcodeMatches,
   ensureBarcodesForProduct,
@@ -722,9 +722,19 @@ export default function PosTab({ products = [], orders = [], onRefresh }) {
   const openLabelModal = (product) => {
     const variants = getProductVariants(product);
     const existing = product.barcodes || {};
-    // Asegurar que tengan códigos
+    // Asegurar que tengan códigos. Si se generaron nuevos, se guardan en la base:
+    // una etiqueta con un código que no está guardado no se puede cobrar.
+    const before = JSON.stringify(product.barcodes || {});
     const fullBarcodes = ensureBarcodesForProduct(product);
     product.barcodes = fullBarcodes;
+    if (JSON.stringify(fullBarcodes) !== before) {
+      adminFetch('/api/admin/pos', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'saveProductBarcodes', productId: product.id, barcodes: fullBarcodes })
+      }).then((r) => { if (!r.ok) alert('Ojo: no se pudieron guardar los códigos de barra nuevos. No imprimas hasta resolverlo.'); })
+        .catch(() => alert('Ojo: no se pudieron guardar los códigos de barra nuevos (sin conexión).'));
+    }
 
     const initialQty = {};
     variants.forEach((v) => {
@@ -771,18 +781,8 @@ export default function PosTab({ products = [], orders = [], onRefresh }) {
     const htmlContent = `
       <div class="${isThermal ? 'thermal-labels-container' : 'a4-labels-grid'}">
         ${itemsToPrint.map((item) => {
-          const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-          try {
-            JsBarcode(svg, item.barcode, {
-              format: 'CODE128',
-              displayValue: true,
-              fontSize: 10,
-              height: isThermal ? 32 : 36,
-              margin: 1,
-              width: 1.3
-            });
-          } catch (_) {}
-          const svgMarkup = new XMLSerializer().serializeToString(svg);
+          // Barras a ancho exacto (3 puntos de 203 dpi), sin estirar: ver barcodeRender.js
+          const svgMarkup = renderBarcodeSvg(item.barcode, { maxWidthMm: isThermal ? 46 : 60 });
 
           return `
             <div class="${isThermal ? 'thermal-label-card' : 'a4-label-card'}">
@@ -790,7 +790,7 @@ export default function PosTab({ products = [], orders = [], onRefresh }) {
                 <div class="label-brand">DULCE VALENTÍN</div>
                 ${labelShowPrice ? `<div class="label-price">$${Number(item.price || 0).toLocaleString('es-AR')}</div>` : ''}
               </div>
-              <div class="label-prod-name">${item.productName}</div>
+              <div class="label-prod-name">${String(item.productName || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')}</div>
               <div class="label-variant-info">
                 ${item.code ? `Art. ${item.code} · ` : ''}${item.label}
               </div>
@@ -845,9 +845,10 @@ export default function PosTab({ products = [], orders = [], onRefresh }) {
       .label-brand { font-size: 7pt; font-weight: 900; letter-spacing: 0.4px; }
       .label-price { font-size: 8.5pt; font-weight: 900; }
       .label-prod-name { font-size: 7.5pt; font-weight: 800; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 0.5mm; }
-      .label-variant-info { font-size: 6.8pt; font-weight: 700; color: #222; }
-      .label-barcode-svg { text-align: center; margin-top: 0.5mm; }
-      .label-barcode-svg svg { width: 100%; max-height: 12.5mm; display: block; }
+      .label-variant-info { font-size: 6.8pt; font-weight: 700; color: #222; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      .label-barcode-svg { display: flex; justify-content: center; margin-top: 0.3mm; }
+      /* tamaño real en mm desde el SVG: NO escalar (las barras tienen que caer en puntos enteros) */
+      .label-barcode-svg svg { display: block; flex: none; }
     `;
 
     printIsolatedContent({
@@ -2572,9 +2573,11 @@ function BarcodeProductManagerRow({ product, variants, onSaveBarcodes }) {
   const handleGenerateAllMissing = () => {
     setSaved(false);
     const filled = { ...barcodes };
+    const used = new Set(Object.values(filled).filter(Boolean).map((c) => String(c).trim().toUpperCase()));
     variants.forEach((v) => {
       if (!filled[v.key]) {
-        filled[v.key] = generateBarcodeValue(product, v.size, v.color);
+        filled[v.key] = generateBarcodeValue({ ...product, barcodes: filled }, v.key, null, used);
+        used.add(filled[v.key]);
       }
     });
     setBarcodes(filled);
