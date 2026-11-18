@@ -4,7 +4,7 @@ import { useMemo, useState } from 'react';
 import { X, Barcode, Printer, Loader2 } from 'lucide-react';
 import { getProductVariants, ensureBarcodesForProduct } from '@/lib/barcode';
 import { renderBarcodeSvg } from '@/lib/barcodeRender';
-import { getProductPrice } from '@/lib/productPricing';
+import { getUnitPriceForType } from '@/lib/productPricing';
 import { printIsolatedContent } from '@/lib/printUtils';
 import { adminFetch } from '@/lib/adminFetch';
 
@@ -60,10 +60,14 @@ export default function BarcodeLabelsModal({ product, onClose }) {
 
         const code = barcodesMap[v.key];
         // Barras a ancho exacto (3 puntos de 203 dpi), sin estirar: ver barcodeRender.js
-        const svgMarkup = renderBarcodeSvg(code, { maxWidthMm: format === 'thermal' ? 46 : 60 });
+        // Barras un poco mas bajas (7 mm) para que entren los dos precios en la etiqueta.
+        const svgMarkup = renderBarcodeSvg(code, { maxWidthMm: format === 'thermal' ? 46 : 60, barHeightMm: 7, fontMm: 2.4 });
         if (!svgMarkup) throw new Error(`No se pudo generar el código de barras de ${v.label}.`);
-        const price = getProductPrice(product, v.size);
-        for (let i = 0; i < n; i++) labels.push({ v, svgMarkup, price });
+        const prices = {
+          mayor: getUnitPriceForType(product, v.size, 'mayor'),
+          menor: getUnitPriceForType(product, v.size, 'menor')
+        };
+        for (let i = 0; i < n; i++) labels.push({ v, svgMarkup, prices });
       }
 
       const f = FORMATS[format];
@@ -71,12 +75,16 @@ export default function BarcodeLabelsModal({ product, onClose }) {
 
       const html = `
         <div class="labels-container">
-          ${labels.map(({ v, svgMarkup, price }) => `
+          ${labels.map(({ v, svgMarkup, prices }) => `
             <div class="label-card">
               <div class="top-row">
                 <div class="brand">DULCE VALENTÍN</div>
-                ${showPrice ? `<div class="price">$${Number(price || 0).toLocaleString('es-AR')}</div>` : ''}
               </div>
+              ${showPrice ? `
+                <div class="prices-row">
+                  <span><small>MAYOR</small> $${Number(prices.mayor || 0).toLocaleString('es-AR')}</span>
+                  <span><small>MENOR</small> $${Number(prices.menor || 0).toLocaleString('es-AR')}</span>
+                </div>` : ''}
               <div class="prod-name">${escapeHtml(product.name)}</div>
               <div class="meta-row">
                 ${product.code ? `Art. ${escapeHtml(product.code)} · ` : ''}${v.label}
@@ -112,9 +120,10 @@ export default function BarcodeLabelsModal({ product, onClose }) {
           border-bottom: 0.5px solid #000;
           padding-bottom: 0.4mm;
         }
-        .brand { font-size: 7pt; font-weight: 900; letter-spacing: 0.3px; }
-        .price { font-size: 8.5pt; font-weight: 900; }
-        .prod-name { font-size: 7.5pt; font-weight: 800; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 0.5mm; }
+        .brand { font-size: 6.5pt; font-weight: 900; letter-spacing: 0.3px; }
+        .prices-row { display: flex; justify-content: space-between; gap: 1mm; font-size: 8.5pt; font-weight: 900; margin-top: 0.4mm; white-space: nowrap; }
+        .prices-row small { font-size: 5.5pt; font-weight: 800; }
+        .prod-name { font-size: 7pt; font-weight: 800; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 0.3mm; }
         .meta-row { font-size: 6.8pt; font-weight: 700; color: #222; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
         .barcode-box { display: flex; justify-content: center; margin-top: 0.3mm; }
         /* tamaño real en mm desde el SVG: NO escalar (las barras tienen que caer en puntos enteros) */
@@ -175,7 +184,7 @@ export default function BarcodeLabelsModal({ product, onClose }) {
             {Object.entries(FORMATS).map(([id, f]) => <option key={id} value={id}>{f.label}</option>)}
           </select>
           <label style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '0.84rem', fontWeight: 600, cursor: 'pointer' }}>
-            <input type="checkbox" checked={showPrice} onChange={(e) => setShowPrice(e.target.checked)} /> Mostrar precio
+            <input type="checkbox" checked={showPrice} onChange={(e) => setShowPrice(e.target.checked)} /> Mostrar precios (mayor y menor)
           </label>
         </div>
 

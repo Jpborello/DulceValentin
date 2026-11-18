@@ -761,7 +761,8 @@ export default function PosTab({ products = [], orders = [], onRefresh }) {
             size: v.size,
             color: v.color,
             label: v.label,
-            price: v.price,
+            priceMayor: getUnitPriceForType(labelModalProduct, v.size, 'mayor'),
+            priceMenor: getUnitPriceForType(labelModalProduct, v.size, 'menor'),
             barcode: code
           });
         }
@@ -782,14 +783,19 @@ export default function PosTab({ products = [], orders = [], onRefresh }) {
       <div class="${isThermal ? 'thermal-labels-container' : 'a4-labels-grid'}">
         ${itemsToPrint.map((item) => {
           // Barras a ancho exacto (3 puntos de 203 dpi), sin estirar: ver barcodeRender.js
-          const svgMarkup = renderBarcodeSvg(item.barcode, { maxWidthMm: isThermal ? 46 : 60 });
+          // (barras de 7 mm de alto para que entren los dos precios)
+          const svgMarkup = renderBarcodeSvg(item.barcode, { maxWidthMm: isThermal ? 46 : 60, barHeightMm: 7, fontMm: 2.4 });
 
           return `
             <div class="${isThermal ? 'thermal-label-card' : 'a4-label-card'}">
               <div class="label-header">
                 <div class="label-brand">DULCE VALENTÍN</div>
-                ${labelShowPrice ? `<div class="label-price">$${Number(item.price || 0).toLocaleString('es-AR')}</div>` : ''}
               </div>
+              ${labelShowPrice ? `
+                <div class="label-prices-row">
+                  <span><small>MAYOR</small> $${Number(item.priceMayor || 0).toLocaleString('es-AR')}</span>
+                  <span><small>MENOR</small> $${Number(item.priceMenor || 0).toLocaleString('es-AR')}</span>
+                </div>` : ''}
               <div class="label-prod-name">${String(item.productName || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')}</div>
               <div class="label-variant-info">
                 ${item.code ? `Art. ${item.code} · ` : ''}${item.label}
@@ -842,9 +848,10 @@ export default function PosTab({ products = [], orders = [], onRefresh }) {
         border-bottom: 0.5px solid #000;
         padding-bottom: 0.5mm;
       }
-      .label-brand { font-size: 7pt; font-weight: 900; letter-spacing: 0.4px; }
-      .label-price { font-size: 8.5pt; font-weight: 900; }
-      .label-prod-name { font-size: 7.5pt; font-weight: 800; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 0.5mm; }
+      .label-brand { font-size: 6.5pt; font-weight: 900; letter-spacing: 0.4px; }
+      .label-prices-row { display: flex; justify-content: space-between; gap: 1mm; font-size: 8.5pt; font-weight: 900; margin-top: 0.4mm; white-space: nowrap; }
+      .label-prices-row small { font-size: 5.5pt; font-weight: 800; }
+      .label-prod-name { font-size: 7pt; font-weight: 800; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 0.3mm; }
       .label-variant-info { font-size: 6.8pt; font-weight: 700; color: #222; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
       .label-barcode-svg { display: flex; justify-content: center; margin-top: 0.3mm; }
       /* tamaño real en mm desde el SVG: NO escalar (las barras tienen que caer en puntos enteros) */
