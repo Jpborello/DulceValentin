@@ -132,9 +132,12 @@ export const THERMAL_58MM_STYLES = `
     -webkit-print-color-adjust: exact !important;
     print-color-adjust: exact !important;
   }
+  /* Ancho: el del papel que tenga la impresora (rollo de 58 mm o de 80 mm,
+     ej. POS-80C). Antes era fijo en 48 mm y en un rollo de 80 mm el ticket
+     quedaba pegado a la izquierda con media hoja en blanco. El padding lateral
+     deja libre la franja que el cabezal no imprime en los bordes. */
   html, body {
-    width: 48mm !important;
-    max-width: 48mm !important;
+    width: 100% !important;
     margin: 0 !important;
     padding: 0 !important;
     background: #ffffff !important;
@@ -144,10 +147,10 @@ export const THERMAL_58MM_STYLES = `
     text-rendering: geometricPrecision !important;
   }
   .thermal-ticket {
-    width: 48mm;
-    max-width: 48mm;
-    margin: 0;
-    padding: 1.5mm 1mm 4mm 1mm;
+    width: 100%;
+    max-width: 80mm;
+    margin: 0 auto;
+    padding: 2mm 4mm 4mm 4mm;
     font-size: 11px;
     line-height: 1.25;
     color: #000000;
@@ -196,7 +199,7 @@ export const THERMAL_58MM_STYLES = `
     margin: 3px 0 2px 0;
   }
   .th-barcode-wrap svg {
-    max-width: 44mm;
+    max-width: 100%;
     max-height: 14mm;
     display: block;
     margin: 0 auto;
