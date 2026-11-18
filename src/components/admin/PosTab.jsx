@@ -793,8 +793,8 @@ export default function PosTab({ products = [], orders = [], onRefresh }) {
               </div>
               ${labelShowPrice ? `
                 <div class="label-prices-row">
-                  <span><small>MAYOR</small> $${Number(item.priceMayor || 0).toLocaleString('es-AR')}</span>
-                  <span><small>MENOR</small> $${Number(item.priceMenor || 0).toLocaleString('es-AR')}</span>
+                  <span><small>Mayor</small>$${Number(item.priceMayor || 0).toLocaleString('es-AR')}</span>
+                  <span><small>Menor</small>$${Number(item.priceMenor || 0).toLocaleString('es-AR')}</span>
                 </div>` : ''}
               <div class="label-prod-name">${String(item.productName || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')}</div>
               <div class="label-variant-info">
@@ -849,8 +849,10 @@ export default function PosTab({ products = [], orders = [], onRefresh }) {
         padding-bottom: 0.5mm;
       }
       .label-brand { font-size: 6.5pt; font-weight: 900; letter-spacing: 0.4px; }
-      .label-prices-row { display: flex; justify-content: space-between; gap: 1mm; font-size: 8.5pt; font-weight: 900; margin-top: 0.4mm; white-space: nowrap; }
-      .label-prices-row small { font-size: 5.5pt; font-weight: 800; }
+      /* Compacta y pegada a la izquierda: la impresora no llega al borde derecho
+         de la etiqueta y antes el precio por menor quedaba cortado. */
+      .label-prices-row { display: flex; justify-content: flex-start; gap: 2mm; font-size: 7.5pt; font-weight: 900; margin-top: 0.4mm; white-space: nowrap; }
+      .label-prices-row small { font-size: 5pt; font-weight: 700; margin-right: 0.5mm; }
       .label-prod-name { font-size: 7pt; font-weight: 800; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 0.3mm; }
       .label-variant-info { font-size: 6.8pt; font-weight: 700; color: #222; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
       .label-barcode-svg { display: flex; justify-content: center; margin-top: 0.3mm; }
