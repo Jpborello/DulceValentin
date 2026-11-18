@@ -79,6 +79,7 @@ export default function BarcodeLabelsModal({ product, onClose }) {
             <div class="label-card">
               <div class="top-row">
                 <div class="brand">DULCE VALENTÍN</div>
+                ${product.code ? `<div class="art-code">${escapeHtml(product.code)}</div>` : ''}
               </div>
               ${showPrice ? `
                 <div class="prices-row">
@@ -87,7 +88,7 @@ export default function BarcodeLabelsModal({ product, onClose }) {
                 </div>` : ''}
               <div class="prod-name">${escapeHtml(product.name)}</div>
               <div class="meta-row">
-                ${product.code ? `Art. ${escapeHtml(product.code)} · ` : ''}${v.label}
+                ${v.label}
               </div>
               <div class="barcode-box">${svgMarkup}</div>
             </div>
@@ -113,14 +114,17 @@ export default function BarcodeLabelsModal({ product, onClose }) {
           page-break-inside: avoid;
           ${isThermal ? 'page-break-after: always;' : 'border: 0.2mm dashed #bbb;'}
         }
+        /* Marca y codigo de articulo juntos a la izquierda (el borde derecho no imprime). */
         .top-row {
           display: flex;
-          justify-content: space-between;
+          justify-content: flex-start;
+          gap: 3mm;
           align-items: center;
           border-bottom: 0.5px solid #000;
           padding-bottom: 0.4mm;
         }
         .brand { font-size: 6.5pt; font-weight: 900; letter-spacing: 0.3px; }
+        .art-code { font-size: 8pt; font-weight: 900; white-space: nowrap; }
         /* Precio por menor y por mayor (en ese orden), sin rotulos. Pegada a la
            izquierda: la impresora no llega al borde derecho de la etiqueta. */
         .prices-row { display: flex; justify-content: flex-start; gap: 4mm; font-size: 8.5pt; font-weight: 900; margin-top: 0.4mm; white-space: nowrap; }

@@ -47,6 +47,9 @@ import { printThermalSaleTicket, printThermalZTicket, printIsolatedContent, prin
 import { getProductPrice, getUnitPriceForType } from '@/lib/productPricing';
 import { getVariantStock } from '@/lib/catalogData';
 
+// Caja de sección (arriba). Por ahora es la del sector de niños.
+const SECTION_LABEL = 'Sección Niños';
+
 const PAYMENT_METHODS = [
   { id: 'efectivo', label: 'Efectivo' },
   { id: 'transferencia', label: 'Transferencia (Alias / MP)' },
@@ -85,8 +88,21 @@ export default function PosTab({ products = [], orders = [], onRefresh }) {
   const [lastSaleReceiptData, setLastSaleReceiptData] = useState(null);
   const [printFormat, setPrintFormat] = useState('thermal'); // 'thermal' (58mm/80mm) | 'a5' (Media Hoja) | 'a4' (Hoja Completa)
   const [posSection, setPosSection] = useState('jeans_infantil'); // 'jeans_infantil' | 'caja_principal'
-  const [loadedPreventaId, setLoadedPreventaId] = useState(null);
+  // Tickets de sección cargados en este cobro (se pueden juntar varios):
+  // [{ id, sellerName, total, count }]. Sus renglones van en el carrito con
+  // fromTicket = id y no se editan (el precio y el stock ya quedaron fijos).
+  const [loadedTickets, setLoadedTickets] = useState([]);
   const [preventaNotice, setPreventaNotice] = useState('');
+
+  // Vendedoras (tabla staff): la venta de sección queda a su nombre.
+  const [sellers, setSellers] = useState([]);
+  const [selectedSellerId, setSelectedSellerId] = useState(() => {
+    try { return localStorage.getItem('dv_pos_seller') || ''; } catch { return ''; }
+  });
+  const selectSeller = (id) => {
+    setSelectedSellerId(id);
+    try { localStorage.setItem('dv_pos_seller', id); } catch {}
+  };
 
   // Gestor de códigos de barra
   const [barcodeSearch, setBarcodeSearch] = useState('');
@@ -156,8 +172,25 @@ export default function PosTab({ products = [], orders = [], onRefresh }) {
     }
   };
 
+  const fetchSellers = async () => {
+    try {
+      const res = await adminFetch('/api/admin/staff');
+      const data = await res.json();
+      if (res.ok && Array.isArray(data.staff)) {
+        const active = data.staff.filter((s) => s.active);
+        // Primero las vendedoras, después el resto del personal.
+        active.sort((a, b) => (a.role === 'vendedora' ? 0 : 1) - (b.role === 'vendedora' ? 0 : 1) || a.name.localeCompare(b.name));
+        setSellers(active);
+        setSelectedSellerId((prev) => (prev && !active.some((s) => s.id === prev) ? '' : prev));
+      }
+    } catch (err) {
+      console.warn('Error cargando vendedoras:', err);
+    }
+  };
+
   useEffect(() => {
     fetchPosAdminData();
+    fetchSellers();
   }, []);
 
   useEffect(() => {
@@ -286,56 +319,76 @@ export default function PosTab({ products = [], orders = [], onRefresh }) {
     if (!code) return;
     setScanError('');
 
-    // 1. Detección automática de Ticket de Preventa / Comprobante (ej. DV-XXXXXX, ORD-DV-XXXXXX)
-    const upper = code.toUpperCase();
-    if (upper.startsWith('DV-') || upper.startsWith('ORD-') || code.startsWith('#')) {
-      const cleanId = code.replace(/^#/, '').replace(/^ORD-/, '').trim();
-      let foundOrder = orders.find((o) => o.id?.toLowerCase() === cleanId.toLowerCase());
-
-      if (!foundOrder) {
-        try {
-          const res = await adminFetch(`/api/pos?action=lookup_order&order_id=${encodeURIComponent(cleanId)}`);
-          const data = await res.json();
-          if (data.success && data.order) foundOrder = data.order;
-        } catch (_) {}
-      }
-
-      if (foundOrder) {
-        playBeep(1200, 'sine', 0.15);
-        const newCartItems = (foundOrder.items || []).map((it, idx) => {
-          const prod = it.product || it;
-          const size = it.size || prod.selectedSize || 'SIN_TALLE';
-          const color = it.color || prod.selectedColor || 'SIN_COLOR';
-          const variantKey = makeVariantKey(size, color);
-          return {
-            key: `${prod.id || idx}::${variantKey}::${Date.now()}::${idx}`,
-            productId: prod.id,
-            product: prod,
-            name: prod.name || it.name || 'Prenda',
-            code: prod.code || '',
-            variantKey,
-            size,
-            color,
-            // El precio con el que se armo la preventa (caja y web lo guardan en product.unit_price)
-            unitPrice: Number(it.unit_price ?? prod.unit_price ?? it.price ?? getMayorPrice(prod, size === 'SIN_TALLE' ? null : size) ?? 0),
-            quantity: Math.max(1, Number(it.quantity) || 1),
-            stockAvailable: 99
-          };
-        });
-
-        setCart((prev) => [...prev, ...newCartItems]);
-        setLoadedPreventaId(foundOrder.id);
-        if (foundOrder.client_name && foundOrder.client_name !== 'Consumidor Final') {
-          setClientName(foundOrder.client_name);
-        }
-        if (foundOrder.client_phone) setClientPhone(foundOrder.client_phone);
-        if (foundOrder.client_dni) setClientDni(foundOrder.client_dni);
-
-        setPreventaNotice(`✓ Ticket #${foundOrder.id} cargado (${newCartItems.length} prendas)`);
-        setTimeout(() => setPreventaNotice(''), 6000);
-        refocusScan();
+    // 1. Ticket de una sección (LOC-XXXXXX, OFF-XXXXXXXX o los DV-PRE viejos):
+    //    se suma al cobro. Se pueden juntar varios tickets en un solo pago.
+    const upper = code.toUpperCase().replace(/^#/, '').replace(/^ORD-/, '').trim();
+    if (/^(LOC-|OFF-|DV-)/.test(upper)) {
+      if (loadedTickets.some((t) => t.id === upper)) {
+        playBeep(260, 'sawtooth', 0.2);
+        setScanError(`El ticket #${upper} ya está cargado en este cobro.`);
         return;
       }
+
+      let data = null;
+      try {
+        const res = await adminFetch(`/api/pos?action=lookup_order&order_id=${encodeURIComponent(upper)}`);
+        data = await res.json();
+        if (!res.ok) throw new Error(data?.error || 'No se encontró el ticket.');
+      } catch (err) {
+        playBeep(260, 'sawtooth', 0.2);
+        setScanError(err.message || `No se encontró el ticket #${upper}.`);
+        return;
+      }
+
+      const foundOrder = data.order;
+      if (!data.pending) {
+        playBeep(260, 'sawtooth', 0.2);
+        setScanError(`El ticket #${foundOrder.id} ya fue cobrado o cancelado.`);
+        return;
+      }
+
+      playBeep(1200, 'sine', 0.15);
+      const newCartItems = (foundOrder.items || []).map((it, idx) => {
+        const prod = it.product || it;
+        const size = it.size || prod.selectedSize || null;
+        const color = it.color || prod.selectedColor || null;
+        const variantKey = makeVariantKey(size, color);
+        const priceType = it.price_type || prod.price_type || null;
+        return {
+          key: `${foundOrder.id}::${prod.id || idx}::${variantKey}::${idx}`,
+          fromTicket: foundOrder.id,
+          productId: prod.id,
+          product: prod,
+          name: prod.name || it.name || 'Prenda',
+          code: prod.code || '',
+          variantKey,
+          size,
+          color,
+          // Precio con el que se armó el ticket (lo fijó el servidor)
+          unitPrice: Number(prod.unit_price ?? it.unit_price ?? it.price ?? 0),
+          pricingType: priceType === 'menor' ? 'menor' : priceType === 'mayor' ? 'mayor' : null,
+          quantity: Math.max(1, Number(it.quantity) || 1),
+          stockAvailable: 99
+        };
+      });
+
+      setCart((prev) => [...prev, ...newCartItems]);
+      setLoadedTickets((prev) => [...prev, {
+        id: foundOrder.id,
+        sellerName: foundOrder.seller_name || '',
+        total: Number(foundOrder.total_amount) || 0,
+        count: newCartItems.reduce((s, it) => s + it.quantity, 0)
+      }]);
+      if (foundOrder.client_name && !['Consumidor Final', 'Venta en el local'].includes(foundOrder.client_name) && !clientName) {
+        setClientName(foundOrder.client_name);
+      }
+      if (foundOrder.client_phone && !clientPhone) setClientPhone(foundOrder.client_phone);
+      if (foundOrder.client_dni && !clientDni) setClientDni(foundOrder.client_dni);
+
+      setPreventaNotice(`✓ Ticket #${foundOrder.id} cargado${foundOrder.seller_name ? ` (vendió ${foundOrder.seller_name})` : ''}`);
+      setTimeout(() => setPreventaNotice(''), 6000);
+      refocusScan();
+      return;
     }
 
     // 2. Detección normal de códigos de barra por prenda
@@ -425,10 +478,21 @@ export default function PosTab({ products = [], orders = [], onRefresh }) {
     setCheckoutError('');
 
     const cashierObj = cashiers.find((c) => c.code === currentCashierCode) || { name: 'Caja', code: currentCashierCode };
-    const sectionLabel = posSection === 'jeans_infantil' ? 'Sección Jeans & Infantil' : 'Caja Principal';
+    const sectionLabel = posSection === 'jeans_infantil' ? SECTION_LABEL : 'Caja Principal';
+
+    if (paymentMethod === 'efectivo' && cashGivenNum > 0 && cashGivenNum < total) {
+      setCheckoutError('El efectivo recibido es menor al total.');
+      setIsCheckingOut(false);
+      return;
+    }
+
+    // Prendas sueltas (las de los tickets ya tienen precio y stock fijos).
+    const looseItems = cart
+      .filter((it) => !it.fromTicket)
+      .map((it) => ({ productId: it.productId, size: it.size, color: it.color, quantity: it.quantity, pricingType: it.pricingType }));
 
     try {
-      const res = await fetch('/api/pos', {
+      const res = await adminFetch('/api/pos', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -436,15 +500,15 @@ export default function PosTab({ products = [], orders = [], onRefresh }) {
           registerId: 'caja_01',
           cashierCode: cashierObj.code,
           cashierName: cashierObj.name,
-          clientName: clientName.trim() || 'Consumidor Final',
-          clientDni: clientDni.trim() || '',
-          clientPhone: clientPhone.trim() || '',
+          clientName: clientName.trim(),
+          clientDni: clientDni.trim(),
+          clientPhone: clientPhone.trim(),
           paymentMethod,
-          cashGiven: paymentMethod === 'efectivo' ? cashGivenNum : null,
-          changeDue: paymentMethod === 'efectivo' ? changeDue : null,
+          cashGiven: paymentMethod === 'efectivo' && cashGivenNum > 0 ? cashGivenNum : null,
           discount: discountNum,
-          items: cart,
-          existingOrderId: loadedPreventaId || undefined
+          preventaIds: loadedTickets.map((t) => t.id),
+          items: looseItems,
+          sellerId: looseItems.length > 0 ? selectedSellerId || null : null
         })
       });
 
@@ -478,7 +542,7 @@ export default function PosTab({ products = [], orders = [], onRefresh }) {
       setClientPhone('');
       setDiscount('');
       setCashGiven('');
-      setLoadedPreventaId(null);
+      setLoadedTickets([]);
       playBeep(1200, 'sine', 0.15);
 
       if (onRefresh) onRefresh();
@@ -494,26 +558,36 @@ export default function PosTab({ products = [], orders = [], onRefresh }) {
   // Emitir Ticket de Preventa (para la sección de arriba - Jeans & Infantil)
   const handleEmitPreventa = async () => {
     if (cart.length === 0 || isEmittingPreventa) return;
-    setIsEmittingPreventa(true);
     setCheckoutError('');
 
-    const cashierObj = cashiers.find((c) => c.code === currentCashierCode) || { name: 'Sección Jeans & Infantil', code: currentCashierCode };
-    const sectionLabel = 'Sección Jeans & Infantil (Piso Superior)';
+    if (loadedTickets.length > 0 || cart.some((it) => it.fromTicket)) {
+      setCheckoutError('Este carrito tiene tickets de sección cargados: cobralo con "Cobrar".');
+      return;
+    }
+    const seller = sellers.find((s) => s.id === selectedSellerId);
+    if (!seller) {
+      setCheckoutError('Elegí la vendedora que hizo la venta (arriba, "Vendedora").');
+      return;
+    }
+    if (discountNum > 0) {
+      setCheckoutError('El descuento se aplica al cobrar en Caja Principal. Dejalo en 0 para emitir el ticket.');
+      return;
+    }
+
+    setIsEmittingPreventa(true);
+    const sectionLabel = posSection === 'jeans_infantil' ? SECTION_LABEL : 'Caja Principal';
 
     try {
-      const res = await fetch('/api/pos', {
+      const res = await adminFetch('/api/pos', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           action: 'createPreventa',
           sectionName: sectionLabel,
-          cashierCode: cashierObj.code,
-          cashierName: cashierObj.name,
-          clientName: clientName.trim() || 'Consumidor Final',
-          clientDni: clientDni.trim() || '',
-          clientPhone: clientPhone.trim() || '',
-          discount: discountNum,
-          items: cart
+          sellerId: seller.id,
+          clientName: clientName.trim(),
+          clientPhone: clientPhone.trim(),
+          items: cart.map((it) => ({ productId: it.productId, size: it.size, color: it.color, quantity: it.quantity, pricingType: it.pricingType }))
         })
       });
 
@@ -526,7 +600,7 @@ export default function PosTab({ products = [], orders = [], onRefresh }) {
         format: printFormat,
         order: data.order,
         cajaName: sectionLabel,
-        cashier: cashierObj.name,
+        cashier: '',
         paymentMethod: 'A abonar en Caja',
         isPreventa: true,
         sectionName: sectionLabel
@@ -544,7 +618,7 @@ export default function PosTab({ products = [], orders = [], onRefresh }) {
       setClientPhone('');
       setDiscount('');
       setCashGiven('');
-      setLoadedPreventaId(null);
+      setLoadedTickets([]);
       playBeep(1200, 'sine', 0.2);
 
       if (onRefresh) onRefresh();
@@ -593,13 +667,21 @@ export default function PosTab({ products = [], orders = [], onRefresh }) {
       'Ingresá el PIN de Supervisor para vaciar el carrito actual.',
       () => {
         setCart([]);
+        setLoadedTickets([]);
         refocusScan();
       }
     );
   };
 
   const handleRemoveItemProtected = (itemKey, itemName) => {
-    setCart((prev) => prev.filter((it) => it.key !== itemKey));
+    setCart((prev) => prev.filter((it) => it.key !== itemKey || it.fromTicket));
+    refocusScan();
+  };
+
+  // Saca del cobro un ticket de sección entero (sigue pendiente para cobrarlo después).
+  const handleRemoveTicket = (ticketId) => {
+    setCart((prev) => prev.filter((it) => it.fromTicket !== ticketId));
+    setLoadedTickets((prev) => prev.filter((t) => t.id !== ticketId));
     refocusScan();
   };
 
@@ -790,6 +872,7 @@ export default function PosTab({ products = [], orders = [], onRefresh }) {
             <div class="${isThermal ? 'thermal-label-card' : 'a4-label-card'}">
               <div class="label-header">
                 <div class="label-brand">DULCE VALENTÍN</div>
+                ${item.code ? `<div class="label-code">${String(item.code).replace(/&/g, '&amp;').replace(/</g, '&lt;')}</div>` : ''}
               </div>
               ${labelShowPrice ? `
                 <div class="label-prices-row">
@@ -798,7 +881,7 @@ export default function PosTab({ products = [], orders = [], onRefresh }) {
                 </div>` : ''}
               <div class="label-prod-name">${String(item.productName || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')}</div>
               <div class="label-variant-info">
-                ${item.code ? `Art. ${item.code} · ` : ''}${item.label}
+                ${item.label}
               </div>
               <div class="label-barcode-svg">
                 ${svgMarkup}
@@ -841,14 +924,17 @@ export default function PosTab({ products = [], orders = [], onRefresh }) {
         flex-direction: column;
         justify-content: space-between;
       }
+      /* Marca y codigo de articulo juntos a la izquierda (el borde derecho no imprime). */
       .label-header {
         display: flex;
-        justify-content: space-between;
+        justify-content: flex-start;
+        gap: 3mm;
         align-items: center;
         border-bottom: 0.5px solid #000;
         padding-bottom: 0.5mm;
       }
       .label-brand { font-size: 6.5pt; font-weight: 900; letter-spacing: 0.4px; }
+      .label-code { font-size: 8pt; font-weight: 900; white-space: nowrap; }
       /* Precio por menor y por mayor (en ese orden), sin rotulos. Pegada a la
          izquierda: la impresora no llega al borde derecho de la etiqueta. */
       .label-prices-row { display: flex; justify-content: flex-start; gap: 4mm; font-size: 8.5pt; font-weight: 900; margin-top: 0.4mm; white-space: nowrap; }
@@ -976,8 +1062,32 @@ export default function PosTab({ products = [], orders = [], onRefresh }) {
               className="form-input"
               style={{ padding: '4px 10px', fontSize: '0.82rem', fontWeight: 800 }}
             >
-              <option value="jeans_infantil">📍 Sección Jeans & Infantil (Piso Arriba)</option>
+              <option value="jeans_infantil">📍 {SECTION_LABEL} (Piso Arriba)</option>
               <option value="caja_principal">🏢 Caja Principal (Planta Baja)</option>
+            </select>
+          </div>
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+            <Users size={14} style={{ color: 'var(--accent-gold)' }} />
+            <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)', fontWeight: 700 }}>
+              {posSection === 'jeans_infantil' ? 'Vendedora:' : 'Vendedora (prendas sueltas):'}
+            </span>
+            <select
+              value={selectedSellerId}
+              onChange={(e) => selectSeller(e.target.value)}
+              className="form-input"
+              aria-label="Vendedora"
+              style={{
+                padding: '4px 10px',
+                fontSize: '0.82rem',
+                fontWeight: 800,
+                borderColor: posSection === 'jeans_infantil' && !selectedSellerId ? '#DC2626' : undefined
+              }}
+            >
+              <option value="">{posSection === 'jeans_infantil' ? '— Elegir vendedora —' : 'Sin vendedora'}</option>
+              {sellers.map((s) => (
+                <option key={s.id} value={s.id}>{s.name}</option>
+              ))}
             </select>
           </div>
 
@@ -1260,9 +1370,17 @@ export default function PosTab({ products = [], orders = [], onRefresh }) {
                                 </span>
                               )}
                               {it.code && <span style={{ color: 'var(--text-muted)' }}>Art. {it.code}</span>}
+                              {it.fromTicket && (
+                                <span style={{ background: '#FEF3C7', color: '#92400E', padding: '1px 6px', borderRadius: '4px', fontWeight: 800 }}>
+                                  Ticket #{it.fromTicket}
+                                </span>
+                              )}
                             </div>
                           </td>
                           <td style={{ padding: '8px 4px', textAlign: 'center' }}>
+                            {it.fromTicket ? (
+                              <span style={{ fontWeight: 800 }}>{it.quantity}</span>
+                            ) : (
                             <div style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
                               <button
                                 type="button"
@@ -1286,10 +1404,16 @@ export default function PosTab({ products = [], orders = [], onRefresh }) {
                                 +
                               </button>
                             </div>
+                            )}
                           </td>
                           <td style={{ padding: '8px 4px', textAlign: 'right', fontWeight: 700 }}>
                             <div>${it.unitPrice.toLocaleString('es-AR')}</div>
-                            {it.pricingType && (
+                            {it.pricingType && it.fromTicket && (
+                              <span style={{ display: 'inline-block', fontSize: '0.67rem', padding: '2px 5px', borderRadius: '4px', marginTop: '3px', fontWeight: 800, background: it.pricingType === 'menor' ? '#FEF3C7' : '#DBEAFE', color: it.pricingType === 'menor' ? '#92400E' : '#1E40AF' }}>
+                                {it.pricingType === 'menor' ? 'X MENOR' : 'X MAYOR'}
+                              </span>
+                            )}
+                            {it.pricingType && !it.fromTicket && (
                               <button
                                 type="button"
                                 onClick={() => handleToggleItemPricingType(it.key)}
@@ -1316,14 +1440,16 @@ export default function PosTab({ products = [], orders = [], onRefresh }) {
                             ${(it.unitPrice * it.quantity).toLocaleString('es-AR')}
                           </td>
                           <td style={{ padding: '8px 4px', textAlign: 'center' }}>
-                            <button
-                              type="button"
-                              onClick={() => handleRemoveItemProtected(it.key, it.name)}
-                              style={{ border: 'none', background: 'none', color: '#DC2626', cursor: 'pointer', padding: '2px' }}
-                              title="Quitar prenda"
-                            >
-                              <Trash2 size={14} />
-                            </button>
+                            {!it.fromTicket && (
+                              <button
+                                type="button"
+                                onClick={() => handleRemoveItemProtected(it.key, it.name)}
+                                style={{ border: 'none', background: 'none', color: '#DC2626', cursor: 'pointer', padding: '2px' }}
+                                title="Quitar prenda"
+                              >
+                                <Trash2 size={14} />
+                              </button>
+                            )}
                           </td>
                         </tr>
                       ))}
@@ -1512,7 +1638,7 @@ export default function PosTab({ products = [], orders = [], onRefresh }) {
             </div>
 
             {/* AVISO DE PREVENTA VINCULADA */}
-            {loadedPreventaId && (
+            {loadedTickets.length > 0 && (
               <div style={{
                 background: '#FEF3C7',
                 color: '#92400E',
@@ -1522,18 +1648,25 @@ export default function PosTab({ products = [], orders = [], onRefresh }) {
                 fontSize: '0.8rem',
                 fontWeight: 800,
                 display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                gap: '8px'
+                flexDirection: 'column',
+                gap: '6px'
               }}>
-                <span>🏷️ Cobrando Ticket Preventa #{loadedPreventaId}</span>
-                <button
-                  type="button"
-                  onClick={() => setLoadedPreventaId(null)}
-                  style={{ background: 'none', border: 'none', color: '#92400E', cursor: 'pointer', fontSize: '0.74rem', textDecoration: 'underline', fontWeight: 700 }}
-                >
-                  Desvincular
-                </button>
+                <span>🏷️ {loadedTickets.length === 1 ? 'Ticket cargado' : `${loadedTickets.length} tickets en este cobro`} (se cobran juntos):</span>
+                {loadedTickets.map((t) => (
+                  <div key={t.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
+                    <span>
+                      #{t.id}{t.sellerName ? ` · ${t.sellerName}` : ''} · ${t.total.toLocaleString('es-AR')}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => handleRemoveTicket(t.id)}
+                      style={{ background: 'none', border: 'none', color: '#92400E', cursor: 'pointer', fontSize: '0.74rem', textDecoration: 'underline', fontWeight: 700 }}
+                      title="Sacar este ticket del cobro (queda pendiente)"
+                    >
+                      Quitar
+                    </button>
+                  </div>
+                ))}
               </div>
             )}
 
