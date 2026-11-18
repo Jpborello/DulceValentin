@@ -82,8 +82,8 @@ export default function BarcodeLabelsModal({ product, onClose }) {
               </div>
               ${showPrice ? `
                 <div class="prices-row">
-                  <span><small>Mayor</small>$${Number(prices.mayor || 0).toLocaleString('es-AR')}</span>
-                  <span><small>Menor</small>$${Number(prices.menor || 0).toLocaleString('es-AR')}</span>
+                  <span>$${Number(prices.menor || 0).toLocaleString('es-AR')}</span>
+                  <span>$${Number(prices.mayor || 0).toLocaleString('es-AR')}</span>
                 </div>` : ''}
               <div class="prod-name">${escapeHtml(product.name)}</div>
               <div class="meta-row">
@@ -121,10 +121,9 @@ export default function BarcodeLabelsModal({ product, onClose }) {
           padding-bottom: 0.4mm;
         }
         .brand { font-size: 6.5pt; font-weight: 900; letter-spacing: 0.3px; }
-        /* Compacta y pegada a la izquierda: la impresora no llega al borde derecho
-           de la etiqueta y antes el precio por menor quedaba cortado. */
-        .prices-row { display: flex; justify-content: flex-start; gap: 2mm; font-size: 7.5pt; font-weight: 900; margin-top: 0.4mm; white-space: nowrap; }
-        .prices-row small { font-size: 5pt; font-weight: 700; margin-right: 0.5mm; }
+        /* Precio por menor y por mayor (en ese orden), sin rotulos. Pegada a la
+           izquierda: la impresora no llega al borde derecho de la etiqueta. */
+        .prices-row { display: flex; justify-content: flex-start; gap: 4mm; font-size: 8.5pt; font-weight: 900; margin-top: 0.4mm; white-space: nowrap; }
         .prod-name { font-size: 7pt; font-weight: 800; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 0.3mm; }
         .meta-row { font-size: 6.8pt; font-weight: 700; color: #222; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
         .barcode-box { display: flex; justify-content: center; margin-top: 0.3mm; }
