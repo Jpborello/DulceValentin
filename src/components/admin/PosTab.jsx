@@ -903,7 +903,7 @@ export default function PosTab({ products = [], orders = [], onRefresh }) {
         ${itemsToPrint.map((item) => {
           // Barras a ancho exacto (3 puntos de 203 dpi), sin estirar: ver barcodeRender.js
           // (barras de 7 mm de alto para que entren los dos precios)
-          const svgMarkup = renderBarcodeSvg(item.barcode, { maxWidthMm: isThermal ? 46 : 60, barHeightMm: 7, fontMm: 2.4 });
+          const svgMarkup = renderBarcodeSvg(item.barcode, { maxWidthMm: isThermal ? 46 : 60, barHeightMm: 6, fontMm: 2.4 });
 
           return `
             <div class="${isThermal ? 'thermal-label-card' : 'a4-label-card'}">
@@ -942,7 +942,8 @@ export default function PosTab({ products = [], orders = [], onRefresh }) {
         page-break-inside: avoid;
         display: flex;
         flex-direction: column;
-        justify-content: space-between;
+        justify-content: flex-start;
+        gap: 0.3mm;
       }
       .a4-labels-grid {
         display: grid;
@@ -955,10 +956,12 @@ export default function PosTab({ products = [], orders = [], onRefresh }) {
         border: 0.2mm dashed #bbb;
         padding: 1.5mm 2.5mm;
         box-sizing: border-box;
+        overflow: hidden;
         page-break-inside: avoid;
         display: flex;
         flex-direction: column;
-        justify-content: space-between;
+        justify-content: flex-start;
+        gap: 0.4mm;
       }
       /* Marca y codigo de articulo juntos a la izquierda (el borde derecho no imprime). */
       .label-header {
@@ -969,8 +972,8 @@ export default function PosTab({ products = [], orders = [], onRefresh }) {
         border-bottom: 0.5px solid #000;
         padding-bottom: 0.5mm;
       }
-      .label-brand { font-size: 5pt; font-weight: 900; letter-spacing: 0.4px; }
-      .label-code { font-size: 6.5pt; font-weight: 900; white-space: nowrap; }
+      .label-brand { font-size: 4.5pt; font-weight: 900; letter-spacing: 0.4px; }
+      .label-code { font-size: 6pt; font-weight: 900; white-space: nowrap; }
       /* Precio por menor y por mayor (en ese orden), sin rotulos. Pegada a la
          izquierda: la impresora no llega al borde derecho de la etiqueta. */
       .label-prices-row { display: flex; justify-content: flex-start; gap: 4mm; font-size: 8.5pt; font-weight: 900; margin-top: 0.4mm; white-space: nowrap; }
