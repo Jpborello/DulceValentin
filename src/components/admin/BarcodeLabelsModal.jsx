@@ -78,13 +78,12 @@ export default function BarcodeLabelsModal({ product, onClose }) {
           ${labels.map(({ v, svgMarkup, prices }) => `
             <div class="label-card">
               <div class="top-row">
-                <div class="brand">DULCE VALENTÍN</div>
+                <div class="brand">DV</div>
                 ${product.code ? `<div class="art-code">${escapeHtml(product.code)}</div>` : ''}
               </div>
               ${showPrice ? `
                 <div class="prices-row">
-                  <span>$${Number(prices.menor || 0).toLocaleString('es-AR')}</span>
-                  <span>$${Number(prices.mayor || 0).toLocaleString('es-AR')}</span>
+                  <span>$${Number(prices.menor || 0).toLocaleString('es-AR')}/${String(Math.round(Number(prices.mayor || 0))).slice(0, 3)}</span>
                 </div>` : ''}
               <div class="prod-name">${escapeHtml(product.name)}</div>
               <div class="meta-row">
@@ -189,7 +188,7 @@ export default function BarcodeLabelsModal({ product, onClose }) {
             {Object.entries(FORMATS).map(([id, f]) => <option key={id} value={id}>{f.label}</option>)}
           </select>
           <label style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '0.84rem', fontWeight: 600, cursor: 'pointer' }}>
-            <input type="checkbox" checked={showPrice} onChange={(e) => setShowPrice(e.target.checked)} /> Mostrar precios (mayor y menor)
+            <input type="checkbox" checked={showPrice} onChange={(e) => setShowPrice(e.target.checked)} /> Mostrar precio (menor/mayor, ej: $16.000/129)
           </label>
         </div>
 
