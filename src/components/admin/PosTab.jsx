@@ -903,7 +903,7 @@ export default function PosTab({ products = [], orders = [], onRefresh }) {
         ${itemsToPrint.map((item) => {
           // Barras a ancho exacto (3 puntos de 203 dpi), sin estirar: ver barcodeRender.js
           // (barras de 7 mm de alto para que entren los dos precios)
-          const svgMarkup = renderBarcodeSvg(item.barcode, { maxWidthMm: isThermal ? 46 : 60, barHeightMm: 6, fontMm: 2.4 });
+          const svgMarkup = renderBarcodeSvg(item.barcode, { maxWidthMm: isThermal ? 46 : 60, barHeightMm: 5, fontMm: 2.2 });
 
           return `
             <div class="${isThermal ? 'thermal-label-card' : 'a4-label-card'}">
@@ -972,13 +972,13 @@ export default function PosTab({ products = [], orders = [], onRefresh }) {
         border-bottom: 0.5px solid #000;
         padding-bottom: 0.5mm;
       }
-      .label-brand { font-size: 4.5pt; font-weight: 900; letter-spacing: 0.4px; }
-      .label-code { font-size: 6pt; font-weight: 900; white-space: nowrap; }
+      .label-brand { font-size: 4pt; font-weight: 900; letter-spacing: 0.3px; }
+      .label-code { font-size: 5pt; font-weight: 900; white-space: nowrap; }
       /* Precio por menor y por mayor (en ese orden), sin rotulos. Pegada a la
          izquierda: la impresora no llega al borde derecho de la etiqueta. */
-      .label-prices-row { display: flex; justify-content: flex-start; gap: 4mm; font-size: 8.5pt; font-weight: 900; margin-top: 0.4mm; white-space: nowrap; }
-      .label-prod-name { font-size: 7pt; font-weight: 800; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 0.3mm; }
-      .label-variant-info { font-size: 6.8pt; font-weight: 700; color: #222; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      .label-prices-row { display: flex; justify-content: flex-start; gap: 4mm; font-size: 6.5pt; font-weight: 900; margin-top: 0.3mm; white-space: nowrap; }
+      .label-prod-name { font-size: 5.5pt; font-weight: 800; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 0.2mm; }
+      .label-variant-info { font-size: 5.5pt; font-weight: 700; color: #222; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
       .label-barcode-svg { display: flex; justify-content: center; margin-top: 0.3mm; }
       /* tamaño real en mm desde el SVG: NO escalar (las barras tienen que caer en puntos enteros) */
       .label-barcode-svg svg { display: block; flex: none; }

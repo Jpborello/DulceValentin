@@ -61,7 +61,7 @@ export default function BarcodeLabelsModal({ product, onClose }) {
         const code = barcodesMap[v.key];
         // Barras a ancho exacto (3 puntos de 203 dpi), sin estirar: ver barcodeRender.js
         // Barras un poco mas bajas (7 mm) para que entren los dos precios en la etiqueta.
-        const svgMarkup = renderBarcodeSvg(code, { maxWidthMm: format === 'thermal' ? 46 : 60, barHeightMm: 6, fontMm: 2.4 });
+        const svgMarkup = renderBarcodeSvg(code, { maxWidthMm: format === 'thermal' ? 46 : 60, barHeightMm: 5, fontMm: 2.2 });
         if (!svgMarkup) throw new Error(`No se pudo generar el código de barras de ${v.label}.`);
         const prices = {
           mayor: getUnitPriceForType(product, v.size, 'mayor'),
@@ -123,13 +123,13 @@ export default function BarcodeLabelsModal({ product, onClose }) {
           border-bottom: 0.5px solid #000;
           padding-bottom: 0.4mm;
         }
-        .brand { font-size: 4.5pt; font-weight: 900; letter-spacing: 0.3px; }
-        .art-code { font-size: 6pt; font-weight: 900; white-space: nowrap; }
+        .brand { font-size: 4pt; font-weight: 900; letter-spacing: 0.3px; }
+        .art-code { font-size: 5pt; font-weight: 900; white-space: nowrap; }
         /* Precio por menor y por mayor (en ese orden), sin rotulos. Pegada a la
            izquierda: la impresora no llega al borde derecho de la etiqueta. */
-        .prices-row { display: flex; justify-content: flex-start; gap: 4mm; font-size: 8.5pt; font-weight: 900; margin-top: 0.4mm; white-space: nowrap; }
-        .prod-name { font-size: 7pt; font-weight: 800; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 0.3mm; }
-        .meta-row { font-size: 6.8pt; font-weight: 700; color: #222; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .prices-row { display: flex; justify-content: flex-start; gap: 4mm; font-size: 6.5pt; font-weight: 900; margin-top: 0.3mm; white-space: nowrap; }
+        .prod-name { font-size: 5.5pt; font-weight: 800; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 0.2mm; }
+        .meta-row { font-size: 5.5pt; font-weight: 700; color: #222; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
         .barcode-box { display: flex; justify-content: center; margin-top: 0.3mm; }
         /* tamaño real en mm desde el SVG: NO escalar (las barras tienen que caer en puntos enteros) */
         .barcode-box svg { display: block; flex: none; }
