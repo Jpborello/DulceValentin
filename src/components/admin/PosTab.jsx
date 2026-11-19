@@ -117,6 +117,8 @@ export default function PosTab({ products = [], orders = [], onRefresh }) {
   const [labelModalProduct, setLabelModalProduct] = useState(null);
   const [labelModalVariants, setLabelModalVariants] = useState([]);
   const [labelModalQty, setLabelModalQty] = useState({});
+  // Que variantes se imprimen: todas tildadas por defecto, se destilda lo que no se quiere.
+  const [labelModalChecked, setLabelModalChecked] = useState({});
   const [labelFormat, setLabelFormat] = useState('thermal'); // 'thermal' (50x25mm) | 'a4'
   const [labelShowPrice, setLabelShowPrice] = useState(true);
 
@@ -850,13 +852,16 @@ export default function PosTab({ products = [], orders = [], onRefresh }) {
     }
 
     const initialQty = {};
+    const initialChecked = {};
     variants.forEach((v) => {
       initialQty[v.key] = Math.max(0, Number(v.stock) || 0);
+      initialChecked[v.key] = true;
     });
 
     setLabelModalProduct(product);
     setLabelModalVariants(variants);
     setLabelModalQty(initialQty);
+    setLabelModalChecked(initialChecked);
   };
 
   const handlePrintLabelsAction = () => {
@@ -864,6 +869,7 @@ export default function PosTab({ products = [], orders = [], onRefresh }) {
     const itemsToPrint = [];
 
     labelModalVariants.forEach((v) => {
+      if (labelModalChecked[v.key] === false) return; // destildada: no se imprime
       const qty = parseInt(labelModalQty[v.key], 10) || 0;
       if (qty > 0) {
         const code = labelModalProduct.barcodes?.[v.key] || generateBarcodeValue(labelModalProduct, v.size, v.color);
@@ -963,8 +969,8 @@ export default function PosTab({ products = [], orders = [], onRefresh }) {
         border-bottom: 0.5px solid #000;
         padding-bottom: 0.5mm;
       }
-      .label-brand { font-size: 6.5pt; font-weight: 900; letter-spacing: 0.4px; }
-      .label-code { font-size: 8pt; font-weight: 900; white-space: nowrap; }
+      .label-brand { font-size: 5pt; font-weight: 900; letter-spacing: 0.4px; }
+      .label-code { font-size: 6.5pt; font-weight: 900; white-space: nowrap; }
       /* Precio por menor y por mayor (en ese orden), sin rotulos. Pegada a la
          izquierda: la impresora no llega al borde derecho de la etiqueta. */
       .label-prices-row { display: flex; justify-content: flex-start; gap: 4mm; font-size: 8.5pt; font-weight: 900; margin-top: 0.4mm; white-space: nowrap; }
@@ -2400,46 +2406,74 @@ export default function PosTab({ products = [], orders = [], onRefresh }) {
             </div>
 
             {/* LISTA DE VARIANTES */}
-            <div style={{ overflowY: 'auto', flex: 1, border: '1px solid var(--border-color)', borderRadius: '10px', marginBottom: '14px' }}>
-              {labelModalVariants.map((v) => (
-                <div
-                  key={v.key}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                    padding: '8px 12px',
-                    borderBottom: '1px solid var(--border-color)'
+            <div style={{ border: '1px solid var(--border-color)', borderRadius: '10px', marginBottom: '14px', flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+              {/* Tildar / destildar todas */}
+              <label style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 12px', borderBottom: '1px solid var(--border-color)', background: 'var(--bg-surface-elevated)', fontSize: '0.78rem', fontWeight: 800, cursor: 'pointer' }}>
+                <input
+                  type="checkbox"
+                  checked={labelModalVariants.length > 0 && labelModalVariants.every((v) => labelModalChecked[v.key] !== false)}
+                  onChange={(e) => {
+                    const val = e.target.checked;
+                    setLabelModalChecked(Object.fromEntries(labelModalVariants.map((v) => [v.key, val])));
                   }}
-                >
-                  <div>
-                    <div style={{ fontWeight: 800, fontSize: '0.86rem' }}>{v.label}</div>
-                    <div style={{ fontSize: '0.74rem', color: 'var(--text-muted)' }}>
-                      Código: <code>{labelModalProduct.barcodes?.[v.key] || generateBarcodeValue(labelModalProduct, v.size, v.color)}</code> · Stock: {v.stock}
-                    </div>
-                  </div>
+                  style={{ width: '17px', height: '17px', cursor: 'pointer' }}
+                />
+                Imprimir todas
+              </label>
 
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                    <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Etiquetas:</span>
-                    <input
-                      type="number"
-                      min="0"
-                      value={labelModalQty[v.key] ?? 0}
-                      onChange={(e) => setLabelModalQty((prev) => ({
-                        ...prev,
-                        [v.key]: Math.max(0, parseInt(e.target.value, 10) || 0)
-                      }))}
-                      className="form-input"
-                      style={{ width: '70px', padding: '4px 6px', textAlign: 'center', fontWeight: 800 }}
-                    />
-                  </div>
-                </div>
-              ))}
+              <div style={{ overflowY: 'auto', flex: 1 }}>
+                {labelModalVariants.map((v) => {
+                  const on = labelModalChecked[v.key] !== false;
+                  return (
+                    <label
+                      key={v.key}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '10px',
+                        padding: '8px 12px',
+                        borderBottom: '1px solid var(--border-color)',
+                        cursor: 'pointer',
+                        opacity: on ? 1 : 0.5
+                      }}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={on}
+                        onChange={(e) => setLabelModalChecked((prev) => ({ ...prev, [v.key]: e.target.checked }))}
+                        style={{ width: '17px', height: '17px', cursor: 'pointer', flexShrink: 0 }}
+                      />
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontWeight: 800, fontSize: '0.86rem' }}>{v.label}</div>
+                        <div style={{ fontSize: '0.74rem', color: 'var(--text-muted)' }}>
+                          Código: <code>{labelModalProduct.barcodes?.[v.key] || generateBarcodeValue(labelModalProduct, v.size, v.color)}</code> · Stock: {v.stock}
+                        </div>
+                      </div>
+
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Etiquetas:</span>
+                        <input
+                          type="number"
+                          min="0"
+                          value={labelModalQty[v.key] ?? 0}
+                          onClick={(e) => e.stopPropagation()}
+                          onChange={(e) => setLabelModalQty((prev) => ({
+                            ...prev,
+                            [v.key]: Math.max(0, parseInt(e.target.value, 10) || 0)
+                          }))}
+                          className="form-input"
+                          style={{ width: '70px', padding: '4px 6px', textAlign: 'center', fontWeight: 800 }}
+                        />
+                      </div>
+                    </label>
+                  );
+                })}
+              </div>
             </div>
 
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <span style={{ fontSize: '0.85rem', fontWeight: 800 }}>
-                Total: {Object.values(labelModalQty).reduce((s, n) => s + (parseInt(n, 10) || 0), 0)} etiquetas
+                Total: {labelModalVariants.reduce((s, v) => s + (labelModalChecked[v.key] === false ? 0 : (parseInt(labelModalQty[v.key], 10) || 0)), 0)} etiquetas
               </span>
               <div style={{ display: 'flex', gap: '8px' }}>
                 <button

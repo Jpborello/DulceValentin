@@ -122,8 +122,8 @@ export default function BarcodeLabelsModal({ product, onClose }) {
           border-bottom: 0.5px solid #000;
           padding-bottom: 0.4mm;
         }
-        .brand { font-size: 6.5pt; font-weight: 900; letter-spacing: 0.3px; }
-        .art-code { font-size: 8pt; font-weight: 900; white-space: nowrap; }
+        .brand { font-size: 5pt; font-weight: 900; letter-spacing: 0.3px; }
+        .art-code { font-size: 6.5pt; font-weight: 900; white-space: nowrap; }
         /* Precio por menor y por mayor (en ese orden), sin rotulos. Pegada a la
            izquierda: la impresora no llega al borde derecho de la etiqueta. */
         .prices-row { display: flex; justify-content: flex-start; gap: 4mm; font-size: 8.5pt; font-weight: 900; margin-top: 0.4mm; white-space: nowrap; }
