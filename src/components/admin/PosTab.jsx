@@ -902,13 +902,12 @@ export default function PosTab({ products = [], orders = [], onRefresh }) {
           return `
             <div class="${isThermal ? 'thermal-label-card' : 'a4-label-card'}">
               <div class="label-header">
-                <div class="label-brand">DULCE VALENTÍN</div>
+                <div class="label-brand">DV</div>
                 ${item.code ? `<div class="label-code">${String(item.code).replace(/&/g, '&amp;').replace(/</g, '&lt;')}</div>` : ''}
               </div>
               ${labelShowPrice ? `
                 <div class="label-prices-row">
-                  <span>$${Number(item.priceMenor || 0).toLocaleString('es-AR')}</span>
-                  <span>$${Number(item.priceMayor || 0).toLocaleString('es-AR')}</span>
+                  <span>$${Number(item.priceMenor || 0).toLocaleString('es-AR')}/${String(Math.round(Number(item.priceMayor || 0))).slice(0, 3)}</span>
                 </div>` : ''}
               <div class="label-prod-name">${String(item.productName || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')}</div>
               <div class="label-variant-info">
