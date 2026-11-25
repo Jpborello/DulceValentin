@@ -1007,7 +1007,45 @@ class DataStore {
   }
 
   updateStock(id, newStock) {
-    this.updateProduct(id, { stock: parseInt(newStock, 10) || 0 });
+    const parsedStock = Math.max(0, parseInt(newStock, 10) || 0);
+    const updates = { stock: parsedStock };
+    const product = this.products.find(p => p.id === id);
+
+    // Si el producto tiene un único talle y un único color (ej. SURTIDO / VARIOS),
+    // sincronizamos también esa variante para que "Queda" y "Talles y Colores" no queden desfasados.
+    if (product) {
+      const sizes = Array.isArray(product.sizes) ? product.sizes : [];
+      if (sizes.length === 1) {
+        const onlySize = sizes[0];
+        const rawEntry = product.stock_per_size?.[onlySize];
+        const entryColors = (rawEntry && typeof rawEntry === 'object' && Array.isArray(rawEntry.colors) && rawEntry.colors.length > 0)
+          ? rawEntry.colors
+          : (Array.isArray(product.colors) ? product.colors : []);
+
+        if (entryColors.length <= 1) {
+          const onlyColor = entryColors[0];
+          const nextEntry = {
+            ...(rawEntry && typeof rawEntry === 'object' ? rawEntry : {}),
+            stock: parsedStock
+          };
+          if (onlyColor) {
+            nextEntry.colors = [onlyColor];
+            nextEntry.color_stock = { [onlyColor]: parsedStock };
+          }
+          updates.stock_per_size = {
+            ...(product.stock_per_size || {}),
+            [onlySize]: nextEntry
+          };
+        }
+      } else if (sizes.length === 0 && product.color_stock && typeof product.color_stock === 'object') {
+        const colorKeys = Object.keys(product.color_stock);
+        if (colorKeys.length === 1) {
+          updates.color_stock = { [colorKeys[0]]: parsedStock };
+        }
+      }
+    }
+
+    return this.updateProduct(id, updates);
   }
 
   // Elimina un producto definitivamente de la base y del estado local
